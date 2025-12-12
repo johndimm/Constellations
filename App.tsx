@@ -11,7 +11,8 @@ import { Key } from 'lucide-react';
 const getEnvApiKey = () => {
     let key = "";
     
-    // 1. Try import.meta.env (Vite standard) - This is what Vercel + Vite uses
+    // 1. Try import.meta.env (Vite standard)
+    // We access properties directly so Vite can statically replace them
     try {
         // @ts-ignore
         if (typeof import.meta !== 'undefined' && import.meta.env) {
@@ -54,26 +55,36 @@ const App: React.FC = () => {
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [error, setError] = useState<string | null>(null);
   const [isKeyReady, setIsKeyReady] = useState(false);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
 
   // Check for API Key on mount
   useEffect(() => {
     const checkKey = async () => {
+      const logs: string[] = [];
+      const log = (msg: string) => {
+          console.log(msg);
+          logs.push(msg);
+      };
+
+      log("DEBUG [v3]: Checking for API Key..."); 
+      
       const envKey = getEnvApiKey();
-      // UPDATED LOG MESSAGE TO CONFIRM NEW CODE IS RUNNING
-      console.log("DEBUG [v2]: Checking for API Key..."); 
-      console.log("DEBUG [v2]: Found env key?", !!envKey ? "YES" : "NO");
+      log(`DEBUG [v3]: Resolved Key Length: ${envKey ? envKey.length : 0}`);
 
       // If running in an environment with the aistudio helper (Project IDX/AI Studio)
       if ((window as any).aistudio) {
         const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+        log(`DEBUG [v3]: AI Studio Key Present: ${hasKey}`);
         setIsKeyReady(hasKey || !!envKey);
       } else {
         if (envKey) {
+            log("DEBUG [v3]: Using Environment Variable Key");
             setIsKeyReady(true);
         } else {
-            console.warn("DEBUG [v2]: No API Key found. Ensure you have set VITE_API_KEY in Vercel.");
+            log("DEBUG [v3]: No API Key found.");
         }
       }
+      setDebugLog(logs);
     };
     checkKey();
   }, []);
@@ -322,6 +333,15 @@ const App: React.FC = () => {
             <p className="text-xs text-slate-600 max-w-sm text-center">
                 This app uses the Gemini API. Your key is used locally and never stored on our servers.
             </p>
+            
+            {/* DEBUG INFO OVERLAY */}
+            <div className="mt-8 p-4 bg-black/50 rounded-lg text-xs font-mono text-slate-400 max-w-lg w-full overflow-hidden">
+                <p className="font-bold text-slate-200 mb-2 border-b border-slate-700 pb-1">Debug Info (v3)</p>
+                {debugLog.map((l, i) => <div key={i}>{l}</div>)}
+                <div className="mt-2 text-yellow-500">
+                    Warning: If you see "process.env.API_KEY value: undefined" in console, you are running an old cached version. Hard refresh or redeploy.
+                </div>
+            </div>
         </div>
     );
   }

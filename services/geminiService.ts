@@ -58,7 +58,7 @@ const getEnvApiKey = () => {
 
 export const fetchConnections = async (nodeName: string): Promise<GeminiResponse> => {
   const apiKey = getEnvApiKey();
-  console.log("DEBUG: Service calling Gemini with key present:", !!apiKey);
+  console.log("DEBUG [v3]: Service calling Gemini. Key present:", !!apiKey);
   
   const ai = new GoogleGenAI({ apiKey });
   try {
