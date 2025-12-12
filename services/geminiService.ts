@@ -19,6 +19,7 @@ Return the data in strict JSON format.
 `;
 
 export const fetchConnections = async (nodeName: string): Promise<GeminiResponse> => {
+  console.log("DEBUG: Initializing Gemini for fetchConnections. Key exists:", !!process.env.API_KEY);
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
     const response = await ai.models.generateContent({
@@ -60,6 +61,7 @@ export const fetchConnections = async (nodeName: string): Promise<GeminiResponse
 };
 
 export const fetchPersonWorks = async (personName: string): Promise<PersonWorksResponse> => {
+  console.log("DEBUG: Initializing Gemini for fetchPersonWorks. Key exists:", !!process.env.API_KEY);
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
     const response = await ai.models.generateContent({
