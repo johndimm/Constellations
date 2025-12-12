@@ -8,41 +8,38 @@ import { fetchWikipediaImage } from './services/wikipediaService';
 import { Key } from 'lucide-react';
 
 // Helper to safely retrieve key from various environment variable standards
-// supporting both process.env (Node/Webpack) and import.meta.env (Vite)
 const getEnvApiKey = () => {
     let key = "";
     
-    // 1. Check process.env (Standard Node/CRA/Next.js)
+    // 1. Try import.meta.env (Vite standard) - This is what Vercel + Vite uses
     try {
-        if (typeof process !== 'undefined' && process.env) {
-            key = process.env.API_KEY || 
-                  process.env.NEXT_PUBLIC_API_KEY || 
-                  process.env.REACT_APP_API_KEY || 
-                  process.env.VITE_API_KEY ||
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env) {
+            // @ts-ignore
+            key = import.meta.env.VITE_API_KEY || 
+                  // @ts-ignore
+                  import.meta.env.NEXT_PUBLIC_API_KEY || 
+                  // @ts-ignore
+                  import.meta.env.API_KEY ||
                   "";
         }
     } catch (e) {
-        // process is undefined
+        // import.meta ignored
     }
 
     if (key) return key;
 
-    // 2. Check import.meta.env (Vite standard)
+    // 2. Try process.env (Legacy/Webpack/Next.js)
     try {
-        // @ts-ignore
-        if (import.meta && import.meta.env) {
-            // @ts-ignore
-            key = import.meta.env.API_KEY || 
-                  // @ts-ignore
-                  import.meta.env.VITE_API_KEY || 
-                  // @ts-ignore
-                  import.meta.env.NEXT_PUBLIC_API_KEY || 
-                  // @ts-ignore
-                  import.meta.env.REACT_APP_API_KEY ||
+        if (typeof process !== 'undefined' && process.env) {
+            key = process.env.VITE_API_KEY || 
+                  process.env.NEXT_PUBLIC_API_KEY || 
+                  process.env.REACT_APP_API_KEY || 
+                  process.env.API_KEY || 
                   "";
         }
     } catch (e) {
-        // import.meta is undefined
+        // process ignored
     }
 
     return key;
@@ -61,22 +58,20 @@ const App: React.FC = () => {
   // Check for API Key on mount
   useEffect(() => {
     const checkKey = async () => {
-      console.log("DEBUG: Checking API Key configuration...");
-      
       const envKey = getEnvApiKey();
-      console.log("DEBUG: Resolved Environment Key found:", !!envKey ? "YES (Hidden)" : "NO");
+      // UPDATED LOG MESSAGE TO CONFIRM NEW CODE IS RUNNING
+      console.log("DEBUG [v2]: Checking for API Key..."); 
+      console.log("DEBUG [v2]: Found env key?", !!envKey ? "YES" : "NO");
 
       // If running in an environment with the aistudio helper (Project IDX/AI Studio)
       if ((window as any).aistudio) {
         const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-        console.log("DEBUG: window.aistudio.hasSelectedApiKey() returned:", hasKey);
         setIsKeyReady(hasKey || !!envKey);
       } else {
         if (envKey) {
-            console.log("DEBUG: Using Environment Variable Key");
             setIsKeyReady(true);
         } else {
-            console.warn("DEBUG: No API Key found. Checked process.env AND import.meta.env for API_KEY, NEXT_PUBLIC_API_KEY, REACT_APP_API_KEY, VITE_API_KEY.");
+            console.warn("DEBUG [v2]: No API Key found. Ensure you have set VITE_API_KEY in Vercel.");
         }
       }
     };
@@ -86,7 +81,6 @@ const App: React.FC = () => {
   const handleSelectKey = async () => {
       if ((window as any).aistudio) {
           await (window as any).aistudio.openSelectKey();
-          // Assume success per instructions regarding race conditions
           setIsKeyReady(true);
       }
   };
@@ -102,7 +96,6 @@ const App: React.FC = () => {
 
   // Helper to fetch and update image for a node
   const loadNodeImage = useCallback(async (nodeId: string) => {
-    // Optimistic update to prevent double fetching
     setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n));
     
     const url = await fetchWikipediaImage(nodeId);
@@ -150,7 +143,6 @@ const App: React.FC = () => {
   const expandNode = useCallback(async (node: GraphNode, isInitial = false) => {
     if (node.expanded || node.isLoading) return;
 
-    // Update node state to loading
     setNodes(prev => prev.map(n => n.id === node.id ? { ...n, isLoading: true } : n));
     setIsProcessing(true);
     setError(null);
@@ -161,13 +153,10 @@ const App: React.FC = () => {
       if (data.connections.length === 0) {
         if (isInitial) {
              setError(`No connections found for "${node.id}". Try a different topic.`);
-             // Remove the solitary node if it was a fresh search that failed
              setNodes([]);
              setSelectedNode(null);
         } else {
-             // Just stop loading if it's an expansion of an existing node
              setNodes(prev => prev.map(n => n.id === node.id ? { ...n, isLoading: false, expanded: true } : n)); 
-             // We mark expanded=true so we don't retry immediately
         }
         setIsProcessing(false);
         return;
@@ -177,25 +166,20 @@ const App: React.FC = () => {
       const newLinks: GraphLink[] = [];
 
       data.connections.forEach((conn) => {
-        // Check if node already exists
         const existingNode = nodes.find(n => n.id === conn.connectedEntity) || newNodes.find(n => n.id === conn.connectedEntity);
-        
         let targetNodeId = conn.connectedEntity;
 
         if (!existingNode) {
-            // Create new node
             const newNode: GraphNode = {
                 id: conn.connectedEntity,
                 type: conn.connectedEntityType,
                 description: conn.entityDescription,
-                // Initial position near the source node to prevent wild jumping
                 x: (node.x || 0) + (Math.random() - 0.5) * 100,
                 y: (node.y || 0) + (Math.random() - 0.5) * 100,
             };
             newNodes.push(newNode);
         }
 
-        // Check if link already exists (avoid duplicate edges for same person between same nodes)
         const linkExists = links.some(l => 
             (l.source === node.id && l.target === targetNodeId && l.person === conn.personName) ||
             (l.source === targetNodeId && l.target === node.id && l.person === conn.personName)
@@ -214,14 +198,12 @@ const App: React.FC = () => {
         }
       });
 
-      // Update state with new nodes and set expanded=true for current node
       setNodes(prev => {
          const updated = prev.map(n => n.id === node.id ? { ...n, isLoading: false, expanded: true } : n);
          return [...updated, ...newNodes];
       });
       setLinks(prev => [...prev, ...newLinks]);
 
-      // Trigger image fetches for new links
       newLinks.forEach(link => {
         loadLinkImage(link.id, link.person);
       });
@@ -238,15 +220,11 @@ const App: React.FC = () => {
   const handleLinkClick = useCallback(async (link: GraphLink) => {
     if (link.isExpanding) return;
 
-    // Set expanding state
     setLinks(prev => prev.map(l => l.id === link.id ? { ...l, isExpanding: true } : l));
     setError(null);
 
     try {
         const data = await fetchPersonWorks(link.person);
-        
-        // We will attach new nodes to the "source" of the clicked link as an anchor
-        // Ensure source is a GraphNode object
         const anchorNode = typeof link.source === 'object' ? link.source as GraphNode : nodes.find(n => n.id === link.source);
         
         if (!anchorNode) {
@@ -258,9 +236,7 @@ const App: React.FC = () => {
         const newLinks: GraphLink[] = [];
 
         data.works.forEach(work => {
-             // Check if node exists
              const exists = nodes.find(n => n.id === work.entity) || newNodes.find(n => n.id === work.entity);
-             
              if (!exists) {
                  newNodes.push({
                      id: work.entity,
@@ -271,8 +247,6 @@ const App: React.FC = () => {
                  });
              }
 
-             // Create link from anchor to new work via this person
-             // Check if link exists
              const linkExists = links.some(l => 
                 (l.source === anchorNode.id && l.target === work.entity && l.person === link.person) ||
                 (l.source === work.entity && l.target === anchorNode.id && l.person === link.person)
@@ -282,10 +256,10 @@ const App: React.FC = () => {
                 newLinks.push({
                     source: anchorNode.id,
                     target: work.entity,
-                    person: link.person, // Same person
+                    person: link.person, 
                     role: work.role,
                     id: `${anchorNode.id}-${work.entity}-${link.person}`,
-                    imageUrl: link.imageUrl // Reuse image url we already have
+                    imageUrl: link.imageUrl 
                 });
              }
         });
@@ -300,8 +274,6 @@ const App: React.FC = () => {
             return [...updated, ...newLinks];
         });
 
-        // Fetch images for new nodes
-        // (We don't need to fetch link images because we reused the URL)
         newNodes.forEach(n => {
             loadNodeImage(n.id);
         });
@@ -322,10 +294,8 @@ const App: React.FC = () => {
   };
 
   const handleViewportChange = useCallback((visibleNodes: GraphNode[]) => {
-    // Only fetch images if the number of visible nodes is manageable (LOD)
     if (visibleNodes.length <= 20) {
         visibleNodes.forEach(node => {
-            // Check if we need to fetch the image (not already fetched/fetching)
             if (!node.imageUrl && !node.fetchingImage) {
                 loadNodeImage(node.id);
             }

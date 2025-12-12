@@ -22,37 +22,35 @@ Return the data in strict JSON format.
 const getEnvApiKey = () => {
     let key = "";
     
-    // 1. Check process.env (Standard Node/CRA/Next.js)
+    // 1. Try import.meta.env (Vite standard)
     try {
-        if (typeof process !== 'undefined' && process.env) {
-            key = process.env.API_KEY || 
-                  process.env.NEXT_PUBLIC_API_KEY || 
-                  process.env.REACT_APP_API_KEY || 
-                  process.env.VITE_API_KEY ||
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env) {
+            // @ts-ignore
+            key = import.meta.env.VITE_API_KEY || 
+                  // @ts-ignore
+                  import.meta.env.NEXT_PUBLIC_API_KEY || 
+                  // @ts-ignore
+                  import.meta.env.API_KEY ||
                   "";
         }
     } catch (e) {
-        // process is undefined
+        // import.meta ignored
     }
 
     if (key) return key;
 
-    // 2. Check import.meta.env (Vite standard)
+    // 2. Try process.env (Legacy/Webpack/Next.js)
     try {
-        // @ts-ignore
-        if (import.meta && import.meta.env) {
-            // @ts-ignore
-            key = import.meta.env.API_KEY || 
-                  // @ts-ignore
-                  import.meta.env.VITE_API_KEY || 
-                  // @ts-ignore
-                  import.meta.env.NEXT_PUBLIC_API_KEY || 
-                  // @ts-ignore
-                  import.meta.env.REACT_APP_API_KEY ||
+        if (typeof process !== 'undefined' && process.env) {
+            key = process.env.VITE_API_KEY || 
+                  process.env.NEXT_PUBLIC_API_KEY || 
+                  process.env.REACT_APP_API_KEY || 
+                  process.env.API_KEY || 
                   "";
         }
     } catch (e) {
-        // import.meta is undefined
+        // process ignored
     }
 
     return key;
@@ -60,7 +58,7 @@ const getEnvApiKey = () => {
 
 export const fetchConnections = async (nodeName: string): Promise<GeminiResponse> => {
   const apiKey = getEnvApiKey();
-  console.log("DEBUG: Initializing Gemini for fetchConnections. Key available:", !!apiKey);
+  console.log("DEBUG: Service calling Gemini with key present:", !!apiKey);
   
   const ai = new GoogleGenAI({ apiKey });
   try {
@@ -104,7 +102,6 @@ export const fetchConnections = async (nodeName: string): Promise<GeminiResponse
 
 export const fetchPersonWorks = async (personName: string): Promise<PersonWorksResponse> => {
   const apiKey = getEnvApiKey();
-  console.log("DEBUG: Initializing Gemini for fetchPersonWorks. Key available:", !!apiKey);
   const ai = new GoogleGenAI({ apiKey });
   try {
     const response = await ai.models.generateContent({
