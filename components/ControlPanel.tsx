@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Info, Github, HelpCircle, Minimize2, Maximize2, AlertCircle } from 'lucide-react';
+import { Search, Info, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Key } from 'lucide-react';
 
 interface ControlPanelProps {
   onSearch: (term: string) => void;
@@ -29,6 +29,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     }
   };
 
+  const handleChangeKey = () => {
+    if ((window as any).aistudio) {
+        (window as any).aistudio.openSelectKey();
+    }
+  };
+
   const EXAMPLES = [
     "The Godfather",
     "Watergate Scandal",
@@ -44,6 +50,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             Constellations
           </h1>
           <div className="flex gap-2">
+            <button
+              onClick={handleChangeKey}
+              className="text-slate-400 hover:text-yellow-400 transition-colors"
+              title="Change API Key"
+            >
+              <Key size={20} />
+            </button>
             <a 
               href="https://github.com" 
               target="_blank" 

@@ -1,8 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiResponse, PersonWorksResponse } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 const SYSTEM_INSTRUCTION = `
 You are a collaboration graph generator exploring history, pop culture, and current events.
 Your goal is to build a graph where Nodes are "Things" (Events, Projects, Movies, Battles, Administrations, Companies, etc.) and Edges are "People" who participated in both connected things.
@@ -21,6 +19,7 @@ Return the data in strict JSON format.
 `;
 
 export const fetchConnections = async (nodeName: string): Promise<GeminiResponse> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
@@ -61,6 +60,7 @@ export const fetchConnections = async (nodeName: string): Promise<GeminiResponse
 };
 
 export const fetchPersonWorks = async (personName: string): Promise<PersonWorksResponse> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
