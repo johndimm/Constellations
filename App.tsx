@@ -7,6 +7,47 @@ import { fetchConnections, fetchPersonWorks } from './services/geminiService';
 import { fetchWikipediaImage } from './services/wikipediaService';
 import { Key } from 'lucide-react';
 
+// Helper to safely retrieve key from various environment variable standards
+// supporting both process.env (Node/Webpack) and import.meta.env (Vite)
+const getEnvApiKey = () => {
+    let key = "";
+    
+    // 1. Check process.env (Standard Node/CRA/Next.js)
+    try {
+        if (typeof process !== 'undefined' && process.env) {
+            key = process.env.API_KEY || 
+                  process.env.NEXT_PUBLIC_API_KEY || 
+                  process.env.REACT_APP_API_KEY || 
+                  process.env.VITE_API_KEY ||
+                  "";
+        }
+    } catch (e) {
+        // process is undefined
+    }
+
+    if (key) return key;
+
+    // 2. Check import.meta.env (Vite standard)
+    try {
+        // @ts-ignore
+        if (import.meta && import.meta.env) {
+            // @ts-ignore
+            key = import.meta.env.API_KEY || 
+                  // @ts-ignore
+                  import.meta.env.VITE_API_KEY || 
+                  // @ts-ignore
+                  import.meta.env.NEXT_PUBLIC_API_KEY || 
+                  // @ts-ignore
+                  import.meta.env.REACT_APP_API_KEY ||
+                  "";
+        }
+    } catch (e) {
+        // import.meta is undefined
+    }
+
+    return key;
+};
+
 const App: React.FC = () => {
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [links, setLinks] = useState<GraphLink[]>([]);
@@ -21,25 +62,21 @@ const App: React.FC = () => {
   useEffect(() => {
     const checkKey = async () => {
       console.log("DEBUG: Checking API Key configuration...");
-      console.log("DEBUG: process.env.API_KEY value:", process.env.API_KEY);
+      
+      const envKey = getEnvApiKey();
+      console.log("DEBUG: Resolved Environment Key found:", !!envKey ? "YES (Hidden)" : "NO");
 
       // If running in an environment with the aistudio helper (Project IDX/AI Studio)
       if ((window as any).aistudio) {
         const hasKey = await (window as any).aistudio.hasSelectedApiKey();
         console.log("DEBUG: window.aistudio.hasSelectedApiKey() returned:", hasKey);
-        setIsKeyReady(hasKey);
+        setIsKeyReady(hasKey || !!envKey);
       } else {
-        // Fallback: If process.env.API_KEY appears to be set (e.g. local dev), proceed.
-        // We use a safe check in case process is undefined.
-        try {
-            if (process.env.API_KEY) {
-                console.log("DEBUG: API Key found in process.env");
-                setIsKeyReady(true);
-            } else {
-                console.warn("DEBUG: API Key NOT found in process.env");
-            }
-        } catch (e) {
-            // process not defined
+        if (envKey) {
+            console.log("DEBUG: Using Environment Variable Key");
+            setIsKeyReady(true);
+        } else {
+            console.warn("DEBUG: No API Key found. Checked process.env AND import.meta.env for API_KEY, NEXT_PUBLIC_API_KEY, REACT_APP_API_KEY, VITE_API_KEY.");
         }
       }
     };
