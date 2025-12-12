@@ -46,7 +46,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 w-full max-w-md pointer-events-none">
       <div className="bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-bold text-white">
+          <h1 className="text-xl font-bold text-red-500">
             Constellations
           </h1>
           <div className="flex gap-2">
