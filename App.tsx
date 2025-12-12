@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import { GraphNode, GraphLink } from './types';
 import { fetchConnections, fetchPersonWorks } from './services/geminiService';
 import { fetchWikipediaImage } from './services/wikipediaService';
+import { Key } from 'lucide-react';
 
 const App: React.FC = () => {
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -14,6 +15,44 @@ const App: React.FC = () => {
   const [isCompact, setIsCompact] = useState(false);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [error, setError] = useState<string | null>(null);
+  const [isKeyReady, setIsKeyReady] = useState(false);
+
+  // Check for API Key on mount
+  useEffect(() => {
+    const checkKey = async () => {
+      console.log("DEBUG: Checking API Key configuration...");
+      console.log("DEBUG: process.env.API_KEY value:", process.env.API_KEY);
+
+      // If running in an environment with the aistudio helper (Project IDX/AI Studio)
+      if ((window as any).aistudio) {
+        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+        console.log("DEBUG: window.aistudio.hasSelectedApiKey() returned:", hasKey);
+        setIsKeyReady(hasKey);
+      } else {
+        // Fallback: If process.env.API_KEY appears to be set (e.g. local dev), proceed.
+        // We use a safe check in case process is undefined.
+        try {
+            if (process.env.API_KEY) {
+                console.log("DEBUG: API Key found in process.env");
+                setIsKeyReady(true);
+            } else {
+                console.warn("DEBUG: API Key NOT found in process.env");
+            }
+        } catch (e) {
+            // process not defined
+        }
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleSelectKey = async () => {
+      if ((window as any).aistudio) {
+          await (window as any).aistudio.openSelectKey();
+          // Assume success per instructions regarding race conditions
+          setIsKeyReady(true);
+      }
+  };
 
   // Handle window resize
   useEffect(() => {
@@ -256,6 +295,29 @@ const App: React.FC = () => {
         });
     }
   }, [loadNodeImage]);
+
+  if (!isKeyReady) {
+    return (
+        <div className="flex flex-col items-center justify-center w-screen h-screen bg-slate-900 text-white space-y-6">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+                Constellations
+            </h1>
+            <p className="text-slate-400 text-center max-w-md px-4">
+                To explore the connections of history, you need to connect your Google AI Studio API key.
+            </p>
+            <button
+                onClick={handleSelectKey}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-medium transition-all hover:scale-105"
+            >
+                <Key size={20} />
+                <span>Select API Key</span>
+            </button>
+            <p className="text-xs text-slate-600 max-w-sm text-center">
+                This app uses the Gemini API. Your key is used locally and never stored on our servers.
+            </p>
+        </div>
+    );
+  }
 
   return (
     <div className="relative w-screen h-screen bg-slate-900">
