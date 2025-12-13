@@ -2,27 +2,20 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiResponse, PersonWorksResponse } from "../types";
 
 const SYSTEM_INSTRUCTION = `
-You are a collaboration graph generator exploring history, pop culture, and current events.
-Your goal is to build a graph where Nodes are "Things" (Events, Projects, Movies, Battles, Administrations, Companies, etc.) and Edges are "People" who participated in both connected things.
+You are a collaboration graph generator.
+Your goal is to build a graph where Nodes are "Things" (Events, Movies, Projects) AND "People".
 
-When the user provides a Node name (e.g., "The Godfather", "Watergate Scandal", "Trump's Second Administration"):
-1. Identify 12-15 distinct, high-impact people involved in that Node.
-   - For Movies: Actors, Director, Writer.
-   - For Political Administrations (especially "Trump's Second Administration"): List key cabinet nominees, appointees, and top advisors (e.g., Elon Musk, Vivek Ramaswamy, Susie Wiles, Marco Rubio, Pete Hegseth, Tulsi Gabbard).
-   - For Historical Events: Key figures, generals, leaders.
+Rules:
+1. If the Source is a "Thing" (Movie, Event), return distinct, high-impact **People** involved.
+2. If the Source is a "Person", return distinct **Things** (Events, Projects, Works) they are famous for with years.
+3. **Crucial**: Entities must be SPECIFIC named entities.
 
-2. For each person, identify ONE other specific, significant "Thing" (Node) they are famous for collaborating on or participating in.
-   - Crucial: The "connectedEntity" must be a specific named event/project/work/company (e.g., "SpaceX", "The Apprentice", "PayPal", "U.S. Senate", "Fox News").
-   - Provide a short 1-sentence description of the connected entity.
-
-Return the data in strict JSON format.
+Return strict JSON.
 `;
 
 // Helper to safely retrieve key from various environment variable standards
 const getEnvApiKey = () => {
     let key = "";
-    
-    // 1. Try import.meta.env (Vite standard)
     try {
         // @ts-ignore
         if (typeof import.meta !== 'undefined' && import.meta.env) {
@@ -34,13 +27,8 @@ const getEnvApiKey = () => {
                   import.meta.env.API_KEY ||
                   "";
         }
-    } catch (e) {
-        // import.meta ignored
-    }
-
+    } catch (e) {}
     if (key) return key;
-
-    // 2. Try process.env (Legacy/Webpack/Next.js)
     try {
         if (typeof process !== 'undefined' && process.env) {
             key = process.env.VITE_API_KEY || 
@@ -49,49 +37,47 @@ const getEnvApiKey = () => {
                   process.env.API_KEY || 
                   "";
         }
-    } catch (e) {
-        // process ignored
-    }
-
+    } catch (e) {}
     return key;
 };
 
 export const fetchConnections = async (nodeName: string): Promise<GeminiResponse> => {
   const apiKey = getEnvApiKey();
-  console.log("DEBUG [v3]: Service calling Gemini. Key present:", !!apiKey);
-  
   const ai = new GoogleGenAI({ apiKey });
+  
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `Find connections for the node: "${nodeName}"`,
+      contents: `Analyze: "${nodeName}".
+      1. Identify the 'year' it occurred/started (integer) if applicable (e.g. release year, event date).
+      2. Find 5-6 key people connected to it.`,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            connections: {
+            sourceYear: { type: Type.INTEGER, description: "Year of the source node" },
+            people: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  personName: { type: Type.STRING },
-                  personRole: { type: Type.STRING, description: "Role of the person in the specific connected entity" },
-                  connectedEntity: { type: Type.STRING, description: "The name of the other node" },
-                  connectedEntityType: { type: Type.STRING, description: "Type of the other node (e.g. Movie, Administration)" },
-                  entityDescription: { type: Type.STRING, description: "Short description of the connected entity" }
+                  name: { type: Type.STRING },
+                  role: { type: Type.STRING, description: "Role in the requested Source Node" },
+                  description: { type: Type.STRING, description: "Short 1-sentence bio" }
                 },
-                required: ["personName", "personRole", "connectedEntity", "connectedEntityType", "entityDescription"]
+                required: ["name", "role", "description"]
               }
             }
-          }
+          },
+          required: ["people"]
         }
       }
     });
 
     const text = response.text;
-    if (!text) return { connections: [] };
+    if (!text) return { people: [] };
     
     return JSON.parse(text) as GeminiResponse;
   } catch (error) {
@@ -100,13 +86,22 @@ export const fetchConnections = async (nodeName: string): Promise<GeminiResponse
   }
 };
 
-export const fetchPersonWorks = async (personName: string): Promise<PersonWorksResponse> => {
+export const fetchPersonWorks = async (personName: string, existingNodes: string[] = []): Promise<PersonWorksResponse> => {
   const apiKey = getEnvApiKey();
   const ai = new GoogleGenAI({ apiKey });
+  
+  const contextPrompt = existingNodes.length > 0 
+    ? `The user graph already contains these nodes connected to ${personName}: ${JSON.stringify(existingNodes)}. 
+       Return 6-8 significant movies, historical events, or projects.
+       Include the existing ones if relevant (to ensure correct metadata), plus new ones.`
+    : `List 6-8 DISTINCT, significant movies, historical events, or projects for "${personName}".`;
+
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `List 5 other significant movies, events, or projects that "${personName}" is famous for participating in. Do not include generic answers.`,
+      contents: `${contextPrompt}
+      Ensure each entry is a different entity. Do NOT duplicate entities.
+      Include specific year. Sort by year.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -117,15 +112,17 @@ export const fetchPersonWorks = async (personName: string): Promise<PersonWorksR
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  entity: { type: Type.STRING, description: "Name of the movie/event/project" },
-                  type: { type: Type.STRING, description: "Type (e.g. Movie, Battle)" },
-                  description: { type: Type.STRING, description: "Short description" },
-                  role: { type: Type.STRING, description: "Role the person played" }
+                  entity: { type: Type.STRING },
+                  type: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  role: { type: Type.STRING },
+                  year: { type: Type.INTEGER }
                 },
-                required: ["entity", "type", "description", "role"]
+                required: ["entity", "type", "description", "role", "year"]
               }
             }
-          }
+          },
+          required: ["works"]
         }
       }
     });
