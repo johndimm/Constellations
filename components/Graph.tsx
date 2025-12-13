@@ -29,6 +29,10 @@ const Graph: React.FC<GraphProps> = ({
   const zoomGroupRef = useRef<SVGGElement>(null);
   const simulationRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
+  
+  // Track previous data sizes to optimize simulation restarts
+  const prevNodesLen = useRef(nodes.length);
+  const prevLinksLen = useRef(links.length);
 
   // Helper functions for Drag
   function dragstarted(event: any, d: GraphNode) {
@@ -55,21 +59,21 @@ const Graph: React.FC<GraphProps> = ({
   }
 
   // Calculate dynamic dimensions for nodes
-  const getNodeDimensions = (node: GraphNode, isTimeline: boolean) => {
+  const getNodeDimensions = (node: GraphNode, isTimeline: boolean): { w: number, h: number, r: number, type: string } => {
       if (node.type === 'Person') {
-          return { w: 48, h: 48, r: 30, type: 'circle' }; // r is collision radius
+          return { w: 48, h: 48, r: 35, type: 'circle' }; // r is collision radius
       }
       
       // Events/Things
       if (isTimeline) {
           // Timeline Card Mode
-          const baseHeight = 60; // Title + Padding
+          const baseHeight = 80; // Title + Padding (Increased for readability)
           const imgHeight = node.imageUrl ? 100 : 0;
-          const descHeight = node.description ? 40 : 0;
+          const descHeight = node.description ? 50 : 0; // More room for description
           return { 
-              w: 180, 
+              w: 200, // Slightly wider
               h: baseHeight + imgHeight + descHeight, 
-              r: 100, // Large collision radius
+              r: 130, // Collision radius
               type: 'card' 
           };
       } else {
@@ -92,7 +96,8 @@ const Graph: React.FC<GraphProps> = ({
       
       for (let i = 1; i < words.length; i++) {
           const word = words[i];
-          if ((currentLine + " " + word).length * 7 < width) {
+          // Approx char width 8px for description font
+          if ((currentLine + " " + word).length * 8 < width) {
               currentLine += " " + word;
           } else {
               lines.push(currentLine);
@@ -111,7 +116,9 @@ const Graph: React.FC<GraphProps> = ({
       .force("link", d3.forceLink<GraphNode, GraphLink>(links).id(d => d.id).distance(100))
       .force("charge", d3.forceManyBody().strength(-300))
       .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collide", d3.forceCollide());
+      .velocityDecay(0.4); 
+
+    // Note: 'collide' force is added dynamically in the next useEffect
 
     simulationRef.current = simulation;
 
@@ -157,56 +164,65 @@ const Graph: React.FC<GraphProps> = ({
     const linkForce = simulation.force("link") as d3.ForceLink<GraphNode, GraphLink>;
     const chargeForce = simulation.force("charge") as d3.ForceManyBody<GraphNode>;
     const centerForce = simulation.force("center") as d3.ForceCenter<GraphNode>;
-    const collideForce = simulation.force("collide") as d3.ForceCollide<GraphNode>;
 
-    // Update Collision Radius dynamically
-    collideForce.radius(d => getNodeDimensions(d, isTimelineMode).r * 0.8);
+    // Unified Collision Force: Ensures People don't sit on top of Events
+    const collideForce = d3.forceCollide<GraphNode>()
+        .radius(d => getNodeDimensions(d, isTimelineMode).r + 5)
+        .strength(0.8)
+        .iterations(3);
+
+    // Remove old split forces if they existed
+    simulation.force("collidePeople", null);
+    simulation.force("collideEvents", null);
+    
+    // Apply unified collision
+    simulation.force("collide", collideForce);
 
     if (isTimelineMode) {
-        // --- Timeline Mode ---
+        // --- Timeline Mode (Ordinal Sequence) ---
         
-        const years = nodes.map(n => n.year).filter((y): y is number => y !== undefined);
-        let minYear = Math.min(...years);
-        let maxYear = Math.max(...years);
-        
-        if (years.length === 0) {
-            minYear = 1900;
-            maxYear = 2024;
-        } else {
-            const span = maxYear - minYear;
-            const pad = Math.max(span * 0.1, 5);
-            minYear -= pad;
-            maxYear += pad;
-        }
+        // 1. Identify and Sort Timeline Items
+        const timelineNodes = nodes
+            .filter(n => n.year !== undefined)
+            .sort((a, b) => ((a.year ?? 0) - (b.year ?? 0)) || a.id.localeCompare(b.id));
 
-        const xScale = d3.scaleLinear()
-            .domain([minYear, maxYear])
-            .range([-width * 1.5, width * 1.5]);
+        // 2. Map ID to Rank
+        const nodeIndexMap = new Map(timelineNodes.map((n, i) => [n.id, i]));
+        const itemSpacing = 240; // Horizontal spacing
+        const totalWidth = timelineNodes.length * itemSpacing;
+        const startX = -(totalWidth / 2) + (itemSpacing / 2); // Center the sequence
 
         // Disable center force to allow timeline spread
-        if (centerForce) centerForce.strength(0.02); 
-        if (chargeForce) chargeForce.strength(-200);
+        if (centerForce) centerForce.strength(0.01); 
+        if (chargeForce) chargeForce.strength(-300); // Stronger repulsion to clear space
 
         // Link Force: Loose enough to let people float
-        if (linkForce) linkForce.strength(0.3).distance(100); 
+        if (linkForce) linkForce.strength(0.15).distance(120); 
 
-        // X Force: Events locked to year, People float
+        // X Force: STRICT ORDINAL POSITIONING for events
         simulation.force("x", d3.forceX<GraphNode>((d) => {
-            if (d.year) return width / 2 + xScale(d.year);
-            return width / 2; 
+            if (nodeIndexMap.has(d.id)) {
+                const index = nodeIndexMap.get(d.id)!;
+                return width / 2 + startX + (index * itemSpacing);
+            }
+            return width / 2; // People loosely centered horizontally
         }).strength((d) => {
-            if (d.type === 'Person') return 0; // People float freely on X
-            return d.year ? 0.9 : 0.1; // Events strict
+            if (nodeIndexMap.has(d.id)) return 0.95; 
+            return 0.02; 
         }));
 
-        // Y Force: 
-        // Events -> Tight to Axis (height/2)
-        // People -> Loose, filling space
+        // Y Force: Zig-Zag for events, free flow for people
         simulation.force("y", d3.forceY<GraphNode>((d) => {
+             if (nodeIndexMap.has(d.id)) {
+                 const index = nodeIndexMap.get(d.id)!;
+                 // Alternating Up/Down offset to use vertical space
+                 const offset = (index % 2 === 0) ? -120 : 120;
+                 return (height / 2) + offset;
+             }
              return height / 2;
         }).strength((d) => {
-            if (d.type === 'Person') return 0.05; // Very weak, lets them be pushed by collision/links
-            return 0.8; // Events stay on line
+            if (nodeIndexMap.has(d.id)) return 1; // Strict Y lock
+            return 0.01; // People flow vertically very freely
         }));
 
     } else {
@@ -219,7 +235,7 @@ const Graph: React.FC<GraphProps> = ({
         simulation.force("y", null);
     }
 
-    simulation.alpha(1).restart();
+    simulation.alpha(0.3).restart();
   }, [isTimelineMode, isCompact, nodes, width, height]);
 
   // Update DOM & Styles
@@ -290,7 +306,7 @@ const Graph: React.FC<GraphProps> = ({
     
     defs.append("clipPath")
         .attr("id", d => `clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`)
-        .append("rect").attr("x", 0).attr("y", 0); // Attrs updated in style
+        .append("rect").attr("x", 0).attr("y", 0); 
 
     nodeEnter.append("image").style("pointer-events", "none").attr("preserveAspectRatio", "xMidYMid slice");
     
@@ -308,10 +324,9 @@ const Graph: React.FC<GraphProps> = ({
     nodeEnter.append("text")
         .attr("class", "node-desc")
         .attr("text-anchor", "middle")
-        .style("font-size", "8px")
         .style("font-family", "sans-serif")
         .style("pointer-events", "none")
-        .attr("fill", "#94a3b8");
+        .attr("fill", "#cbd5e1"); // Lighter color for better readability
 
     // Year Label
     nodeEnter.append("text")
@@ -344,6 +359,15 @@ const Graph: React.FC<GraphProps> = ({
     
     // We re-bind data to ensure updates
     allNodes.data(nodes, d => d.id);
+
+    // Z-INDEX SORT: Ensure People are drawn LAST (on top)
+    allNodes.sort((a, b) => {
+        const aIsPerson = a.type === 'Person';
+        const bIsPerson = b.type === 'Person';
+        if (aIsPerson && !bIsPerson) return 1;
+        if (!aIsPerson && bIsPerson) return -1;
+        return 0;
+    });
 
     allNodes.each(function(d) {
         const g = d3.select(this);
@@ -436,28 +460,29 @@ const Graph: React.FC<GraphProps> = ({
                 textY = d.imageUrl ? (-h/2 + 100 + 20) : -h/2 + 30;
                 
                 // Show Description
-                const descLines = wrapText(d.description || "", 25); // ~25 chars wide
+                const descLines = wrapText(d.description || "", 24); // ~24 chars wide
                 g.select(".node-desc")
                     .style("display", "block")
+                    .style("font-size", "11px") // Increased font size
+                    .style("font-weight", "400")
                     .attr("y", textY + 15)
-                    .selectAll("tspan").remove(); // Clear old
+                    .selectAll("tspan").remove(); 
                 
-                // Re-append tspans
                 const descText = g.select(".node-desc");
                 descLines.forEach((line, i) => {
                     descText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").text(line);
                 });
             } else if (dims.type === 'box') {
-                textY = 45; // Below box
+                textY = 45; 
             } else {
-                textY = 4; // Centered in pill
+                textY = 4;
             }
 
             g.select(".node-label")
                 .text(d.id)
                 .attr("y", textY)
                 .attr("dy", 0)
-                .style("font-size", dims.type === 'card' ? "12px" : "10px")
+                .style("font-size", dims.type === 'card' ? "13px" : "10px") // Slightly bigger title
                 .style("font-weight", dims.type === 'card' ? "bold" : "normal");
 
             g.select(".year-label")
@@ -484,7 +509,17 @@ const Graph: React.FC<GraphProps> = ({
 
     simulation.nodes(nodes);
     (simulation.force("link") as d3.ForceLink<GraphNode, GraphLink>).links(links);
-    simulation.alpha(1).restart();
+    
+    // Prevent violent restart if just metadata changed
+    const hasStructureChanged = nodes.length !== prevNodesLen.current || links.length !== prevLinksLen.current;
+    if (hasStructureChanged) {
+        simulation.alpha(1).restart();
+    } else {
+        simulation.alpha(0.3).restart();
+    }
+    
+    prevNodesLen.current = nodes.length;
+    prevLinksLen.current = links.length;
 
     // Axis Layer (Only create once)
     let axisGroup = container.select<SVGGElement>(".timeline-axis");
@@ -510,8 +545,8 @@ const Graph: React.FC<GraphProps> = ({
              if (years.length > 0) {
                  axisGroup.style("display", "block");
                  axisGroup.select("line")
-                      .attr("x1", -width * 2).attr("y1", height/2)
-                      .attr("x2", width * 3).attr("y2", height/2);
+                      .attr("x1", -width * 4).attr("y1", height/2) 
+                      .attr("x2", width * 4).attr("y2", height/2);
              }
         } else {
              axisGroup.style("display", "none");
