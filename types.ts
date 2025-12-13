@@ -1,10 +1,11 @@
 import { SimulationNodeDatum, SimulationLinkDatum } from 'd3';
 
 export interface GraphNode extends SimulationNodeDatum {
-  id: string; // The unique name of the event/project/thing
-  type: string; // e.g., 'Movie', 'Battle', 'School'
+  id: string; // The unique name of the event/project/thing/person
+  type: string; // 'Person', 'Movie', 'Battle', etc.
   description?: string;
   imageUrl?: string | null; // URL for the node image
+  year?: number; // Year of occurrence (for timeline view)
   expanded?: boolean; // Whether we have already fetched connections for this node
   isLoading?: boolean; // Visual state for fetching (connections)
   fetchingImage?: boolean; // State for fetching image
@@ -21,31 +22,38 @@ export interface GraphNode extends SimulationNodeDatum {
 export interface GraphLink extends SimulationLinkDatum<GraphNode> {
   source: string | GraphNode;
   target: string | GraphNode;
-  person: string; // The person connecting the nodes
-  role: string; // What they did (e.g., Director, General)
   id: string; // Unique link ID
-  imageUrl?: string | null; // URL for the person image
-  fetchingImage?: boolean; // State for fetching image
-  isExpanding?: boolean; // Visual state for fetching more works by this person
+  label?: string; // Role or connection description
 }
 
-export interface GeminiConnection {
-  personName: string;
-  personRole: string;
-  connectedEntity: string;
-  connectedEntityType: string;
-  entityDescription: string;
+export interface GeminiEntity {
+  name: string;
+  type: string;
+  description: string;
+  role: string; // Role in the parent connection
+}
+
+export interface GeminiPerson {
+  name: string;
+  role: string; // Role in the source node
+  description: string; // Brief bio
+  relatedNodes: GeminiEntity[];
 }
 
 export interface GeminiResponse {
-  connections: GeminiConnection[];
+  sourceYear?: number;
+  people: GeminiPerson[];
+}
+
+export interface PersonWork {
+  entity: string;
+  type: string;
+  description: string;
+  role: string;
+  year: number;
+  imageUrl?: string | null;
 }
 
 export interface PersonWorksResponse {
-  works: {
-    entity: string;
-    type: string;
-    description: string;
-    role: string;
-  }[];
+  works: PersonWork[];
 }

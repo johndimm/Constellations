@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Info, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Key } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Scissors, Calendar, Network } from 'lucide-react';
 
 interface ControlPanelProps {
   onSearch: (term: string) => void;
   isProcessing: boolean;
   isCompact: boolean;
   onToggleCompact: () => void;
+  isTimelineMode: boolean;
+  onToggleTimeline: () => void;
+  onPrune?: () => void;
   error?: string | null;
 }
 
@@ -14,24 +17,18 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   isProcessing,
   isCompact,
   onToggleCompact,
+  isTimelineMode,
+  onToggleTimeline,
+  onPrune,
   error
 }) => {
   const [input, setInput] = useState('');
   const [showHelp, setShowHelp] = useState(false);
 
-  // Clear input when search completes successfully (optional, but good UX)
-  // keeping input for now so user sees what they searched
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim()) {
       onSearch(input.trim());
-    }
-  };
-
-  const handleChangeKey = () => {
-    if ((window as any).aistudio) {
-        (window as any).aistudio.openSelectKey();
     }
   };
 
@@ -50,12 +47,35 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             Constellations
           </h1>
           <div className="flex gap-2">
-            <button
-              onClick={handleChangeKey}
-              className="text-slate-400 hover:text-yellow-400 transition-colors"
-              title="Change API Key"
+            <button 
+                onClick={onToggleTimeline}
+                className={`text-slate-400 transition-colors ${isTimelineMode ? 'text-amber-400' : 'hover:text-white'}`}
+                title={isTimelineMode ? "Switch to Graph View" : "Switch to Timeline View"}
             >
-              <Key size={20} />
+                {isTimelineMode ? <Network size={20} /> : <Calendar size={20} />}
+            </button>
+            <button 
+                onClick={onToggleCompact}
+                className="text-slate-400 hover:text-white transition-colors"
+                title={isCompact ? "Expand View" : "Compact View"}
+            >
+                {isCompact ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
+            </button>
+            {onPrune && (
+                <button 
+                    onClick={onPrune}
+                    className="text-slate-400 hover:text-red-400 transition-colors"
+                    title="Trim Isolated Nodes"
+                >
+                    <Scissors size={20} />
+                </button>
+            )}
+            <button 
+                onClick={() => setShowHelp(!showHelp)}
+                className="text-slate-400 hover:text-white transition-colors"
+                title="Help"
+            >
+                <HelpCircle size={20} />
             </button>
             <a 
               href="https://github.com" 
@@ -66,20 +86,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             >
               <Github size={20} />
             </a>
-            <button 
-                onClick={onToggleCompact}
-                className="text-slate-400 hover:text-white transition-colors"
-                title={isCompact ? "Expand View" : "Compact View"}
-            >
-                {isCompact ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
-            </button>
-            <button 
-                onClick={() => setShowHelp(!showHelp)}
-                className="text-slate-400 hover:text-white transition-colors"
-                title="Help"
-            >
-                <HelpCircle size={20} />
-            </button>
           </div>
         </div>
 
@@ -130,12 +136,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         <div className="bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto text-slate-300 text-sm space-y-2 animate-in fade-in slide-in-from-top-4">
           <p><strong className="text-white">How it works:</strong></p>
           <ul className="list-disc pl-4 space-y-1">
-            <li><strong>Nodes</strong> are events, movies, projects, battles, or schools.</li>
-            <li><strong>Edges</strong> (lines) are people connecting these nodes.</li>
-            <li>Click a node to discover more connections via the Gemini AI.</li>
-            <li>Click a person (on the line) to see other things they worked on.</li>
-            <li>Use the <strong>minimize</strong> button to pull nodes closer together.</li>
-            <li>Drag nodes to rearrange the graph.</li>
+            <li><strong>Events</strong> (Blue) connect to <strong>People</strong>.</li>
+            <li><strong>People</strong> (Gold) connect to their <strong>Works</strong>.</li>
+            <li>Click the <Calendar size={14} className="inline"/> icon to toggle Timeline Mode.</li>
+            <li>In Timeline Mode, events align by year along the x-axis.</li>
           </ul>
         </div>
       )}
