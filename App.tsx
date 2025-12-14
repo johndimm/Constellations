@@ -3,7 +3,7 @@ import Graph from './components/Graph';
 import ControlPanel from './components/ControlPanel';
 import Sidebar from './components/Sidebar';
 import { GraphNode, GraphLink } from './types';
-import { fetchConnections, fetchPersonWorks } from './services/geminiService';
+import { fetchConnections, fetchPersonWorks, classifyEntity } from './services/geminiService';
 import { fetchWikipediaImage } from './services/wikipediaService';
 import { Key } from 'lucide-react';
 
@@ -73,10 +73,20 @@ const App: React.FC = () => {
   }, []);
 
   const handleStartSearch = async (term: string) => {
+    setIsProcessing(true);
     setError(null);
+    
+    let type = 'Event';
+    try {
+        // Determine if it's a Person or a Thing (Event/Movie/etc)
+        type = await classifyEntity(term);
+    } catch (e) {
+        console.error("Classification error", e);
+    }
+    
     const startNode: GraphNode = {
       id: term,
-      type: 'Origin',
+      type: type, 
       description: 'The starting point of your journey.',
       x: dimensions.width / 2,
       y: dimensions.height / 2,
@@ -86,6 +96,7 @@ const App: React.FC = () => {
     setLinks([]);
     setSelectedNode(startNode);
     loadNodeImage(startNode.id);
+    
     await expandNode(startNode, true);
   };
 
@@ -104,8 +115,8 @@ const App: React.FC = () => {
           if (selectedNode && n.id === selectedNode.id) return true;
           // Keep nodes with more than 1 connection
           if ((linkCounts.get(n.id) || 0) > 1) return true;
-          // Keep Origin
-          if (n.type === 'Origin') return true;
+          // Keep Origin (if we used Origin type) or the very first node if possible, 
+          // but relying on selection or connections is usually enough.
           return false;
       });
 

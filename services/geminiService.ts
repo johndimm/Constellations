@@ -7,7 +7,7 @@ Your goal is to build a graph where Nodes are "Things" (Events, Movies, Projects
 
 Rules:
 1. If the Source is a "Thing" (Movie, Event), return distinct, high-impact **People** involved.
-2. If the Source is a "Person", return distinct **Things** (Events, Projects, Works) they are famous for with years.
+2. If the Source is a "Person", return distinct **Things** (Events, Projects, Works, Crimes, Battles) they are famous for with years.
 3. **Crucial**: Entities must be SPECIFIC named entities.
 
 Return strict JSON.
@@ -62,6 +62,40 @@ const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg: string): Prom
 
 const GEMINI_TIMEOUT_MS = 15000; // 15 seconds
 
+export const classifyEntity = async (term: string): Promise<string> => {
+  const apiKey = getEnvApiKey();
+  const ai = new GoogleGenAI({ apiKey });
+
+  try {
+    const apiCall = ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `Classify "${term}".
+      Return JSON with a "type" field.
+      If it is a specific Person (real, fictional, alias, criminal identity, e.g. "Zodiac Killer", "Jack the Ripper"), type = "Person".
+      If it is a Movie, Event, Book, Project, Place, Organization, or generic Concept, type = "Event".`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            type: { type: Type.STRING, enum: ["Person", "Event"] }
+          },
+          required: ["type"]
+        }
+      }
+    });
+
+    const response = await withTimeout<GenerateContentResponse>(apiCall, 5000, "Classification timed out");
+    const text = response.text;
+    if (!text) return 'Event';
+    const json = JSON.parse(text);
+    return json.type;
+  } catch (error) {
+    console.warn("Classification failed, defaulting to Event:", error);
+    return 'Event';
+  }
+};
+
 export const fetchConnections = async (nodeName: string): Promise<GeminiResponse> => {
   const apiKey = getEnvApiKey();
   const ai = new GoogleGenAI({ apiKey });
@@ -115,9 +149,10 @@ export const fetchPersonWorks = async (personName: string, existingNodes: string
   
   const contextPrompt = existingNodes.length > 0 
     ? `The user graph already contains these nodes connected to ${personName}: ${JSON.stringify(existingNodes)}. 
-       Return 6-8 significant movies, historical events, or projects.
+       Return 6-8 significant movies, historical events, crimes, battles, or projects.
        Include the existing ones if relevant (to ensure correct metadata), plus new ones.`
-    : `List 6-8 DISTINCT, significant movies, historical events, or projects for "${personName}".`;
+    : `List 6-8 DISTINCT, significant movies, historical events, crimes, battles, or projects associated with "${personName}".
+       If the person is a criminal or historical figure known for specific acts, list those acts as events.`;
 
   try {
     const apiCall = ai.models.generateContent({

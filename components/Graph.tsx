@@ -67,13 +67,13 @@ const Graph: React.FC<GraphProps> = ({
       // Events/Things
       if (isTimeline) {
           // Timeline Card Mode
-          const baseHeight = 80; // Title + Padding
-          const imgHeight = node.imageUrl ? 100 : 0;
-          const descHeight = node.description ? 50 : 0; // More room for description
+          const baseHeight = 50; // Title + Padding
+          const imgHeight = node.imageUrl ? 120 : 0;
+          const descHeight = node.description ? 45 : 0; 
           return { 
-              w: 220, // Slightly wider for text
+              w: 220, 
               h: baseHeight + imgHeight + descHeight, 
-              r: 130, // Collision radius
+              r: 120, // Collision radius
               type: 'card' 
           };
       } else {
@@ -96,8 +96,8 @@ const Graph: React.FC<GraphProps> = ({
       
       for (let i = 1; i < words.length; i++) {
           const word = words[i];
-          // Approx char width 7.5px for description font
-          if ((currentLine + " " + word).length * 7.5 < width) {
+          // Approx char width 7px for description font
+          if ((currentLine + " " + word).length * 7 < width) {
               currentLine += " " + word;
           } else {
               lines.push(currentLine);
@@ -313,7 +313,7 @@ const Graph: React.FC<GraphProps> = ({
         .attr("text-anchor", "middle")
         .style("font-family", "sans-serif")
         .style("pointer-events", "none")
-        .attr("fill", "#e2e8f0");
+        .attr("fill", "#fff");
 
     nodeEnter.append("text")
         .attr("class", "year-label")
@@ -323,7 +323,7 @@ const Graph: React.FC<GraphProps> = ({
         .style("pointer-events", "none")
         .attr("fill", "#fbbf24");
 
-    // SPINNER: Added back
+    // SPINNER
     const spinner = nodeEnter.append("g").attr("class", "spinner-group").style("display", "none");
     spinner.append("circle")
         .attr("class", "spinner")
@@ -378,7 +378,7 @@ const Graph: React.FC<GraphProps> = ({
                 .attr("r", r)
                 .attr("fill", color)
                 .attr("stroke", isHovered ? "#f59e0b" : "#fff")
-                .style("opacity", (d.fetchingImage) ? 0.7 : 1); // Only dim for image fetching, spinner handles loading
+                .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
             g.select("image")
                 .style("display", d.imageUrl ? "block" : "none")
@@ -414,7 +414,7 @@ const Graph: React.FC<GraphProps> = ({
                 .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
             if (dims.type === 'card' && d.imageUrl) {
-                 const imgH = 100;
+                 const imgH = 120;
                  g.select("image")
                     .style("display", "block")
                     .attr("href", d.imageUrl)
@@ -446,12 +446,15 @@ const Graph: React.FC<GraphProps> = ({
 
             let textY = 0;
             if (dims.type === 'card') {
-                textY = d.imageUrl ? (-h/2 + 100 + 20) : -h/2 + 30;
+                const imgOffset = d.imageUrl ? 120 : 0;
+                // Start text below image
+                textY = -h/2 + imgOffset + 18; 
                 
-                const descLines = wrapText(d.description || "", 26);
+                // Wrap text for description (width 200px approx)
+                const descLines = wrapText(d.description || "", 190);
                 g.select(".node-desc")
                     .style("display", "block")
-                    .style("font-size", "11px") 
+                    .style("font-size", "12px") 
                     .style("font-weight", "500")
                     .attr("y", textY + 16)
                     .selectAll("tspan").remove(); 
@@ -479,7 +482,7 @@ const Graph: React.FC<GraphProps> = ({
                 .style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
         }
         
-        // Update Spinner Position and Visibility
+        // Update Spinner Position
         const spinnerR = (dims.type === 'circle' || dims.type === 'box') ? (dims.w / 2) + 8 : (dims.h / 2) + 10;
         g.select(".spinner-group")
             .style("display", showSpinner ? "block" : "none")

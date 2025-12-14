@@ -50,49 +50,59 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 w-full max-w-md pointer-events-none">
       <div className="bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-bold text-red-500">
+          <h1 className="text-xl font-bold text-red-500 mr-2">
             Constellations
           </h1>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-3">
             <button 
                 onClick={onToggleTimeline}
-                className={`text-slate-400 transition-colors ${isTimelineMode ? 'text-amber-400' : 'hover:text-white'}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all border ${
+                  isTimelineMode 
+                    ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400' 
+                    : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400 hover:text-amber-400'
+                }`}
                 title={isTimelineMode ? "Switch to Graph View" : "Switch to Timeline View"}
             >
-                {isTimelineMode ? <Network size={20} /> : <Calendar size={20} />}
+                {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
+                <span>{isTimelineMode ? "Graph" : "Timeline"}</span>
             </button>
-            <button 
-                onClick={onToggleCompact}
-                className="text-slate-400 hover:text-white transition-colors"
-                title={isCompact ? "Expand View" : "Compact View"}
-            >
-                {isCompact ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
-            </button>
-            {onPrune && (
+
+            <div className="h-5 w-px bg-slate-700"></div>
+
+            <div className="flex items-center gap-2">
                 <button 
-                    onClick={onPrune}
-                    className="text-slate-400 hover:text-red-400 transition-colors"
-                    title="Trim Isolated Nodes"
+                    onClick={onToggleCompact}
+                    className="text-slate-400 hover:text-white transition-colors p-1"
+                    title={isCompact ? "Expand View" : "Compact View"}
                 >
-                    <Scissors size={20} />
+                    {isCompact ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
                 </button>
-            )}
-            <button 
-                onClick={() => setShowHelp(!showHelp)}
-                className="text-slate-400 hover:text-white transition-colors"
-                title="Help"
-            >
-                <HelpCircle size={20} />
-            </button>
-            <a 
-              href="https://github.com/johndimm/Constellations" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-slate-400 hover:text-white transition-colors"
-              title="View on GitHub"
-            >
-              <Github size={20} />
-            </a>
+                {onPrune && (
+                    <button 
+                        onClick={onPrune}
+                        className="text-slate-400 hover:text-red-400 transition-colors p-1"
+                        title="Trim Isolated Nodes"
+                    >
+                        <Scissors size={18} />
+                    </button>
+                )}
+                <button 
+                    onClick={() => setShowHelp(!showHelp)}
+                    className="text-slate-400 hover:text-white transition-colors p-1"
+                    title="Help"
+                >
+                    <HelpCircle size={18} />
+                </button>
+                <a 
+                href="https://github.com/johndimm/Constellations" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-slate-400 hover:text-white transition-colors p-1"
+                title="View on GitHub"
+                >
+                <Github size={18} />
+                </a>
+            </div>
           </div>
         </div>
 
@@ -166,8 +176,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           <ul className="list-disc pl-4 space-y-1">
             <li><strong>Events</strong> (Blue) connect to <strong>People</strong>.</li>
             <li><strong>People</strong> (Gold) connect to their <strong>Works</strong>.</li>
-            <li>Click the <Calendar size={14} className="inline"/> icon to toggle Timeline Mode.</li>
-            <li>In Timeline Mode, events align by year along the x-axis.</li>
+            <li>Click the <strong className="text-amber-400">TIMELINE</strong> button to align events by year.</li>
+            <li>Double-click nodes to expand them further.</li>
           </ul>
         </div>
       )}
