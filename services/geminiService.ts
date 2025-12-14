@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { GeminiResponse, PersonWorksResponse } from "../types";
 
 const SYSTEM_INSTRUCTION = `
@@ -41,12 +41,33 @@ const getEnvApiKey = () => {
     return key;
 };
 
+// Helper to wrap promise with timeout
+const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> => {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(errorMsg));
+        }, ms);
+
+        promise
+            .then(value => {
+                clearTimeout(timer);
+                resolve(value);
+            })
+            .catch(reason => {
+                clearTimeout(timer);
+                reject(reason);
+            });
+    });
+};
+
+const GEMINI_TIMEOUT_MS = 15000; // 15 seconds
+
 export const fetchConnections = async (nodeName: string): Promise<GeminiResponse> => {
   const apiKey = getEnvApiKey();
   const ai = new GoogleGenAI({ apiKey });
   
   try {
-    const response = await ai.models.generateContent({
+    const apiCall = ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `Analyze: "${nodeName}".
       1. Identify the 'year' it occurred/started (integer) if applicable (e.g. release year, event date).
@@ -76,6 +97,8 @@ export const fetchConnections = async (nodeName: string): Promise<GeminiResponse
       }
     });
 
+    const response = await withTimeout<GenerateContentResponse>(apiCall, GEMINI_TIMEOUT_MS, "Gemini API request timed out");
+
     const text = response.text;
     if (!text) return { people: [] };
     
@@ -97,7 +120,7 @@ export const fetchPersonWorks = async (personName: string, existingNodes: string
     : `List 6-8 DISTINCT, significant movies, historical events, or projects for "${personName}".`;
 
   try {
-    const response = await ai.models.generateContent({
+    const apiCall = ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `${contextPrompt}
       Ensure each entry is a different entity. Do NOT duplicate entities.
@@ -126,6 +149,8 @@ export const fetchPersonWorks = async (personName: string, existingNodes: string
         }
       }
     });
+
+    const response = await withTimeout<GenerateContentResponse>(apiCall, GEMINI_TIMEOUT_MS, "Gemini API request timed out");
 
     const text = response.text;
     if (!text) return { works: [] };

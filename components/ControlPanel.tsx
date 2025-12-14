@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Scissors, Calendar, Network } from 'lucide-react';
+import { Search, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Scissors, Calendar, Network, X } from 'lucide-react';
 
 interface ControlPanelProps {
   onSearch: (term: string) => void;
@@ -24,12 +24,19 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 }) => {
   const [input, setInput] = useState('');
   const [showHelp, setShowHelp] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim()) {
       onSearch(input.trim());
+      setHasStarted(true);
     }
+  };
+
+  const handleClear = () => {
+    setInput('');
   };
 
   const EXAMPLES = [
@@ -78,7 +85,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 <HelpCircle size={20} />
             </button>
             <a 
-              href="https://github.com" 
+              href="https://github.com/johndimm/Constellations" 
               target="_blank" 
               rel="noopener noreferrer"
               className="text-slate-400 hover:text-white transition-colors"
@@ -89,46 +96,67 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="relative mb-4">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Enter an event (e.g., The Godfather)..."
-            className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-4 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all placeholder-slate-500"
-            disabled={isProcessing}
-          />
-          <Search className="absolute left-3 top-3.5 text-slate-400" size={18} />
-          <button 
-            type="submit"
-            disabled={isProcessing || !input.trim()}
-            className="absolute right-2 top-2 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isProcessing ? 'Exploring...' : 'Start'}
-          </button>
-        </form>
+        <div 
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+        >
+            <form onSubmit={handleSubmit} className="relative mb-4">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Enter an event (e.g., The Godfather)..."
+                className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-24 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all placeholder-slate-500"
+                disabled={isProcessing}
+              />
+              <Search className="absolute left-3 top-3.5 text-slate-400" size={18} />
+              
+              <div className="absolute right-2 top-2 flex items-center gap-2">
+                  {input && !isProcessing && (
+                    <button
+                        type="button"
+                        onClick={handleClear}
+                        className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-700/50 transition-colors"
+                        title="Clear search"
+                    >
+                        <X size={16} />
+                    </button>
+                  )}
+                  <button 
+                    type="submit"
+                    disabled={isProcessing || !input.trim()}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {isProcessing ? 'Exploring...' : 'Start'}
+                  </button>
+              </div>
+            </form>
 
-        {error && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-2 text-red-200 text-sm animate-in fade-in slide-in-from-top-2">
-                <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                <p>{error}</p>
-            </div>
-        )}
+            {error && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-2 text-red-200 text-sm animate-in fade-in slide-in-from-top-2">
+                    <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                    <p>{error}</p>
+                </div>
+            )}
 
-        <div className="flex flex-wrap gap-2">
-            {EXAMPLES.map(ex => (
-                <button
-                    key={ex}
-                    onClick={() => {
-                        setInput(ex);
-                        onSearch(ex);
-                    }}
-                    disabled={isProcessing}
-                    className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-full border border-slate-700 transition-colors disabled:opacity-50 hover:border-slate-500 hover:text-white text-left"
-                >
-                    {ex}
-                </button>
-            ))}
+            {(!hasStarted || isHovered) && (
+                <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                    {EXAMPLES.map(ex => (
+                        <button
+                            key={ex}
+                            onClick={() => {
+                                setInput(ex);
+                                onSearch(ex);
+                                setHasStarted(true);
+                            }}
+                            disabled={isProcessing}
+                            className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-full border border-slate-700 transition-colors disabled:opacity-50 hover:border-slate-500 hover:text-white text-left"
+                        >
+                            {ex}
+                        </button>
+                    ))}
+                </div>
+            )}
         </div>
       </div>
 

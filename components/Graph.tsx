@@ -67,11 +67,11 @@ const Graph: React.FC<GraphProps> = ({
       // Events/Things
       if (isTimeline) {
           // Timeline Card Mode
-          const baseHeight = 80; // Title + Padding (Increased for readability)
+          const baseHeight = 80; // Title + Padding
           const imgHeight = node.imageUrl ? 100 : 0;
           const descHeight = node.description ? 50 : 0; // More room for description
           return { 
-              w: 200, // Slightly wider
+              w: 220, // Slightly wider for text
               h: baseHeight + imgHeight + descHeight, 
               r: 130, // Collision radius
               type: 'card' 
@@ -96,8 +96,8 @@ const Graph: React.FC<GraphProps> = ({
       
       for (let i = 1; i < words.length; i++) {
           const word = words[i];
-          // Approx char width 8px for description font
-          if ((currentLine + " " + word).length * 8 < width) {
+          // Approx char width 7.5px for description font
+          if ((currentLine + " " + word).length * 7.5 < width) {
               currentLine += " " + word;
           } else {
               lines.push(currentLine);
@@ -117,8 +117,6 @@ const Graph: React.FC<GraphProps> = ({
       .force("charge", d3.forceManyBody().strength(-300))
       .force("center", d3.forceCenter(width / 2, height / 2))
       .velocityDecay(0.4); 
-
-    // Note: 'collide' force is added dynamically in the next useEffect
 
     simulationRef.current = simulation;
 
@@ -165,28 +163,21 @@ const Graph: React.FC<GraphProps> = ({
     const chargeForce = simulation.force("charge") as d3.ForceManyBody<GraphNode>;
     const centerForce = simulation.force("center") as d3.ForceCenter<GraphNode>;
 
-    // Unified Collision Force: Ensures People don't sit on top of Events
     const collideForce = d3.forceCollide<GraphNode>()
         .radius(d => getNodeDimensions(d, isTimelineMode).r + 5)
         .strength(0.8)
         .iterations(3);
 
-    // Remove old split forces if they existed
     simulation.force("collidePeople", null);
     simulation.force("collideEvents", null);
-    
-    // Apply unified collision
     simulation.force("collide", collideForce);
 
     if (isTimelineMode) {
         // --- Timeline Mode (Ordinal Sequence) ---
-        
-        // 1. Identify and Sort Timeline Items
         const timelineNodes = nodes
             .filter(n => n.year !== undefined)
             .sort((a, b) => (Number(a.year ?? 0) - Number(b.year ?? 0)) || a.id.localeCompare(b.id));
 
-        // 2. Map ID to Rank
         const nodeIndexMap = new Map<string, number>(
             timelineNodes.map((n, i) => [n.id, i] as [string, number])
         );
@@ -194,37 +185,33 @@ const Graph: React.FC<GraphProps> = ({
         const totalWidth = timelineNodes.length * itemSpacing;
         const startX = -(totalWidth / 2) + (itemSpacing / 2); // Center the sequence
 
-        // Disable center force to allow timeline spread
         if (centerForce) centerForce.strength(0.01); 
-        if (chargeForce) chargeForce.strength(-300); // Stronger repulsion to clear space
+        if (chargeForce) chargeForce.strength(-300);
 
-        // Link Force: Loose enough to let people float
         if (linkForce) linkForce.strength(0.15).distance(120); 
 
-        // X Force: STRICT ORDINAL POSITIONING for events
         simulation.force("x", d3.forceX<GraphNode>((d) => {
             if (nodeIndexMap.has(d.id)) {
                 const index = nodeIndexMap.get(d.id)!;
                 return width / 2 + startX + (index * itemSpacing);
             }
-            return width / 2; // People loosely centered horizontally
+            return width / 2;
         }).strength((d) => {
             if (nodeIndexMap.has(d.id)) return 0.95; 
             return 0.02; 
         }));
 
-        // Y Force: Zig-Zag for events, free flow for people
         simulation.force("y", d3.forceY<GraphNode>((d) => {
              if (nodeIndexMap.has(d.id)) {
                  const index = nodeIndexMap.get(d.id)!;
-                 // Alternating Up/Down offset to use vertical space
+                 // Alternating Up/Down
                  const offset = (index % 2 === 0) ? -120 : 120;
                  return (height / 2) + offset;
              }
              return height / 2;
         }).strength((d) => {
-            if (nodeIndexMap.has(d.id)) return 1; // Strict Y lock
-            return 0.01; // People flow vertically very freely
+            if (nodeIndexMap.has(d.id)) return 1; 
+            return 0.01; 
         }));
 
     } else {
@@ -246,7 +233,7 @@ const Graph: React.FC<GraphProps> = ({
     const simulation = simulationRef.current;
     const container = d3.select(zoomGroupRef.current);
 
-    // Sync positions
+    // Sync positions from simulation
     const oldNodesMap = new Map<string, GraphNode>(simulation.nodes().map(n => [n.id, n]));
     nodes.forEach(node => {
         const old = oldNodesMap.get(node.id);
@@ -268,7 +255,7 @@ const Graph: React.FC<GraphProps> = ({
        if (nodeMap.has(tgtId)) link.target = nodeMap.get(tgtId)!;
     });
 
-    // --- DRAWING LINKS ---
+    // LINKS
     const linkSel = container.selectAll<SVGLineElement, GraphLink>(".link").data(links, d => d.id);
     linkSel.enter().insert("line", ".node")
         .attr("class", "link")
@@ -277,8 +264,11 @@ const Graph: React.FC<GraphProps> = ({
         .attr("stroke-width", 1.5);
     linkSel.exit().remove();
 
-    // --- DRAWING NODES ---
+    // NODES
+    // 1. Bind Data
     const nodeSel = container.selectAll<SVGGElement, GraphNode>(".node").data(nodes, d => d.id);
+    
+    // 2. Enter
     const nodeEnter = nodeSel.enter().append("g")
         .attr("class", "node")
         .call(d3.drag<SVGGElement, GraphNode>()
@@ -286,21 +276,18 @@ const Graph: React.FC<GraphProps> = ({
             .on("drag", dragged)
             .on("end", dragended));
 
-    // Structure for Person (Circle)
     nodeEnter.append("circle")
         .attr("class", "node-circle")
         .attr("stroke", "#fff")
         .attr("stroke-width", 2);
 
-    // Structure for Event (Rect)
     nodeEnter.append("rect")
         .attr("class", "node-rect")
-        .attr("rx", 12)
-        .attr("ry", 12)
+        .attr("rx", 0)
+        .attr("ry", 0)
         .attr("stroke", "#fff")
         .attr("stroke-width", 2);
 
-    // Image Clip Paths (Circle vs Rect)
     const defs = nodeEnter.append("defs");
     defs.append("clipPath")
         .attr("id", d => `clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`)
@@ -312,7 +299,6 @@ const Graph: React.FC<GraphProps> = ({
 
     nodeEnter.append("image").style("pointer-events", "none").attr("preserveAspectRatio", "xMidYMid slice");
     
-    // Labels
     nodeEnter.append("text")
         .attr("class", "node-label")
         .attr("text-anchor", "middle")
@@ -322,15 +308,13 @@ const Graph: React.FC<GraphProps> = ({
         .style("text-shadow", "0 1px 2px rgba(0,0,0,0.8)")
         .attr("fill", "#e2e8f0");
     
-    // Description (Event Timeline only)
     nodeEnter.append("text")
         .attr("class", "node-desc")
         .attr("text-anchor", "middle")
         .style("font-family", "sans-serif")
         .style("pointer-events", "none")
-        .attr("fill", "#cbd5e1"); // Lighter color for better readability
+        .attr("fill", "#e2e8f0");
 
-    // Year Label
     nodeEnter.append("text")
         .attr("class", "year-label")
         .attr("text-anchor", "middle")
@@ -339,13 +323,16 @@ const Graph: React.FC<GraphProps> = ({
         .style("pointer-events", "none")
         .attr("fill", "#fbbf24");
 
+    // SPINNER: Added back
     const spinner = nodeEnter.append("g").attr("class", "spinner-group").style("display", "none");
     spinner.append("circle")
         .attr("class", "spinner")
         .attr("fill", "none")
-        .attr("stroke", "#6366f1")
-        .attr("stroke-width", 2)
-        .attr("stroke-dasharray", "4 4");
+        .attr("stroke", "#a78bfa") // purple-400
+        .attr("stroke-width", 3)
+        .attr("stroke-dasharray", "10 15")
+        .attr("stroke-linecap", "round");
+    
     spinner.append("animateTransform")
          .attr("attributeName", "transform")
          .attr("type", "rotate")
@@ -354,15 +341,13 @@ const Graph: React.FC<GraphProps> = ({
          .attr("dur", "2s")
          .attr("repeatCount", "indefinite");
 
+    // 3. Exit
     nodeSel.exit().remove();
 
-    // --- UPDATING VISUALS (The heavy lifting) ---
-    const allNodes = container.selectAll<SVGGElement, GraphNode>(".node");
+    // 4. Update (Enter + Update)
+    const allNodes = nodeEnter.merge(nodeSel);
     
-    // We re-bind data to ensure updates
-    allNodes.data(nodes, d => d.id);
-
-    // Z-INDEX SORT: Ensure People are drawn LAST (on top)
+    // Sort logic to keep people on top
     allNodes.sort((a, b) => {
         const aIsPerson = a.type === 'Person';
         const bIsPerson = b.type === 'Person';
@@ -381,24 +366,28 @@ const Graph: React.FC<GraphProps> = ({
         g.select(".node-circle").style("display", "none");
         g.select(".node-rect").style("display", "none");
         g.select(".node-desc").style("display", "none");
+        g.select(".spinner-group").style("display", "none");
+
+        // Determine spinner state
+        const showSpinner = d.isLoading;
         
-        // --- PERSON RENDER ---
         if (dims.type === 'circle') {
             const r = dims.w / 2;
             g.select(".node-circle")
                 .style("display", "block")
                 .attr("r", r)
                 .attr("fill", color)
-                .attr("stroke", isHovered ? "#f59e0b" : "#fff");
+                .attr("stroke", isHovered ? "#f59e0b" : "#fff")
+                .style("opacity", (d.fetchingImage) ? 0.7 : 1); // Only dim for image fetching, spinner handles loading
 
             g.select("image")
                 .style("display", d.imageUrl ? "block" : "none")
                 .attr("href", d.imageUrl || "")
                 .attr("x", -r).attr("y", -r)
                 .attr("width", r * 2).attr("height", r * 2)
-                .attr("clip-path", `url(#clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`);
+                .attr("clip-path", `url(#clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`)
+                .style("opacity", (d.fetchingImage) ? 0.7 : 1);
             
-            // Clip Update
             g.select(`#clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("circle").attr("r", r);
 
             g.select(".node-label")
@@ -412,9 +401,7 @@ const Graph: React.FC<GraphProps> = ({
                 .attr("y", -r - 10)
                 .style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
 
-        } 
-        // --- EVENT RENDER ---
-        else {
+        } else {
             const w = dims.w;
             const h = dims.h;
             
@@ -423,9 +410,9 @@ const Graph: React.FC<GraphProps> = ({
                 .attr("width", w).attr("height", h)
                 .attr("x", -w/2).attr("y", -h/2)
                 .attr("fill", color)
-                .attr("stroke", isHovered ? "#f59e0b" : "#fff");
+                .attr("stroke", isHovered ? "#f59e0b" : "#fff")
+                .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
-            // Image handling for Event
             if (dims.type === 'card' && d.imageUrl) {
                  const imgH = 100;
                  g.select("image")
@@ -433,41 +420,40 @@ const Graph: React.FC<GraphProps> = ({
                     .attr("href", d.imageUrl)
                     .attr("x", -w/2).attr("y", -h/2)
                     .attr("width", w).attr("height", imgH)
-                    .attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`);
+                    .attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`)
+                    .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
-                 // Update clip rect
                  g.select(`#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("rect")
                     .attr("x", -w/2).attr("y", -h/2)
                     .attr("width", w).attr("height", imgH)
-                    .attr("rx", 10);
+                    .attr("rx", 0);
             } else if (dims.type === 'box' && d.imageUrl) {
                  g.select("image")
                     .style("display", "block")
                     .attr("href", d.imageUrl)
                     .attr("x", -w/2).attr("y", -h/2)
                     .attr("width", w).attr("height", h)
-                    .attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`);
+                    .attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`)
+                    .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
                  g.select(`#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("rect")
                     .attr("x", -w/2).attr("y", -h/2)
                     .attr("width", w).attr("height", h)
-                    .attr("rx", 10);
+                    .attr("rx", 0);
             } else {
                 g.select("image").style("display", "none");
             }
 
-            // Text Positioning
             let textY = 0;
             if (dims.type === 'card') {
                 textY = d.imageUrl ? (-h/2 + 100 + 20) : -h/2 + 30;
                 
-                // Show Description
-                const descLines = wrapText(d.description || "", 24); // ~24 chars wide
+                const descLines = wrapText(d.description || "", 26);
                 g.select(".node-desc")
                     .style("display", "block")
-                    .style("font-size", "11px") // Increased font size
-                    .style("font-weight", "400")
-                    .attr("y", textY + 15)
+                    .style("font-size", "11px") 
+                    .style("font-weight", "500")
+                    .attr("y", textY + 16)
                     .selectAll("tspan").remove(); 
                 
                 const descText = g.select(".node-desc");
@@ -484,7 +470,7 @@ const Graph: React.FC<GraphProps> = ({
                 .text(d.id)
                 .attr("y", textY)
                 .attr("dy", 0)
-                .style("font-size", dims.type === 'card' ? "13px" : "10px") // Slightly bigger title
+                .style("font-size", dims.type === 'card' ? "13px" : "10px")
                 .style("font-weight", dims.type === 'card' ? "bold" : "normal");
 
             g.select(".year-label")
@@ -493,13 +479,14 @@ const Graph: React.FC<GraphProps> = ({
                 .style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
         }
         
-        // Spinner always centers
+        // Update Spinner Position and Visibility
+        const spinnerR = (dims.type === 'circle' || dims.type === 'box') ? (dims.w / 2) + 8 : (dims.h / 2) + 10;
         g.select(".spinner-group")
-            .style("display", (d.isLoading || d.fetchingImage) ? "block" : "none")
-            .select(".spinner").attr("r", 15);
+            .style("display", showSpinner ? "block" : "none")
+            .select(".spinner").attr("r", spinnerR);
     });
 
-    // RE-ATTACH CLICK LISTENERS
+    // Events
     allNodes
         .on("click", (event, d) => {
             if (event.defaultPrevented) return;
@@ -509,10 +496,10 @@ const Graph: React.FC<GraphProps> = ({
         .on("mouseover", (e, d) => setHoveredNode(d))
         .on("mouseout", () => setHoveredNode(null));
 
+    // Simulation restart
     simulation.nodes(nodes);
     (simulation.force("link") as d3.ForceLink<GraphNode, GraphLink>).links(links);
     
-    // Prevent violent restart if just metadata changed
     const hasStructureChanged = nodes.length !== prevNodesLen.current || links.length !== prevLinksLen.current;
     if (hasStructureChanged) {
         simulation.alpha(1).restart();
@@ -523,7 +510,6 @@ const Graph: React.FC<GraphProps> = ({
     prevNodesLen.current = nodes.length;
     prevLinksLen.current = links.length;
 
-    // Axis Layer (Only create once)
     let axisGroup = container.select<SVGGElement>(".timeline-axis");
     if (axisGroup.empty()) {
         axisGroup = container.insert("g", ":first-child").attr("class", "timeline-axis");

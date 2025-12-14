@@ -66,9 +66,9 @@ const App: React.FC = () => {
     setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n));
     const url = await fetchWikipediaImage(nodeId);
     if (url) {
-      setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false } : { ...n, fetchingImage: false }));
+      setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n));
     } else {
-      setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: false } : n));
+      setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: false, imageChecked: true } : n));
     }
   }, []);
 
@@ -237,15 +237,23 @@ const App: React.FC = () => {
       // Apply updates in a single batch
       setNodes(prev => {
          const nextNodes = prev.map(n => {
-             // Apply specific updates
+             // 1. Check if this is the source node being expanded
+             if (n.id === node.id) {
+                 // Force isLoading: false and expanded: true
+                 // Also apply any other updates (like year) if they exist in the map
+                 return { 
+                    ...n, 
+                    ...(nodeUpdates.get(n.id) || {}), 
+                    isLoading: false, 
+                    expanded: true 
+                 };
+             }
+
+             // 2. Apply updates to other nodes (e.g. year updates for neighbors)
              if (nodeUpdates.has(n.id)) {
-                 // Merge existing updates
                  return { ...n, ...nodeUpdates.get(n.id) };
              }
-             // Always ensure source node is marked done
-             if (n.id === node.id) {
-                 return { ...n, isLoading: false, expanded: true, ...nodeUpdates.get(n.id) };
-             }
+             
              return n;
          });
          return [...nextNodes, ...newNodes];
@@ -279,7 +287,8 @@ const App: React.FC = () => {
   const handleViewportChange = useCallback((visibleNodes: GraphNode[]) => {
     if (visibleNodes.length <= 15) {
         visibleNodes.forEach((node, index) => {
-            if (!node.imageUrl && !node.fetchingImage) {
+            // Check if image is missing AND we haven't checked it yet AND not currently fetching
+            if (!node.imageUrl && !node.fetchingImage && !node.imageChecked) {
                  setTimeout(() => {
                     loadNodeImage(node.id);
                  }, 200 * index);
