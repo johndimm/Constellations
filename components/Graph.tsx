@@ -184,10 +184,12 @@ const Graph: React.FC<GraphProps> = ({
         // 1. Identify and Sort Timeline Items
         const timelineNodes = nodes
             .filter(n => n.year !== undefined)
-            .sort((a, b) => ((a.year ?? 0) - (b.year ?? 0)) || a.id.localeCompare(b.id));
+            .sort((a, b) => (Number(a.year ?? 0) - Number(b.year ?? 0)) || a.id.localeCompare(b.id));
 
         // 2. Map ID to Rank
-        const nodeIndexMap = new Map(timelineNodes.map((n, i) => [n.id, i]));
+        const nodeIndexMap = new Map<string, number>(
+            timelineNodes.map((n, i) => [n.id, i] as [string, number])
+        );
         const itemSpacing = 240; // Horizontal spacing
         const totalWidth = timelineNodes.length * itemSpacing;
         const startX = -(totalWidth / 2) + (itemSpacing / 2); // Center the sequence
