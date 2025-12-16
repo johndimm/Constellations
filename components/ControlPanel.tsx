@@ -42,6 +42,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const EXAMPLES = [
     "The Godfather",
     "Watergate Scandal",
+    "Zodiac Killer",
     "Trump's Second Administration",
     "The Manhattan Project"
   ];
