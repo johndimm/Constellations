@@ -255,13 +255,18 @@ const Graph: React.FC<GraphProps> = ({
        if (nodeMap.has(tgtId)) link.target = nodeMap.get(tgtId)!;
     });
 
-    // LINKS
-    const linkSel = container.selectAll<SVGLineElement, GraphLink>(".link").data(links, d => d.id);
-    linkSel.enter().insert("line", ".node")
+    // LINKS (Using path for curves)
+    // Remove any old 'lines' if they exist from previous renders
+    container.selectAll("line.link").remove();
+
+    const linkSel = container.selectAll<SVGPathElement, GraphLink>(".link").data(links, d => d.id);
+    linkSel.enter().insert("path", ".node")
         .attr("class", "link")
-        .attr("stroke", "#475569")
-        .attr("stroke-opacity", 0.4)
-        .attr("stroke-width", 1.5);
+        .attr("fill", "none")
+        .attr("stroke", "#dc2626") // Heavy Red 600
+        .attr("stroke-opacity", 0.7)
+        .attr("stroke-width", 3.5)
+        .attr("stroke-linecap", "round");
     linkSel.exit().remove();
 
     // NODES
@@ -520,14 +525,29 @@ const Graph: React.FC<GraphProps> = ({
             .attr("stroke", "#64748b").attr("stroke-width", 1).attr("stroke-dasharray", "5,5");
     }
 
-    const allLinks = container.selectAll<SVGLineElement, GraphLink>(".link");
+    const allLinks = container.selectAll<SVGPathElement, GraphLink>(".link");
     
     simulation.on("tick", () => {
-        allLinks
-            .attr("x1", d => (d.source as GraphNode).x!)
-            .attr("y1", d => (d.source as GraphNode).y!)
-            .attr("x2", d => (d.target as GraphNode).x!)
-            .attr("y2", d => (d.target as GraphNode).y!);
+        allLinks.attr("d", d => {
+            const sx = (d.source as GraphNode).x!;
+            const sy = (d.source as GraphNode).y!;
+            const tx = (d.target as GraphNode).x!;
+            const ty = (d.target as GraphNode).y!;
+            
+            const dx = tx - sx;
+            const dy = ty - sy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            // "Gravity" Sag: 
+            // The longer the line, the more it sags.
+            // We add a positive Y offset to the control point.
+            const sag = dist * 0.15; // 15% of distance
+            
+            const midX = (sx + tx) / 2;
+            const midY = (sy + ty) / 2 + sag;
+            
+            return `M${sx},${sy} Q${midX},${midY} ${tx},${ty}`;
+        });
 
         allNodes.attr("transform", d => `translate(${d.x},${d.y})`);
         
