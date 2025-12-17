@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { GeminiResponse, PersonWorksResponse } from "../types";
+import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
 
 const SYSTEM_INSTRUCTION = `
 You are a collaboration graph generator.
@@ -197,4 +197,55 @@ export const fetchPersonWorks = async (personName: string, existingNodes: string
     console.error("Gemini API Error (Person Works):", error);
     throw error;
   }
+};
+
+export const fetchConnectionPath = async (start: string, end: string): Promise<PathResponse> => {
+    const apiKey = getEnvApiKey();
+    const ai = new GoogleGenAI({ apiKey });
+
+    try {
+        const apiCall = ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `Find a valid connection path between "${start}" and "${end}".
+            The path should be a sequence of entities (People, Events, Movies, Organizations) connecting the two.
+            Adjacent entities must be directly connected (e.g. Actor -> Movie -> Director -> Event -> Person).
+            Try to keep the path under 6 steps if possible (Six Degrees concept).
+            
+            Return the full sequence as an ordered list, starting with "${start}" and ending with "${end}".
+            For 'justification', explain the link to the PREVIOUS node in the chain.`,
+            config: {
+                systemInstruction: SYSTEM_INSTRUCTION,
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        path: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    id: { type: Type.STRING },
+                                    type: { type: Type.STRING },
+                                    description: { type: Type.STRING },
+                                    year: { type: Type.INTEGER },
+                                    justification: { type: Type.STRING, description: "Connection to the previous node" }
+                                },
+                                required: ["id", "type", "description", "justification"]
+                            }
+                        }
+                    },
+                    required: ["path"]
+                }
+            }
+        });
+
+        const response = await withTimeout<GenerateContentResponse>(apiCall, 20000, "Pathfinding timed out");
+        const text = response.text;
+        if (!text) return { path: [] };
+        return JSON.parse(text) as PathResponse;
+
+    } catch (error) {
+        console.error("Gemini API Error (Pathfinding):", error);
+        throw error;
+    }
 };
