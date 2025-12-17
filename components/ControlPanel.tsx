@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight } from 'lucide-react';
+import { Search, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type } from 'lucide-react';
 
 interface ControlPanelProps {
   searchMode: 'explore' | 'connect';
@@ -18,6 +18,8 @@ interface ControlPanelProps {
   onToggleCompact: () => void;
   isTimelineMode: boolean;
   onToggleTimeline: () => void;
+  isTextOnly: boolean;
+  onToggleTextOnly: () => void;
   onPrune?: () => void;
   error?: string | null;
 }
@@ -39,6 +41,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onToggleCompact,
   isTimelineMode,
   onToggleTimeline,
+  isTextOnly,
+  onToggleTextOnly,
   onPrune,
   error
 }) => {
@@ -91,6 +95,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             <div className="h-5 w-px bg-slate-700"></div>
 
             <div className="flex items-center gap-1">
+                <button 
+                    onClick={onToggleTextOnly}
+                    className={`transition-colors p-1 ${isTextOnly ? 'text-indigo-400' : 'text-slate-400 hover:text-white'}`}
+                    title={isTextOnly ? "Show Images" : "Text Only Mode"}
+                >
+                    <Type size={16} />
+                </button>
                 <button 
                     onClick={onToggleCompact}
                     className="text-slate-400 hover:text-white transition-colors p-1"
@@ -274,6 +285,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             <li><strong>People</strong> (Gold) connect to their <strong>Works</strong>.</li>
             <li>Switch to the <strong className="text-indigo-400">Connect</strong> tab to find a path between two people or events (Six Degrees style).</li>
             <li>Click the <strong className="text-amber-400">TIMELINE</strong> button to align events by year.</li>
+            <li>Click the <strong className="text-indigo-400">T</strong> button for text-only mode (faster, less clutter).</li>
           </ul>
         </div>
       )}

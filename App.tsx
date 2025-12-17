@@ -40,6 +40,7 @@ const App: React.FC = () => {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [isCompact, setIsCompact] = useState(false);
   const [isTimelineMode, setIsTimelineMode] = useState(false);
+  const [isTextOnly, setIsTextOnly] = useState(false);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [error, setError] = useState<string | null>(null);
   const [isKeyReady, setIsKeyReady] = useState(false);
@@ -77,6 +78,12 @@ const App: React.FC = () => {
   }, []);
 
   const loadNodeImage = useCallback(async (nodeId: string) => {
+    // If text only mode is on, we skip the fetch to save bandwidth, 
+    // but we can mark it as 'checked' so we don't retry immediately if toggled back
+    // or we can allow fetching but just hide it. 
+    // For "Vince" (Text Only), preventing the fetch is cleaner.
+    if (isTextOnly) return; 
+
     setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n));
     const url = await fetchWikipediaImage(nodeId);
     if (url) {
@@ -84,7 +91,7 @@ const App: React.FC = () => {
     } else {
       setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: false, imageChecked: true } : n));
     }
-  }, []);
+  }, [isTextOnly]);
 
   // Helper to find specific existing node ID if it matches fuzzily
   const resolveNodeId = useCallback((candidate: string, currentNodes: GraphNode[], pendingNodes: GraphNode[]) => {
@@ -436,7 +443,7 @@ const App: React.FC = () => {
   };
 
   const handleViewportChange = useCallback((visibleNodes: GraphNode[]) => {
-    if (visibleNodes.length <= 15) {
+    if (visibleNodes.length <= 15 && !isTextOnly) {
         visibleNodes.forEach((node, index) => {
             if (!node.imageUrl && !node.fetchingImage && !node.imageChecked) {
                  setTimeout(() => {
@@ -445,7 +452,7 @@ const App: React.FC = () => {
             }
         });
     }
-  }, [loadNodeImage]);
+  }, [loadNodeImage, isTextOnly]);
 
   if (!isKeyReady) {
     return (
@@ -471,6 +478,7 @@ const App: React.FC = () => {
         height={dimensions.height}
         isCompact={isCompact}
         isTimelineMode={isTimelineMode}
+        isTextOnly={isTextOnly}
       />
       
       <ControlPanel 
@@ -489,6 +497,8 @@ const App: React.FC = () => {
         onToggleCompact={() => setIsCompact(!isCompact)}
         isTimelineMode={isTimelineMode}
         onToggleTimeline={() => setIsTimelineMode(!isTimelineMode)}
+        isTextOnly={isTextOnly}
+        onToggleTextOnly={() => setIsTextOnly(!isTextOnly)}
         onPrune={handlePrune}
         error={error}
       />

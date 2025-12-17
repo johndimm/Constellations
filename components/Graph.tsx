@@ -12,6 +12,7 @@ interface GraphProps {
   height: number;
   isCompact?: boolean;
   isTimelineMode?: boolean;
+  isTextOnly?: boolean;
 }
 
 const Graph: React.FC<GraphProps> = ({ 
@@ -23,7 +24,8 @@ const Graph: React.FC<GraphProps> = ({
   width, 
   height,
   isCompact = false,
-  isTimelineMode = false
+  isTimelineMode = false,
+  isTextOnly = false
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomGroupRef = useRef<SVGGElement>(null);
@@ -59,7 +61,7 @@ const Graph: React.FC<GraphProps> = ({
   }
 
   // Calculate dynamic dimensions for nodes
-  const getNodeDimensions = (node: GraphNode, isTimeline: boolean): { w: number, h: number, r: number, type: string } => {
+  const getNodeDimensions = (node: GraphNode, isTimeline: boolean, textOnly: boolean): { w: number, h: number, r: number, type: string } => {
       if (node.type === 'Person') {
           return { w: 48, h: 48, r: 35, type: 'circle' }; // r is collision radius
       }
@@ -68,7 +70,7 @@ const Graph: React.FC<GraphProps> = ({
       if (isTimeline) {
           // Timeline Card Mode
           const baseHeight = 50; // Title + Padding
-          const imgHeight = node.imageUrl ? 120 : 0;
+          const imgHeight = (node.imageUrl && !textOnly) ? 120 : 0;
           const descHeight = node.description ? 45 : 0; 
           return { 
               w: 220, 
@@ -77,6 +79,12 @@ const Graph: React.FC<GraphProps> = ({
               type: 'card' 
           };
       } else {
+          // Text Only Mode -> Always 'pill' for events in Graph mode
+          if (textOnly) {
+              const textLen = (node.id.length * 8) + 24;
+              return { w: textLen, h: 32, r: textLen / 2 + 10, type: 'pill' };
+          }
+
           // Compact/Graph Mode
           if (node.imageUrl) {
                return { w: 60, h: 60, r: 40, type: 'box' };
@@ -164,7 +172,7 @@ const Graph: React.FC<GraphProps> = ({
     const centerForce = simulation.force("center") as d3.ForceCenter<GraphNode>;
 
     const collideForce = d3.forceCollide<GraphNode>()
-        .radius(d => getNodeDimensions(d, isTimelineMode).r + 5)
+        .radius(d => getNodeDimensions(d, isTimelineMode, isTextOnly).r + 5)
         .strength(0.8)
         .iterations(3);
 
@@ -225,7 +233,7 @@ const Graph: React.FC<GraphProps> = ({
     }
 
     simulation.alpha(0.3).restart();
-  }, [isTimelineMode, isCompact, nodes, width, height]);
+  }, [isTimelineMode, isCompact, nodes, width, height, isTextOnly]);
 
   // Update DOM & Styles
   useEffect(() => {
@@ -363,7 +371,7 @@ const Graph: React.FC<GraphProps> = ({
 
     allNodes.each(function(d) {
         const g = d3.select(this);
-        const dims = getNodeDimensions(d, isTimelineMode);
+        const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
         const isHovered = d.id === hoveredNode?.id;
         const color = getNodeColor(d.type);
 
@@ -385,8 +393,9 @@ const Graph: React.FC<GraphProps> = ({
                 .attr("stroke", isHovered ? "#f59e0b" : "#fff")
                 .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
+            // Hide image if TextOnly
             g.select("image")
-                .style("display", d.imageUrl ? "block" : "none")
+                .style("display", (d.imageUrl && !isTextOnly) ? "block" : "none")
                 .attr("href", d.imageUrl || "")
                 .attr("x", -r).attr("y", -r)
                 .attr("width", r * 2).attr("height", r * 2)
@@ -418,7 +427,7 @@ const Graph: React.FC<GraphProps> = ({
                 .attr("stroke", isHovered ? "#f59e0b" : "#fff")
                 .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
-            if (dims.type === 'card' && d.imageUrl) {
+            if (dims.type === 'card' && d.imageUrl && !isTextOnly) {
                  const imgH = 120;
                  g.select("image")
                     .style("display", "block")
@@ -432,7 +441,7 @@ const Graph: React.FC<GraphProps> = ({
                     .attr("x", -w/2).attr("y", -h/2)
                     .attr("width", w).attr("height", imgH)
                     .attr("rx", 0);
-            } else if (dims.type === 'box' && d.imageUrl) {
+            } else if (dims.type === 'box' && d.imageUrl && !isTextOnly) {
                  g.select("image")
                     .style("display", "block")
                     .attr("href", d.imageUrl)
@@ -451,7 +460,7 @@ const Graph: React.FC<GraphProps> = ({
 
             let textY = 0;
             if (dims.type === 'card') {
-                const imgOffset = d.imageUrl ? 120 : 0;
+                const imgOffset = (d.imageUrl && !isTextOnly) ? 120 : 0;
                 // Start text below image
                 textY = -h/2 + imgOffset + 18; 
                 
@@ -564,7 +573,7 @@ const Graph: React.FC<GraphProps> = ({
         }
     });
 
-  }, [nodes, links, isTimelineMode, width, height, hoveredNode, onNodeClick]);
+  }, [nodes, links, isTimelineMode, width, height, hoveredNode, onNodeClick, isTextOnly]);
 
   return (
     <svg 
