@@ -44,6 +44,12 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isKeyReady, setIsKeyReady] = useState(false);
 
+  // Search State Lifted
+  const [searchMode, setSearchMode] = useState<'explore' | 'connect'>('explore');
+  const [exploreTerm, setExploreTerm] = useState('');
+  const [pathStart, setPathStart] = useState('');
+  const [pathEnd, setPathEnd] = useState('');
+
   useEffect(() => {
     const checkKey = async () => {
       const envKey = getEnvApiKey();
@@ -129,13 +135,6 @@ const App: React.FC = () => {
       setIsProcessing(true);
       setError(null);
 
-      // If graph is empty, clear it just in case, or we can append.
-      // Let's clear for a clean path view, or append if user wants... 
-      // For a "Path" tool, usually clean slate is better unless we want to connect existing.
-      // But typically "Six Degrees" is a standalone query. Let's keep existing if we can, 
-      // but maybe focus on the path. 
-      // Decision: Append to existing graph if nodes exist, to allow building a mega-graph.
-      
       try {
           const pathData = await fetchConnectionPath(start, end);
           if (pathData.path.length < 2) {
@@ -149,8 +148,7 @@ const App: React.FC = () => {
           const nodeUpdates = new Map<string, Partial<GraphNode>>();
           
           let previousNodeId: string | null = null;
-          let previousJustification: string | null = null;
-
+          
           // Process the path chain
           for (let i = 0; i < pathData.path.length; i++) {
               const entity = pathData.path[i];
@@ -240,7 +238,6 @@ const App: React.FC = () => {
   };
 
   const handlePrune = () => {
-      // Remove leaf nodes (nodes with only 1 link) that are not the selected node
       const linkCounts = new Map<string, number>();
       links.forEach(l => {
           const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
@@ -271,7 +268,6 @@ const App: React.FC = () => {
   const expandNode = useCallback(async (node: GraphNode, isInitial = false) => {
     if (node.expanded || node.isLoading) return;
 
-    // Mark loading immediately
     setNodes(prev => prev.map(n => n.id === node.id ? { ...n, isLoading: true } : n));
     setIsProcessing(true);
     setError(null);
@@ -281,10 +277,7 @@ const App: React.FC = () => {
       let newLinks: GraphLink[] = [];
       const nodeUpdates = new Map<string, Partial<GraphNode>>();
 
-      // BRANCH LOGIC: PERSON vs THING
       if (node.type === 'Person') {
-          // 1. EXPAND PERSON -> TIMELINE WORKS
-          
           const neighborLinks = links.filter(l => 
             (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) || 
             (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
@@ -298,9 +291,7 @@ const App: React.FC = () => {
           const data = await fetchPersonWorks(node.id, neighborNames);
           
           data.works.forEach(work => {
-             // RESOLVE ID STRICTLY
              const resolvedId = resolveNodeId(work.entity, nodes, newNodes);
-
              const existingNode = nodes.find(n => n.id === resolvedId);
              const pendingNode = newNodes.find(n => n.id === resolvedId);
 
@@ -315,16 +306,11 @@ const App: React.FC = () => {
                  };
                  newNodes.push(newNode);
              } else {
-                 // Update year on existing node if missing
                  if (existingNode && !existingNode.year && work.year) {
                      nodeUpdates.set(existingNode.id, { year: work.year });
                  }
-                 if (pendingNode && !pendingNode.year && work.year) {
-                     pendingNode.year = work.year;
-                 }
              }
 
-             // Create Link (Label = Year)
              const linkId = `${node.id}-${resolvedId}`;
              const reverseLinkId = `${resolvedId}-${node.id}`;
              const linkExists = links.some(l => l.id === linkId || l.id === reverseLinkId) || 
@@ -341,7 +327,6 @@ const App: React.FC = () => {
           });
 
       } else {
-          // 2. EXPAND THING -> PEOPLE
           const data = await fetchConnections(node.id);
           
           if (data.sourceYear) {
@@ -356,13 +341,11 @@ const App: React.FC = () => {
                  setIsProcessing(false);
                  return;
             } else {
-                 // Just mark expanded
                  nodeUpdates.set(node.id, { ...nodeUpdates.get(node.id), isLoading: false, expanded: true });
             }
           } else {
               data.people.forEach((person) => {
                   const resolvedId = resolveNodeId(person.name, nodes, newNodes);
-
                   const existingNode = nodes.find(n => n.id === resolvedId);
                   const pendingNode = newNodes.find(n => n.id === resolvedId);
 
@@ -394,22 +377,17 @@ const App: React.FC = () => {
           }
       }
 
-      // Apply updates
       setNodes(prev => {
          const existingMap = new Map<string, GraphNode>(prev.map(n => [n.id, n] as [string, GraphNode]));
-         
-         // 1. Identify which 'newNodes' are actually collisions (race condition handling)
          const collisions = newNodes.filter(n => existingMap.has(n.id));
          const trulyNew = newNodes.filter(n => !existingMap.has(n.id));
          
-         // 2. Update existingMap with explicit updates
          nodeUpdates.forEach((updates, id) => {
              if (existingMap.has(id)) {
                  existingMap.set(id, { ...existingMap.get(id)!, ...updates });
              }
          });
          
-         // 3. Update existingMap with data from collisions
          collisions.forEach(col => {
              const ex = existingMap.get(col.id)!;
              const updated = { ...ex };
@@ -419,7 +397,6 @@ const App: React.FC = () => {
              if (changed) existingMap.set(col.id, updated);
          });
          
-         // 4. Update the source node
          if (existingMap.has(node.id)) {
              existingMap.set(node.id, { 
                  ...existingMap.get(node.id)!, 
@@ -427,7 +404,6 @@ const App: React.FC = () => {
                  expanded: true 
              });
          }
-         
          return [...Array.from(existingMap.values()), ...trulyNew];
       });
 
@@ -437,10 +413,7 @@ const App: React.FC = () => {
           return [...prev, ...trulyNewLinks];
       });
 
-      // Stagger image loads for truly new nodes
       newNodes.forEach((n, index) => {
-          // Optimistic check: only load if we think it's new. 
-          // Real check happens in loadNodeImage anyway.
           setTimeout(() => {
               loadNodeImage(n.id);
           }, 300 * (index + 1));
@@ -501,6 +474,14 @@ const App: React.FC = () => {
       />
       
       <ControlPanel 
+        searchMode={searchMode}
+        setSearchMode={setSearchMode}
+        exploreTerm={exploreTerm}
+        setExploreTerm={setExploreTerm}
+        pathStart={pathStart}
+        setPathStart={setPathStart}
+        pathEnd={pathEnd}
+        setPathEnd={setPathEnd}
         onSearch={handleStartSearch} 
         onPathSearch={handlePathSearch}
         isProcessing={isProcessing} 
@@ -514,6 +495,8 @@ const App: React.FC = () => {
       <Sidebar 
         selectedNode={selectedNode} 
         onClose={() => setSelectedNode(null)} 
+        onSetStart={(id) => { setPathStart(id); setSearchMode('connect'); }}
+        onSetEnd={(id) => { setPathEnd(id); setSearchMode('connect'); }}
       />
     </div>
   );

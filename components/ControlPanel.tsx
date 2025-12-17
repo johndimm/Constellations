@@ -2,6 +2,15 @@ import React, { useState } from 'react';
 import { Search, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight } from 'lucide-react';
 
 interface ControlPanelProps {
+  searchMode: 'explore' | 'connect';
+  setSearchMode: (mode: 'explore' | 'connect') => void;
+  exploreTerm: string;
+  setExploreTerm: (term: string) => void;
+  pathStart: string;
+  setPathStart: (term: string) => void;
+  pathEnd: string;
+  setPathEnd: (term: string) => void;
+
   onSearch: (term: string) => void;
   onPathSearch: (start: string, end: string) => void;
   isProcessing: boolean;
@@ -14,6 +23,15 @@ interface ControlPanelProps {
 }
 
 const ControlPanel: React.FC<ControlPanelProps> = ({ 
+  searchMode,
+  setSearchMode,
+  exploreTerm,
+  setExploreTerm,
+  pathStart,
+  setPathStart,
+  pathEnd,
+  setPathEnd,
+
   onSearch, 
   onPathSearch,
   isProcessing,
@@ -24,55 +42,43 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onPrune,
   error
 }) => {
-  const [mode, setMode] = useState<'explore' | 'connect'>('explore');
-  const [input, setInput] = useState('');
-  const [startInput, setStartInput] = useState('');
-  const [endInput, setEndInput] = useState('');
-  
   const [showHelp, setShowHelp] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (mode === 'explore') {
-        if (input.trim()) {
-            onSearch(input.trim());
+    if (searchMode === 'explore') {
+        if (exploreTerm.trim()) {
+            onSearch(exploreTerm.trim());
             setHasStarted(true);
         }
     } else {
-        if (startInput.trim() && endInput.trim()) {
-            onPathSearch(startInput.trim(), endInput.trim());
+        if (pathStart.trim() && pathEnd.trim()) {
+            onPathSearch(pathStart.trim(), pathEnd.trim());
             setHasStarted(true);
         }
     }
-  };
-
-  const handleClear = () => {
-    setInput('');
-    setStartInput('');
-    setEndInput('');
   };
 
   const EXAMPLES = [
     "The Godfather",
     "Watergate Scandal",
     "Zodiac Killer",
-    "Trump's Second Administration",
     "The Manhattan Project"
   ];
 
   return (
-    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 w-full max-w-md pointer-events-none">
+    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 w-full max-w-[22rem] pointer-events-none">
       <div className="bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-bold text-red-500 mr-2">
+          <h1 className="text-xl font-bold text-red-500 mr-2 truncate">
             Constellations
           </h1>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button 
                 onClick={onToggleTimeline}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all border ${
+                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all border ${
                   isTimelineMode 
                     ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400' 
                     : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400 hover:text-amber-400'
@@ -80,36 +86,17 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 title={isTimelineMode ? "Switch to Graph View" : "Switch to Timeline View"}
             >
                 {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
-                <span>{isTimelineMode ? "Graph" : "Timeline"}</span>
             </button>
 
             <div className="h-5 w-px bg-slate-700"></div>
 
-             {/* Mode Toggle */}
-            <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700">
-                <button
-                    onClick={() => setMode('explore')}
-                    className={`p-1.5 rounded-md transition-colors ${mode === 'explore' ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                    title="Explore Mode"
-                >
-                    <Search size={16} />
-                </button>
-                <button
-                    onClick={() => setMode('connect')}
-                    className={`p-1.5 rounded-md transition-colors ${mode === 'connect' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                    title="Connection Path Mode"
-                >
-                    <LinkIcon size={16} />
-                </button>
-            </div>
-
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
                 <button 
                     onClick={onToggleCompact}
                     className="text-slate-400 hover:text-white transition-colors p-1"
                     title={isCompact ? "Expand View" : "Compact View"}
                 >
-                    {isCompact ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
+                    {isCompact ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
                 </button>
                 {onPrune && (
                     <button 
@@ -117,7 +104,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         className="text-slate-400 hover:text-red-400 transition-colors p-1"
                         title="Trim Isolated Nodes"
                     >
-                        <Scissors size={18} />
+                        <Scissors size={16} />
                     </button>
                 )}
                 <button 
@@ -125,7 +112,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     className="text-slate-400 hover:text-white transition-colors p-1"
                     title="Help"
                 >
-                    <HelpCircle size={18} />
+                    <HelpCircle size={16} />
                 </button>
                 <a 
                 href="https://github.com/johndimm/Constellations" 
@@ -134,7 +121,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 className="text-slate-400 hover:text-white transition-colors p-1"
                 title="View on GitHub"
                 >
-                <Github size={18} />
+                <Github size={16} />
                 </a>
             </div>
           </div>
@@ -144,25 +131,43 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
+            {/* Explicit Tabs */}
+            <div className="flex border-b border-slate-700 mb-4">
+                <button
+                    onClick={() => setSearchMode('explore')}
+                    className={`flex-1 pb-2 text-sm font-medium transition-colors ${searchMode === 'explore' ? 'text-indigo-400 border-b-2 border-indigo-500' : 'text-slate-400 hover:text-slate-200'}`}
+                >
+                    <Search size={14} className="inline mr-1.5 mb-0.5" />
+                    Explore
+                </button>
+                <button
+                    onClick={() => setSearchMode('connect')}
+                    className={`flex-1 pb-2 text-sm font-medium transition-colors ${searchMode === 'connect' ? 'text-indigo-400 border-b-2 border-indigo-500' : 'text-slate-400 hover:text-slate-200'}`}
+                >
+                    <LinkIcon size={14} className="inline mr-1.5 mb-0.5" />
+                    Connect
+                </button>
+            </div>
+
             <form onSubmit={handleSubmit} className="relative mb-4 space-y-3">
-              {mode === 'explore' ? (
+              {searchMode === 'explore' ? (
                   <div className="relative">
                     <input
                         type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        placeholder="Enter an event (e.g., The Godfather)..."
-                        className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-10 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all placeholder-slate-500"
+                        value={exploreTerm}
+                        onChange={(e) => setExploreTerm(e.target.value)}
+                        placeholder="Enter an event..."
+                        className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-10 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all placeholder-slate-500 text-sm"
                         disabled={isProcessing}
                     />
-                    <Search className="absolute left-3 top-3.5 text-slate-400" size={18} />
-                    {input && !isProcessing && (
+                    <Search className="absolute left-3 top-3.5 text-slate-400" size={16} />
+                    {exploreTerm && !isProcessing && (
                         <button
                             type="button"
-                            onClick={() => setInput('')}
+                            onClick={() => setExploreTerm('')}
                             className="absolute right-3 top-3.5 text-slate-400 hover:text-white"
                         >
-                            <X size={16} />
+                            <X size={14} />
                         </button>
                     )}
                   </div>
@@ -171,13 +176,22 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       <div className="relative">
                         <input
                             type="text"
-                            value={startInput}
-                            onChange={(e) => setStartInput(e.target.value)}
+                            value={pathStart}
+                            onChange={(e) => setPathStart(e.target.value)}
                             placeholder="Start Person/Event..."
                             className="w-full bg-slate-800 border border-slate-600 text-white pl-9 pr-8 py-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm placeholder-slate-500"
                             disabled={isProcessing}
                         />
                         <div className="absolute left-3 top-3 w-2 h-2 rounded-full bg-indigo-500"></div>
+                        {pathStart && (
+                            <button
+                                type="button"
+                                onClick={() => setPathStart('')}
+                                className="absolute right-3 top-3 text-slate-400 hover:text-white"
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
                       </div>
                       
                       <div className="relative flex justify-center -my-2 z-10">
@@ -189,13 +203,22 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       <div className="relative">
                         <input
                             type="text"
-                            value={endInput}
-                            onChange={(e) => setEndInput(e.target.value)}
+                            value={pathEnd}
+                            onChange={(e) => setPathEnd(e.target.value)}
                             placeholder="End Person/Event..."
                             className="w-full bg-slate-800 border border-slate-600 text-white pl-9 pr-8 py-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm placeholder-slate-500"
                             disabled={isProcessing}
                         />
                          <div className="absolute left-3 top-3 w-2 h-2 rounded-full bg-red-500"></div>
+                         {pathEnd && (
+                            <button
+                                type="button"
+                                onClick={() => setPathEnd('')}
+                                className="absolute right-3 top-3 text-slate-400 hover:text-white"
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
                       </div>
                   </div>
               )}
@@ -203,14 +226,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               <div className="flex justify-end">
                   <button 
                     type="submit"
-                    disabled={isProcessing || (mode === 'explore' ? !input.trim() : (!startInput.trim() || !endInput.trim()))}
+                    disabled={isProcessing || (searchMode === 'explore' ? !exploreTerm.trim() : (!pathStart.trim() || !pathEnd.trim()))}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg hover:shadow-indigo-500/25 ${
                         isProcessing 
                         ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
                         : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white hover:scale-[1.02]'
                     }`}
                   >
-                    {isProcessing ? 'Processing...' : (mode === 'explore' ? 'Start Exploration' : 'Find Connection')}
+                    {isProcessing ? 'Processing...' : (searchMode === 'explore' ? 'Start Exploration' : 'Find Connection')}
                   </button>
               </div>
             </form>
@@ -222,13 +245,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 </div>
             )}
 
-            {mode === 'explore' && (!hasStarted || isHovered) && (
+            {searchMode === 'explore' && (!hasStarted || isHovered) && (
                 <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
                     {EXAMPLES.map(ex => (
                         <button
                             key={ex}
                             onClick={() => {
-                                setInput(ex);
+                                setExploreTerm(ex);
                                 onSearch(ex);
                                 setHasStarted(true);
                             }}
@@ -249,7 +272,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           <ul className="list-disc pl-4 space-y-1">
             <li><strong>Events</strong> (Blue) connect to <strong>People</strong>.</li>
             <li><strong>People</strong> (Gold) connect to their <strong>Works</strong>.</li>
-            <li>Use the <LinkIcon className="inline w-3 h-3" /> icon to find a path between two people or events (Six Degrees style).</li>
+            <li>Switch to the <strong className="text-indigo-400">Connect</strong> tab to find a path between two people or events (Six Degrees style).</li>
             <li>Click the <strong className="text-amber-400">TIMELINE</strong> button to align events by year.</li>
           </ul>
         </div>

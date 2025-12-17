@@ -1,13 +1,15 @@
 import React from 'react';
 import { GraphNode } from '../types';
-import { X, ExternalLink } from 'lucide-react';
+import { X, ExternalLink, ArrowRight, Flag, Target } from 'lucide-react';
 
 interface SidebarProps {
   selectedNode: GraphNode | null;
   onClose: () => void;
+  onSetStart: (id: string) => void;
+  onSetEnd: (id: string) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onSetStart, onSetEnd }) => {
   if (!selectedNode) return null;
 
   // Broaden check for "Person" to include various roles or simply exclude known non-person types
@@ -36,6 +38,27 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
             <p className="text-slate-300 text-sm leading-relaxed mt-1">{selectedNode.description}</p>
           </div>
         )}
+
+        {/* Pathfinding Actions */}
+        <div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2 block">Connect</span>
+            <div className="grid grid-cols-2 gap-2">
+                <button 
+                    onClick={() => onSetStart(selectedNode.id)}
+                    className="flex items-center justify-center gap-2 bg-indigo-900/50 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/50 py-2 rounded-lg text-xs font-medium transition-colors"
+                >
+                    <Flag size={14} />
+                    Set Start
+                </button>
+                <button 
+                    onClick={() => onSetEnd(selectedNode.id)}
+                    className="flex items-center justify-center gap-2 bg-red-900/50 hover:bg-red-800 text-red-200 border border-red-700/50 py-2 rounded-lg text-xs font-medium transition-colors"
+                >
+                    <Target size={14} />
+                    Set End
+                </button>
+            </div>
+        </div>
 
         {/* Action Buttons */}
         <div className="pt-4 border-t border-slate-800 flex flex-col gap-2">
