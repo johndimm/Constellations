@@ -539,15 +539,26 @@ const Graph: React.FC<GraphProps> = ({
 
   }, [nodes, links, isTimelineMode, width, height, hoveredNode, onNodeClick, isTextOnly]);
 
+  const pauseSimulation = () => {
+    simulationRef.current?.stop();
+  };
+
+  const resumeSimulation = () => {
+    simulationRef.current?.alpha(0.1).restart();
+  };
+
   return (
     <svg 
       ref={svgRef} 
       width={width} 
       height={height} 
       className="cursor-move bg-slate-900"
-      onMouseEnter={() => simulationRef.current?.stop()}
-      onMouseLeave={() => simulationRef.current?.alpha(0.1).restart()}
-      onMouseMove={() => simulationRef.current?.stop()}
+      onMouseEnter={pauseSimulation}
+      onMouseLeave={resumeSimulation}
+      onMouseMove={pauseSimulation}
+      onTouchStart={pauseSimulation}
+      onTouchMove={pauseSimulation}
+      onTouchEnd={resumeSimulation}
       onClick={() => setHoveredNode(null)}
     >
       <g ref={zoomGroupRef} />
