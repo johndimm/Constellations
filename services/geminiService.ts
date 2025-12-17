@@ -9,6 +9,8 @@ Rules:
 1. If the Source is a "Thing" (Movie, Event), return distinct, high-impact **People** involved.
 2. If the Source is a "Person", return distinct **Things** (Events, Projects, Works, Crimes, Battles) they are famous for with years.
 3. **Crucial**: Entities must be SPECIFIC named entities.
+4. **Formatting**: Omit leading "The" from Event/Project names unless part of a proper title (e.g., use "Great Depression" instead of "The Great Depression").
+5. Use Title Case for all names.
 
 Return strict JSON.
 `;
@@ -161,6 +163,7 @@ export const fetchPersonWorks = async (personName: string, existingNodes: string
       Ensure each entry is a different entity. Do NOT duplicate entities.
       Include specific year. Sort by year.`,
       config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
