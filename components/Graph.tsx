@@ -79,19 +79,9 @@ const Graph: React.FC<GraphProps> = ({
               type: 'card' 
           };
       } else {
-          // Text Only Mode -> Always 'pill' for events in Graph mode
-          if (textOnly) {
-              const textLen = (node.id.length * 8) + 24;
-              return { w: textLen, h: 32, r: textLen / 2 + 10, type: 'pill' };
-          }
-
-          // Compact/Graph Mode
-          if (node.imageUrl) {
-               return { w: 60, h: 60, r: 40, type: 'box' };
-          }
-          // Pill Mode
-          const textLen = (node.id.length * 8) + 24;
-          return { w: textLen, h: 32, r: textLen / 2 + 10, type: 'pill' };
+          // Graph Mode
+          // Square nodes for everything else, consistent with image nodes
+          return { w: 60, h: 60, r: 40, type: 'box' };
       }
   };
 
@@ -104,7 +94,6 @@ const Graph: React.FC<GraphProps> = ({
       
       for (let i = 1; i < words.length; i++) {
           const word = words[i];
-          // Approx char width 7px for description font
           if ((currentLine + " " + word).length * 7 < width) {
               currentLine += " " + word;
           } else {
@@ -181,7 +170,6 @@ const Graph: React.FC<GraphProps> = ({
     simulation.force("collide", collideForce);
 
     if (isTimelineMode) {
-        // --- Timeline Mode (Ordinal Sequence) ---
         const timelineNodes = nodes
             .filter(n => n.year !== undefined)
             .sort((a, b) => (Number(a.year ?? 0) - Number(b.year ?? 0)) || a.id.localeCompare(b.id));
@@ -189,13 +177,12 @@ const Graph: React.FC<GraphProps> = ({
         const nodeIndexMap = new Map<string, number>(
             timelineNodes.map((n, i) => [n.id, i] as [string, number])
         );
-        const itemSpacing = 240; // Horizontal spacing
+        const itemSpacing = 240; 
         const totalWidth = timelineNodes.length * itemSpacing;
-        const startX = -(totalWidth / 2) + (itemSpacing / 2); // Center the sequence
+        const startX = -(totalWidth / 2) + (itemSpacing / 2);
 
         if (centerForce) centerForce.strength(0.01); 
         if (chargeForce) chargeForce.strength(-300);
-
         if (linkForce) linkForce.strength(0.15).distance(120); 
 
         simulation.force("x", d3.forceX<GraphNode>((d) => {
@@ -212,7 +199,6 @@ const Graph: React.FC<GraphProps> = ({
         simulation.force("y", d3.forceY<GraphNode>((d) => {
              if (nodeIndexMap.has(d.id)) {
                  const index = nodeIndexMap.get(d.id)!;
-                 // Alternating Up/Down
                  const offset = (index % 2 === 0) ? -120 : 120;
                  return (height / 2) + offset;
              }
@@ -223,7 +209,6 @@ const Graph: React.FC<GraphProps> = ({
         }));
 
     } else {
-        // --- Graph Mode ---
         if (centerForce) centerForce.x(width / 2).y(height / 2).strength(0.8);
         if (chargeForce) chargeForce.strength(isCompact ? -200 : -600);
         if (linkForce) linkForce.strength(1).distance(isCompact ? 60 : 150);
@@ -241,7 +226,6 @@ const Graph: React.FC<GraphProps> = ({
     const simulation = simulationRef.current;
     const container = d3.select(zoomGroupRef.current);
 
-    // Sync positions from simulation
     const oldNodesMap = new Map<string, GraphNode>(simulation.nodes().map(n => [n.id, n]));
     nodes.forEach(node => {
         const old = oldNodesMap.get(node.id);
@@ -263,25 +247,20 @@ const Graph: React.FC<GraphProps> = ({
        if (nodeMap.has(tgtId)) link.target = nodeMap.get(tgtId)!;
     });
 
-    // LINKS (Using path for curves)
-    // Remove any old 'lines' if they exist from previous renders
     container.selectAll("line.link").remove();
 
     const linkSel = container.selectAll<SVGPathElement, GraphLink>(".link").data(links, d => d.id);
     linkSel.enter().insert("path", ".node")
         .attr("class", "link")
         .attr("fill", "none")
-        .attr("stroke", "#dc2626") // Heavy Red 600
+        .attr("stroke", "#dc2626") 
         .attr("stroke-opacity", 0.7)
         .attr("stroke-width", 3.5)
         .attr("stroke-linecap", "round");
     linkSel.exit().remove();
 
-    // NODES
-    // 1. Bind Data
     const nodeSel = container.selectAll<SVGGElement, GraphNode>(".node").data(nodes, d => d.id);
     
-    // 2. Enter
     const nodeEnter = nodeSel.enter().append("g")
         .attr("class", "node")
         .call(d3.drag<SVGGElement, GraphNode>()
@@ -336,12 +315,11 @@ const Graph: React.FC<GraphProps> = ({
         .style("pointer-events", "none")
         .attr("fill", "#fbbf24");
 
-    // SPINNER
     const spinner = nodeEnter.append("g").attr("class", "spinner-group").style("display", "none");
     spinner.append("circle")
         .attr("class", "spinner")
         .attr("fill", "none")
-        .attr("stroke", "#a78bfa") // purple-400
+        .attr("stroke", "#a78bfa") 
         .attr("stroke-width", 3)
         .attr("stroke-dasharray", "10 15")
         .attr("stroke-linecap", "round");
@@ -354,13 +332,10 @@ const Graph: React.FC<GraphProps> = ({
          .attr("dur", "2s")
          .attr("repeatCount", "indefinite");
 
-    // 3. Exit
     nodeSel.exit().remove();
 
-    // 4. Update (Enter + Update)
     const allNodes = nodeEnter.merge(nodeSel);
     
-    // Sort logic to keep people on top
     allNodes.sort((a, b) => {
         const aIsPerson = a.type === 'Person';
         const bIsPerson = b.type === 'Person';
@@ -375,13 +350,11 @@ const Graph: React.FC<GraphProps> = ({
         const isHovered = d.id === hoveredNode?.id;
         const color = getNodeColor(d.type);
 
-        // Reset visibility
         g.select(".node-circle").style("display", "none");
         g.select(".node-rect").style("display", "none");
         g.select(".node-desc").style("display", "none");
         g.select(".spinner-group").style("display", "none");
 
-        // Determine spinner state
         const showSpinner = d.isLoading;
         
         if (dims.type === 'circle') {
@@ -393,7 +366,6 @@ const Graph: React.FC<GraphProps> = ({
                 .attr("stroke", isHovered ? "#f59e0b" : "#fff")
                 .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
-            // Hide image if TextOnly
             g.select("image")
                 .style("display", (d.imageUrl && !isTextOnly) ? "block" : "none")
                 .attr("href", d.imageUrl || "")
@@ -461,10 +433,8 @@ const Graph: React.FC<GraphProps> = ({
             let textY = 0;
             if (dims.type === 'card') {
                 const imgOffset = (d.imageUrl && !isTextOnly) ? 120 : 0;
-                // Start text below image
                 textY = -h/2 + imgOffset + 18; 
                 
-                // Wrap text for description (width 200px approx)
                 const descLines = wrapText(d.description || "", 190);
                 g.select(".node-desc")
                     .style("display", "block")
@@ -496,14 +466,12 @@ const Graph: React.FC<GraphProps> = ({
                 .style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
         }
         
-        // Update Spinner Position
         const spinnerR = (dims.type === 'circle' || dims.type === 'box') ? (dims.w / 2) + 8 : (dims.h / 2) + 10;
         g.select(".spinner-group")
             .style("display", showSpinner ? "block" : "none")
             .select(".spinner").attr("r", spinnerR);
     });
 
-    // Events
     allNodes
         .on("click", (event, d) => {
             if (event.defaultPrevented) return;
@@ -513,7 +481,6 @@ const Graph: React.FC<GraphProps> = ({
         .on("mouseover", (e, d) => setHoveredNode(d))
         .on("mouseout", () => setHoveredNode(null));
 
-    // Simulation restart
     simulation.nodes(nodes);
     (simulation.force("link") as d3.ForceLink<GraphNode, GraphLink>).links(links);
     
@@ -547,10 +514,7 @@ const Graph: React.FC<GraphProps> = ({
             const dy = ty - sy;
             const dist = Math.sqrt(dx * dx + dy * dy);
             
-            // "Gravity" Sag: 
-            // The longer the line, the more it sags.
-            // We add a positive Y offset to the control point.
-            const sag = dist * 0.15; // 15% of distance
+            const sag = dist * 0.15; 
             
             const midX = (sx + tx) / 2;
             const midY = (sy + ty) / 2 + sag;
@@ -581,6 +545,9 @@ const Graph: React.FC<GraphProps> = ({
       width={width} 
       height={height} 
       className="cursor-move bg-slate-900"
+      onMouseEnter={() => simulationRef.current?.stop()}
+      onMouseLeave={() => simulationRef.current?.alpha(0.1).restart()}
+      onMouseMove={() => simulationRef.current?.stop()}
       onClick={() => setHoveredNode(null)}
     >
       <g ref={zoomGroupRef} />
