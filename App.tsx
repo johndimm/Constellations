@@ -3,7 +3,7 @@ import Graph from './components/Graph';
 import ControlPanel from './components/ControlPanel';
 import Sidebar from './components/Sidebar';
 import { GraphNode, GraphLink } from './types';
-import { fetchConnections, fetchPersonWorks, classifyEntity } from './services/geminiService';
+import { fetchConnections, fetchPersonWorks, classifyEntity, fetchConnectionPath } from './services/geminiService';
 import { fetchWikipediaImage } from './services/wikipediaService';
 import { Key } from 'lucide-react';
 
@@ -123,6 +123,120 @@ const App: React.FC = () => {
     loadNodeImage(startNode.id);
     
     await expandNode(startNode, true);
+  };
+
+  const handlePathSearch = async (start: string, end: string) => {
+      setIsProcessing(true);
+      setError(null);
+
+      // If graph is empty, clear it just in case, or we can append.
+      // Let's clear for a clean path view, or append if user wants... 
+      // For a "Path" tool, usually clean slate is better unless we want to connect existing.
+      // But typically "Six Degrees" is a standalone query. Let's keep existing if we can, 
+      // but maybe focus on the path. 
+      // Decision: Append to existing graph if nodes exist, to allow building a mega-graph.
+      
+      try {
+          const pathData = await fetchConnectionPath(start, end);
+          if (pathData.path.length < 2) {
+              setError("Could not find a valid path between these entities.");
+              setIsProcessing(false);
+              return;
+          }
+
+          let newNodes: GraphNode[] = [];
+          let newLinks: GraphLink[] = [];
+          const nodeUpdates = new Map<string, Partial<GraphNode>>();
+          
+          let previousNodeId: string | null = null;
+          let previousJustification: string | null = null;
+
+          // Process the path chain
+          for (let i = 0; i < pathData.path.length; i++) {
+              const entity = pathData.path[i];
+              // Resolve ID against current state AND the newNodes we are building in this loop
+              const resolvedId = resolveNodeId(entity.id, nodes, newNodes);
+
+              const existingNode = nodes.find(n => n.id === resolvedId);
+              const pendingNode = newNodes.find(n => n.id === resolvedId);
+
+              // Add Node if missing
+              if (!existingNode && !pendingNode) {
+                   const newNode: GraphNode = {
+                       id: resolvedId,
+                       type: entity.type,
+                       description: entity.description,
+                       year: entity.year,
+                       // Lay them out in a line roughly
+                       x: (dimensions.width / 2) + ((i - pathData.path.length/2) * 150),
+                       y: dimensions.height / 2 + (Math.random() * 50),
+                       expanded: true // Assume part of path is "explored"
+                   };
+                   newNodes.push(newNode);
+              } else {
+                  // Merge data
+                  if (existingNode && !existingNode.year && entity.year) {
+                      nodeUpdates.set(existingNode.id, { year: entity.year });
+                  }
+              }
+
+              // Link to previous
+              if (previousNodeId) {
+                   const linkId = `${previousNodeId}-${resolvedId}`;
+                   const reverseLinkId = `${resolvedId}-${previousNodeId}`;
+                   
+                   // Check link existence (including in newLinks)
+                   const linkExists = links.some(l => l.id === linkId || l.id === reverseLinkId) ||
+                                      newLinks.some(l => l.id === linkId || l.id === reverseLinkId);
+                   
+                   if (!linkExists) {
+                       newLinks.push({
+                           source: previousNodeId,
+                           target: resolvedId,
+                           id: linkId,
+                           label: entity.justification || "Connected"
+                       });
+                   }
+              }
+
+              previousNodeId = resolvedId;
+          }
+
+          // Apply updates (Reuse similar logic to expandNode)
+          setNodes(prev => {
+                const existingMap = new Map<string, GraphNode>(prev.map(n => [n.id, n] as [string, GraphNode]));
+                
+                // Add explicit updates
+                nodeUpdates.forEach((updates, id) => {
+                    if (existingMap.has(id)) {
+                        existingMap.set(id, { ...existingMap.get(id)!, ...updates });
+                    }
+                });
+
+                // Add new nodes (handling collision if resolveNodeId missed something subtle, though unlikely)
+                const trulyNew = newNodes.filter(n => !existingMap.has(n.id));
+                return [...Array.from(existingMap.values()), ...trulyNew];
+          });
+
+          setLinks(prev => [...prev, ...newLinks]);
+
+          // Trigger image loads
+          newNodes.forEach((n, index) => {
+              setTimeout(() => {
+                  loadNodeImage(n.id);
+              }, 300 * index);
+          });
+          
+          if (newNodes.length > 0) {
+              setSelectedNode(newNodes[0]);
+          }
+
+      } catch (err) {
+          console.error("Path search failed", err);
+          setError("Failed to generate a path. Try different entities.");
+      } finally {
+          setIsProcessing(false);
+      }
   };
 
   const handlePrune = () => {
@@ -388,6 +502,7 @@ const App: React.FC = () => {
       
       <ControlPanel 
         onSearch={handleStartSearch} 
+        onPathSearch={handlePathSearch}
         isProcessing={isProcessing} 
         isCompact={isCompact}
         onToggleCompact={() => setIsCompact(!isCompact)}

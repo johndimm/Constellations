@@ -58,3 +58,15 @@ export interface PersonWork {
 export interface PersonWorksResponse {
   works: PersonWork[];
 }
+
+export interface PathEntity {
+    id: string;
+    type: string;
+    description: string;
+    year?: number;
+    justification: string; // How it connects to the previous node
+}
+
+export interface PathResponse {
+    path: PathEntity[];
+}
