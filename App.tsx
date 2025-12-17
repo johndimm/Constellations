@@ -25,6 +25,14 @@ const getEnvApiKey = () => {
     return key;
 };
 
+// Normalize string for deduplication: lower case, remove 'the ', remove punctuation
+const normalizeForDedup = (str: string) => {
+    return str.trim().toLowerCase()
+        .replace(/^the\s+/i, '') // Remove leading "The "
+        .replace(/[^\w\s]/g, '') // Remove punctuation like quotes/dots
+        .replace(/\s+/g, ' ');   // Collapse spaces
+};
+
 const App: React.FC = () => {
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [links, setLinks] = useState<GraphLink[]>([]);
@@ -72,6 +80,21 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Helper to find specific existing node ID if it matches fuzzily
+  const resolveNodeId = useCallback((candidate: string, currentNodes: GraphNode[], pendingNodes: GraphNode[]) => {
+      const norm = normalizeForDedup(candidate);
+      
+      // Check pending first (batch priority)
+      const pendingMatch = pendingNodes.find(n => normalizeForDedup(n.id) === norm);
+      if (pendingMatch) return pendingMatch.id;
+
+      // Check existing
+      const existingMatch = currentNodes.find(n => normalizeForDedup(n.id) === norm);
+      if (existingMatch) return existingMatch.id;
+
+      return candidate.trim();
+  }, []);
+
   const handleStartSearch = async (term: string) => {
     setIsProcessing(true);
     setError(null);
@@ -84,8 +107,10 @@ const App: React.FC = () => {
         console.error("Classification error", e);
     }
     
+    // We trim, but we don't normalize aggressively here to preserve user casing preference
+    // unless strictly needed.
     const startNode: GraphNode = {
-      id: term,
+      id: term.trim(),
       type: type, 
       description: 'The starting point of your journey.',
       x: dimensions.width / 2,
@@ -115,8 +140,6 @@ const App: React.FC = () => {
           if (selectedNode && n.id === selectedNode.id) return true;
           // Keep nodes with more than 1 connection
           if ((linkCounts.get(n.id) || 0) > 1) return true;
-          // Keep Origin (if we used Origin type) or the very first node if possible, 
-          // but relying on selection or connections is usually enough.
           return false;
       });
 
@@ -161,13 +184,15 @@ const App: React.FC = () => {
           const data = await fetchPersonWorks(node.id, neighborNames);
           
           data.works.forEach(work => {
-             // Check if node exists or is pending
-             const existingNode = nodes.find(n => n.id === work.entity);
-             const pendingNode = newNodes.find(n => n.id === work.entity);
+             // RESOLVE ID STRICTLY
+             const resolvedId = resolveNodeId(work.entity, nodes, newNodes);
+
+             const existingNode = nodes.find(n => n.id === resolvedId);
+             const pendingNode = newNodes.find(n => n.id === resolvedId);
 
              if (!existingNode && !pendingNode) {
                  const newNode: GraphNode = {
-                     id: work.entity,
+                     id: resolvedId,
                      type: work.type,
                      description: work.description,
                      year: work.year,
@@ -186,11 +211,15 @@ const App: React.FC = () => {
              }
 
              // Create Link (Label = Year)
-             const linkId = `${node.id}-${work.entity}`;
-             if (!links.some(l => l.id === linkId) && !newLinks.some(l => l.id === linkId)) {
+             const linkId = `${node.id}-${resolvedId}`;
+             const reverseLinkId = `${resolvedId}-${node.id}`;
+             const linkExists = links.some(l => l.id === linkId || l.id === reverseLinkId) || 
+                                newLinks.some(l => l.id === linkId || l.id === reverseLinkId);
+
+             if (!linkExists) {
                  newLinks.push({
                      source: node.id,
-                     target: work.entity,
+                     target: resolvedId,
                      id: linkId,
                      label: work.year.toString()
                  });
@@ -218,12 +247,14 @@ const App: React.FC = () => {
             }
           } else {
               data.people.forEach((person) => {
-                  const existingNode = nodes.find(n => n.id === person.name);
-                  const pendingNode = newNodes.find(n => n.id === person.name);
+                  const resolvedId = resolveNodeId(person.name, nodes, newNodes);
+
+                  const existingNode = nodes.find(n => n.id === resolvedId);
+                  const pendingNode = newNodes.find(n => n.id === resolvedId);
 
                   if (!existingNode && !pendingNode) {
                       newNodes.push({
-                          id: person.name,
+                          id: resolvedId,
                           type: 'Person',
                           description: person.description,
                           x: (node.x || 0) + (Math.random() - 0.5) * 150,
@@ -232,11 +263,15 @@ const App: React.FC = () => {
                       });
                   }
 
-                  const linkId = `${node.id}-${person.name}`;
-                  if (!links.some(l => l.id === linkId) && !newLinks.some(l => l.id === linkId)) {
+                  const linkId = `${node.id}-${resolvedId}`;
+                  const reverseLinkId = `${resolvedId}-${node.id}`;
+                  const linkExists = links.some(l => l.id === linkId || l.id === reverseLinkId) || 
+                                     newLinks.some(l => l.id === linkId || l.id === reverseLinkId);
+
+                  if (!linkExists) {
                       newLinks.push({
                           source: node.id,
-                          target: person.name,
+                          target: resolvedId,
                           id: linkId,
                           label: person.role
                       });
@@ -245,35 +280,53 @@ const App: React.FC = () => {
           }
       }
 
-      // Apply updates in a single batch
+      // Apply updates
       setNodes(prev => {
-         const nextNodes = prev.map(n => {
-             // 1. Check if this is the source node being expanded
-             if (n.id === node.id) {
-                 // Force isLoading: false and expanded: true
-                 // Also apply any other updates (like year) if they exist in the map
-                 return { 
-                    ...n, 
-                    ...(nodeUpdates.get(n.id) || {}), 
-                    isLoading: false, 
-                    expanded: true 
-                 };
+         const existingMap = new Map<string, GraphNode>(prev.map(n => [n.id, n] as [string, GraphNode]));
+         
+         // 1. Identify which 'newNodes' are actually collisions (race condition handling)
+         const collisions = newNodes.filter(n => existingMap.has(n.id));
+         const trulyNew = newNodes.filter(n => !existingMap.has(n.id));
+         
+         // 2. Update existingMap with explicit updates
+         nodeUpdates.forEach((updates, id) => {
+             if (existingMap.has(id)) {
+                 existingMap.set(id, { ...existingMap.get(id)!, ...updates });
              }
-
-             // 2. Apply updates to other nodes (e.g. year updates for neighbors)
-             if (nodeUpdates.has(n.id)) {
-                 return { ...n, ...nodeUpdates.get(n.id) };
-             }
-             
-             return n;
          });
-         return [...nextNodes, ...newNodes];
+         
+         // 3. Update existingMap with data from collisions
+         collisions.forEach(col => {
+             const ex = existingMap.get(col.id)!;
+             const updated = { ...ex };
+             let changed = false;
+             if (!updated.year && col.year) { updated.year = col.year; changed = true; }
+             if (!updated.description && col.description) { updated.description = col.description; changed = true; }
+             if (changed) existingMap.set(col.id, updated);
+         });
+         
+         // 4. Update the source node
+         if (existingMap.has(node.id)) {
+             existingMap.set(node.id, { 
+                 ...existingMap.get(node.id)!, 
+                 isLoading: false, 
+                 expanded: true 
+             });
+         }
+         
+         return [...Array.from(existingMap.values()), ...trulyNew];
       });
 
-      setLinks(prev => [...prev, ...newLinks]);
+      setLinks(prev => {
+          const existingLinkIds = new Set(prev.map(l => l.id));
+          const trulyNewLinks = newLinks.filter(l => !existingLinkIds.has(l.id));
+          return [...prev, ...trulyNewLinks];
+      });
 
-      // Stagger image loads for new nodes
+      // Stagger image loads for truly new nodes
       newNodes.forEach((n, index) => {
+          // Optimistic check: only load if we think it's new. 
+          // Real check happens in loadNodeImage anyway.
           setTimeout(() => {
               loadNodeImage(n.id);
           }, 300 * (index + 1));
@@ -286,7 +339,7 @@ const App: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [nodes, links, loadNodeImage]);
+  }, [nodes, links, loadNodeImage, resolveNodeId]);
 
   const handleNodeClick = (node: GraphNode) => {
     setSelectedNode(node);
@@ -298,7 +351,6 @@ const App: React.FC = () => {
   const handleViewportChange = useCallback((visibleNodes: GraphNode[]) => {
     if (visibleNodes.length <= 15) {
         visibleNodes.forEach((node, index) => {
-            // Check if image is missing AND we haven't checked it yet AND not currently fetching
             if (!node.imageUrl && !node.fetchingImage && !node.imageChecked) {
                  setTimeout(() => {
                     loadNodeImage(node.id);
