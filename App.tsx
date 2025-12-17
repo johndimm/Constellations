@@ -78,10 +78,6 @@ const App: React.FC = () => {
   }, []);
 
   const loadNodeImage = useCallback(async (nodeId: string) => {
-    // If text only mode is on, we skip the fetch to save bandwidth, 
-    // but we can mark it as 'checked' so we don't retry immediately if toggled back
-    // or we can allow fetching but just hide it. 
-    // For "Vince" (Text Only), preventing the fetch is cleaner.
     if (isTextOnly) return; 
 
     setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n));
@@ -92,6 +88,16 @@ const App: React.FC = () => {
       setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: false, imageChecked: true } : n));
     }
   }, [isTextOnly]);
+
+  const handleClear = () => {
+    setNodes([]);
+    setLinks([]);
+    setSelectedNode(null);
+    setExploreTerm('');
+    setPathStart('');
+    setPathEnd('');
+    setError(null);
+  };
 
   // Helper to find specific existing node ID if it matches fuzzily
   const resolveNodeId = useCallback((candidate: string, currentNodes: GraphNode[], pendingNodes: GraphNode[]) => {
@@ -120,8 +126,6 @@ const App: React.FC = () => {
         console.error("Classification error", e);
     }
     
-    // We trim, but we don't normalize aggressively here to preserve user casing preference
-    // unless strictly needed.
     const startNode: GraphNode = {
       id: term.trim(),
       type: type, 
@@ -156,41 +160,34 @@ const App: React.FC = () => {
           
           let previousNodeId: string | null = null;
           
-          // Process the path chain
           for (let i = 0; i < pathData.path.length; i++) {
               const entity = pathData.path[i];
-              // Resolve ID against current state AND the newNodes we are building in this loop
               const resolvedId = resolveNodeId(entity.id, nodes, newNodes);
 
               const existingNode = nodes.find(n => n.id === resolvedId);
               const pendingNode = newNodes.find(n => n.id === resolvedId);
 
-              // Add Node if missing
               if (!existingNode && !pendingNode) {
                    const newNode: GraphNode = {
                        id: resolvedId,
                        type: entity.type,
                        description: entity.description,
                        year: entity.year,
-                       // Lay them out in a line roughly
                        x: (dimensions.width / 2) + ((i - pathData.path.length/2) * 150),
                        y: dimensions.height / 2 + (Math.random() * 50),
-                       expanded: true // Assume part of path is "explored"
+                       expanded: true 
                    };
                    newNodes.push(newNode);
               } else {
-                  // Merge data
                   if (existingNode && !existingNode.year && entity.year) {
                       nodeUpdates.set(existingNode.id, { year: entity.year });
                   }
               }
 
-              // Link to previous
               if (previousNodeId) {
                    const linkId = `${previousNodeId}-${resolvedId}`;
                    const reverseLinkId = `${resolvedId}-${previousNodeId}`;
                    
-                   // Check link existence (including in newLinks)
                    const linkExists = links.some(l => l.id === linkId || l.id === reverseLinkId) ||
                                       newLinks.some(l => l.id === linkId || l.id === reverseLinkId);
                    
@@ -207,25 +204,21 @@ const App: React.FC = () => {
               previousNodeId = resolvedId;
           }
 
-          // Apply updates (Reuse similar logic to expandNode)
           setNodes(prev => {
                 const existingMap = new Map<string, GraphNode>(prev.map(n => [n.id, n] as [string, GraphNode]));
                 
-                // Add explicit updates
                 nodeUpdates.forEach((updates, id) => {
                     if (existingMap.has(id)) {
                         existingMap.set(id, { ...existingMap.get(id)!, ...updates });
                     }
                 });
 
-                // Add new nodes (handling collision if resolveNodeId missed something subtle, though unlikely)
                 const trulyNew = newNodes.filter(n => !existingMap.has(n.id));
                 return [...Array.from(existingMap.values()), ...trulyNew];
           });
 
           setLinks(prev => [...prev, ...newLinks]);
 
-          // Trigger image loads
           newNodes.forEach((n, index) => {
               setTimeout(() => {
                   loadNodeImage(n.id);
@@ -254,9 +247,7 @@ const App: React.FC = () => {
       });
 
       const nodesToKeep = nodes.filter(n => {
-          // Keep selected node
           if (selectedNode && n.id === selectedNode.id) return true;
-          // Keep nodes with more than 1 connection
           if ((linkCounts.get(n.id) || 0) > 1) return true;
           return false;
       });
@@ -492,6 +483,7 @@ const App: React.FC = () => {
         setPathEnd={setPathEnd}
         onSearch={handleStartSearch} 
         onPathSearch={handlePathSearch}
+        onClear={handleClear}
         isProcessing={isProcessing} 
         isCompact={isCompact}
         onToggleCompact={() => setIsCompact(!isCompact)}

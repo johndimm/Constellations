@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Search, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface ControlPanelProps {
   searchMode: 'explore' | 'connect';
@@ -13,6 +13,7 @@ interface ControlPanelProps {
 
   onSearch: (term: string) => void;
   onPathSearch: (start: string, end: string) => void;
+  onClear: () => void;
   isProcessing: boolean;
   isCompact: boolean;
   onToggleCompact: () => void;
@@ -36,6 +37,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
   onSearch, 
   onPathSearch,
+  onClear,
   isProcessing,
   isCompact,
   onToggleCompact,
@@ -49,6 +51,18 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const [showHelp, setShowHelp] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 768);
+
+  // Sync collapse state with window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 && !hasStarted) {
+        setIsCollapsed(true);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [hasStarted]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,11 +70,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         if (exploreTerm.trim()) {
             onSearch(exploreTerm.trim());
             setHasStarted(true);
+            if (window.innerWidth < 768) setIsCollapsed(true);
         }
     } else {
         if (pathStart.trim() && pathEnd.trim()) {
             onPathSearch(pathStart.trim(), pathEnd.trim());
             setHasStarted(true);
+            if (window.innerWidth < 768) setIsCollapsed(true);
         }
     }
   };
@@ -73,10 +89,23 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   ];
 
   return (
-    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 w-full max-w-[22rem] pointer-events-none">
-      <div className="bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto">
+    <div 
+      className={`absolute top-4 left-4 z-20 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${
+        isCollapsed ? '-translate-x-[calc(100%+1rem)]' : 'translate-x-0'
+      } w-[calc(100vw-3rem)] max-w-[30rem]`}
+    >
+      <div className="bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
+        {/* Toggle Handle */}
+        <button 
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="absolute -right-12 top-0 w-10 h-10 bg-slate-900/90 backdrop-blur-md border border-slate-700 rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-colors shadow-xl"
+          title={isCollapsed ? "Expand Search" : "Collapse Search"}
+        >
+          {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+        </button>
+
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-bold text-red-500 mr-2 truncate">
+          <h1 className="text-xl font-bold text-red-500 mr-4 whitespace-nowrap">
             Constellations
           </h1>
           <div className="flex items-center gap-2">
@@ -119,6 +148,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     </button>
                 )}
                 <button 
+                    onClick={onClear}
+                    className="text-slate-400 hover:text-red-400 transition-colors p-1"
+                    title="Clear Display"
+                >
+                    <Trash2 size={16} />
+                </button>
+                <button 
                     onClick={() => setShowHelp(!showHelp)}
                     className="text-slate-400 hover:text-white transition-colors p-1"
                     title="Help"
@@ -142,7 +178,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
-            {/* Explicit Tabs */}
             <div className="flex border-b border-slate-700 mb-4">
                 <button
                     onClick={() => setSearchMode('explore')}
@@ -265,6 +300,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                 setExploreTerm(ex);
                                 onSearch(ex);
                                 setHasStarted(true);
+                                if (window.innerWidth < 768) setIsCollapsed(true);
                             }}
                             disabled={isProcessing}
                             className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-full border border-slate-700 transition-colors disabled:opacity-50 hover:border-slate-500 hover:text-white text-left"
@@ -286,6 +322,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             <li>Switch to the <strong className="text-indigo-400">Connect</strong> tab to find a path between two people or events (Six Degrees style).</li>
             <li>Click the <strong className="text-amber-400">TIMELINE</strong> button to align events by year.</li>
             <li>Click the <strong className="text-indigo-400">T</strong> button for text-only mode (faster, less clutter).</li>
+            <li>Click the <strong className="text-red-400">Trash</strong> icon to clear the board.</li>
           </ul>
         </div>
       )}
