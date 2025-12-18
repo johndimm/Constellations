@@ -175,7 +175,7 @@ const App: React.FC = () => {
                        year: entity.year,
                        x: (dimensions.width / 2) + ((i - pathData.path.length/2) * 150),
                        y: dimensions.height / 2 + (Math.random() * 50),
-                       expanded: true 
+                       expanded: false // Set to false so users can expand path nodes
                    };
                    newNodes.push(newNode);
               } else {
@@ -325,7 +325,23 @@ const App: React.FC = () => {
           });
 
       } else {
-          const data = await fetchConnections(node.id);
+          // Find context for Event/Thing node expansion
+          const nodeNeighbors = links.filter(l => 
+            (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) || 
+            (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
+          );
+          
+          const neighborIds = nodeNeighbors.map(l => {
+              const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+              const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+              return s === node.id ? t : s;
+          });
+
+          // Find a neighbor that is a Person to use as context
+          const contextPerson = nodes.find(n => neighborIds.includes(n.id) && n.type === 'Person');
+          const context = contextPerson ? contextPerson.id : undefined;
+
+          const data = await fetchConnections(node.id, context);
           
           if (data.sourceYear) {
              nodeUpdates.set(node.id, { year: data.sourceYear });

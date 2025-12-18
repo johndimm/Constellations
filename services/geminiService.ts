@@ -98,14 +98,18 @@ export const classifyEntity = async (term: string): Promise<string> => {
   }
 };
 
-export const fetchConnections = async (nodeName: string): Promise<GeminiResponse> => {
+export const fetchConnections = async (nodeName: string, context?: string): Promise<GeminiResponse> => {
   const apiKey = getEnvApiKey();
   const ai = new GoogleGenAI({ apiKey });
   
+  const contextualPrompt = context 
+    ? `Analyze: "${nodeName}" specifically in the context of "${context}".`
+    : `Analyze: "${nodeName}".`;
+
   try {
     const apiCall = ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `Analyze: "${nodeName}".
+      contents: `${contextualPrompt}
       1. Identify the 'year' it occurred/started (integer) if applicable (e.g. release year, event date).
       2. Find 5-6 key people connected to it.`,
       config: {
