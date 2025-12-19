@@ -187,7 +187,18 @@ const Graph: React.FC<GraphProps> = ({
         const centerForce = simulation.force("center") as d3.ForceCenter<GraphNode>;
 
         const collideForce = d3.forceCollide<GraphNode>()
-            .radius(d => getNodeDimensions(d, isTimelineMode, isTextOnly).r + 5)
+            .radius(d => {
+                const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
+                if (isCompact) {
+                    // Tighter packing for compact mode, but prevent text overlap
+                    // Increased padding from +8 to +16 to account for labels
+                    if (dims.type === 'circle') return (dims.w / 2) + 16;
+                    if (dims.type === 'box') return (dims.w / 2) + 16;
+                    // Cards are large, keep standard collision but maybe tighter
+                    return dims.r * 0.8;
+                }
+                return dims.r + 5;
+            })
             .strength(0.8)
             .iterations(3);
 
@@ -236,8 +247,14 @@ const Graph: React.FC<GraphProps> = ({
 
         } else {
             if (centerForce) centerForce.x(width / 2).y(height / 2).strength(0.8);
-            if (chargeForce) chargeForce.strength(isCompact ? -200 : -600);
-            if (linkForce) linkForce.strength(1).distance(isCompact ? 60 : 150);
+
+            // Standard vs Compact Settings
+            // Relaxed compact settings to prevent overlap
+            const chargeStrength = isCompact ? -60 : -600;
+            const linkDist = isCompact ? 50 : 150;
+
+            if (chargeForce) chargeForce.strength(chargeStrength);
+            if (linkForce) linkForce.strength(1).distance(linkDist);
 
             simulation.force("x", null);
             simulation.force("y", null);

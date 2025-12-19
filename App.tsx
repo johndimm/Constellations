@@ -94,9 +94,10 @@ const App: React.FC = () => {
         setNodes([]);
         setLinks([]);
         setSelectedNode(null);
-        setExploreTerm('');
-        setPathStart('');
-        setPathEnd('');
+        // Do not clear search terms as per user request
+        // setExploreTerm('');
+        // setPathStart('');
+        // setPathEnd('');
         setError(null);
     };
 
@@ -149,6 +150,11 @@ const App: React.FC = () => {
         setError(null);
         setSearchId(prev => prev + 1);
 
+        // Clear screen first as requested
+        setNodes([]);
+        setLinks([]);
+        setSelectedNode(null);
+
         try {
             const pathData = await fetchConnectionPath(start, end);
             if (pathData.path.length < 2) {
@@ -159,18 +165,20 @@ const App: React.FC = () => {
 
             let newNodes: GraphNode[] = [];
             let newLinks: GraphLink[] = [];
-            const nodeUpdates = new Map<string, Partial<GraphNode>>();
+            // nodeUpdates not strictly needed for fresh path but good for code consistency if we reused logic
+            // But here we are building fresh.
 
             let previousNodeId: string | null = null;
 
             for (let i = 0; i < pathData.path.length; i++) {
                 const entity = pathData.path[i];
-                const resolvedId = resolveNodeId(entity.id, nodes, newNodes);
+                // Pass empty array for current nodes effectively starting fresh for resolution
+                const resolvedId = resolveNodeId(entity.id, [], newNodes);
 
-                const existingNode = nodes.find(n => n.id === resolvedId);
+                // We only check within newNodes since we are starting fresh
                 const pendingNode = newNodes.find(n => n.id === resolvedId);
 
-                if (!existingNode && !pendingNode) {
+                if (!pendingNode) {
                     const newNode: GraphNode = {
                         id: resolvedId,
                         type: entity.type,
@@ -178,21 +186,17 @@ const App: React.FC = () => {
                         year: entity.year,
                         x: (dimensions.width / 2) + ((i - pathData.path.length / 2) * 150),
                         y: dimensions.height / 2 + (Math.random() * 50),
-                        expanded: false // Set to false so users can expand path nodes
+                        expanded: false
                     };
                     newNodes.push(newNode);
-                } else {
-                    if (existingNode && !existingNode.year && entity.year) {
-                        nodeUpdates.set(existingNode.id, { year: entity.year });
-                    }
                 }
 
                 if (previousNodeId) {
                     const linkId = `${previousNodeId}-${resolvedId}`;
                     const reverseLinkId = `${resolvedId}-${previousNodeId}`;
 
-                    const linkExists = links.some(l => l.id === linkId || l.id === reverseLinkId) ||
-                        newLinks.some(l => l.id === linkId || l.id === reverseLinkId);
+                    // Simple check in newLinks only
+                    const linkExists = newLinks.some(l => l.id === linkId || l.id === reverseLinkId);
 
                     if (!linkExists) {
                         newLinks.push({
@@ -207,20 +211,9 @@ const App: React.FC = () => {
                 previousNodeId = resolvedId;
             }
 
-            setNodes(prev => {
-                const existingMap = new Map<string, GraphNode>(prev.map(n => [n.id, n] as [string, GraphNode]));
-
-                nodeUpdates.forEach((updates, id) => {
-                    if (existingMap.has(id)) {
-                        existingMap.set(id, { ...existingMap.get(id)!, ...updates });
-                    }
-                });
-
-                const trulyNew = newNodes.filter(n => !existingMap.has(n.id));
-                return [...Array.from(existingMap.values()), ...trulyNew];
-            });
-
-            setLinks(prev => [...prev, ...newLinks]);
+            // Set entirely new state
+            setNodes(newNodes);
+            setLinks(newLinks);
 
             newNodes.forEach((n, index) => {
                 setTimeout(() => {
@@ -469,6 +462,272 @@ const App: React.FC = () => {
         }
     }, [loadNodeImage, isTextOnly]);
 
+    const [savedGraphs, setSavedGraphs] = useState<string[]>([]);
+
+    useEffect(() => {
+        // Load saved graph names on mount
+        const loadSavedNames = () => {
+            const saved = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('constellations_graph_')) {
+                    saved.push(key.replace('constellations_graph_', ''));
+                }
+            }
+            setSavedGraphs(saved.sort());
+        };
+        loadSavedNames();
+    }, []);
+
+    // Notification & Confirm State
+    const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+    const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean, message: string, onConfirm: () => void } | null>(null);
+
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(() => setNotification(null), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification]);
+
+    const handleSaveGraph = (name: string) => {
+        if (name === '__EXPORT__' || name === '__COPY__') {
+            const data = {
+                nodes: nodes,
+                links: links,
+                timestamp: Date.now()
+            };
+            const json = JSON.stringify(data, null, 2);
+
+            if (name === '__COPY__') {
+                navigator.clipboard.writeText(json).then(() => {
+                    setNotification({ message: "Graph JSON copied to clipboard!", type: 'success' });
+                }).catch(err => {
+                    console.error('Failed to copy: ', err);
+                    setNotification({ message: "Failed to copy to clipboard.", type: 'error' });
+                });
+                return;
+            }
+
+            // Generate descriptive filename
+            let baseName = "graph";
+            if (searchMode === 'explore' && exploreTerm) {
+                baseName = exploreTerm;
+            } else if (searchMode === 'connect' && pathStart && pathEnd) {
+                baseName = `${pathStart}_to_${pathEnd}`;
+            }
+            const safeName = baseName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${safeName}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setNotification({ message: `Graph "${safeName}.json" downloaded!`, type: 'success' });
+            return;
+        }
+
+        const graphData = {
+            nodes: nodes,
+            links: links,
+            searchMode,
+            exploreTerm,
+            pathStart,
+            pathEnd,
+            isCompact,
+            isTimelineMode,
+            isTextOnly,
+            date: Date.now()
+        };
+        localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(graphData));
+        setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
+        setNotification({ message: `Graph "${name}" saved!`, type: 'success' });
+    };
+
+    const handleImport = (data: any) => {
+        try {
+            if (!data.nodes || !data.links) throw new Error("Missing nodes or links");
+            setNodes(data.nodes.map((n: any) => ({ ...n })));
+            setLinks(data.links.map((l: any) => ({ ...l })));
+            setNotification({ message: "Graph imported successfully!", type: 'success' });
+        } catch (e) {
+            console.error(e);
+            setNotification({ message: "Failed to import graph.", type: 'error' });
+        }
+    };
+
+    const handleLoadGraph = (name: string) => {
+        const dataStr = localStorage.getItem(`constellations_graph_${name}`);
+        if (!dataStr) return;
+
+        try {
+            const data = JSON.parse(dataStr);
+            const savedNodes = data.nodes || [];
+            const savedLinks = data.links || [];
+
+            if (savedNodes.length === 0) {
+                setNotification({ message: `Graph "${name}" is empty.`, type: 'error' });
+                return;
+            }
+
+            // Restore other state
+            if (data.searchMode) setSearchMode(data.searchMode);
+            if (data.exploreTerm) setExploreTerm(data.exploreTerm);
+            if (data.pathStart) setPathStart(data.pathStart);
+            if (data.pathEnd) setPathEnd(data.pathEnd);
+            if (data.isCompact !== undefined) setIsCompact(data.isCompact);
+            if (data.isTimelineMode !== undefined) setIsTimelineMode(data.isTimelineMode);
+            if (data.isTextOnly !== undefined) setIsTextOnly(data.isTextOnly);
+
+            // Clear current graph
+            setNodes([]);
+            setLinks([]);
+            setSelectedNode(null);
+
+            // Start Animation Sequence
+            // Step 1: Show origin node with loading spinner
+            const originNode = savedNodes[0];
+            const remainingNodes = savedNodes.slice(1);
+
+            // Map to track which links can be added (both endpoints must exist)
+            const linkMap = new Map<string, GraphLink>();
+            savedLinks.forEach((l: any) => linkMap.set(l.id, l));
+
+            setNodes([{ ...originNode, isLoading: true }]);
+            setSearchId(prev => prev + 1);
+
+            // BFS Layering Logic
+            const adjacency = new Map<string, string[]>();
+            savedLinks.forEach((l: any) => {
+                // Handle both object and string references just in case, though saved data usually has strings initially?
+                // Wait, saved data might be raw strings if from JSON, but d3 often converts to objects.
+                // The JSON.parse gives raw strings ideally, or objects if we saved them that way?
+                // Checking previous code: `links: links` in save. d3 force replaces them with objects.
+                // `JSON.stringify` on d3 objects often results in circular ref issues UNLESS we cleaned them or d3 handles it?
+                // Actually `JSON.stringify` handles basic objects, but d3 nodes have `parent`, etc?
+                // We should check if we need to robustly handle the ID extraction.
+                // For safety: assumes saved links rely on `source.id` or `source` (if string).
+
+                const s = (typeof l.source === 'object' && l.source !== null) ? l.source.id : l.source;
+                const t = (typeof l.target === 'object' && l.target !== null) ? l.target.id : l.target;
+
+                if (!adjacency.has(s)) adjacency.set(s, []);
+                if (!adjacency.has(t)) adjacency.set(t, []);
+                adjacency.get(s)!.push(t);
+                adjacency.get(t)!.push(s);
+            });
+
+            const layers: GraphNode[][] = [];
+            const visited = new Set<string>();
+            let currentLayer = [originNode];
+
+            visited.add(originNode.id);
+            layers.push(currentLayer);
+
+            while (currentLayer.length > 0) {
+                const nextLayer: GraphNode[] = [];
+                for (const node of currentLayer) {
+                    const neighbors = adjacency.get(node.id) || [];
+                    for (const nid of neighbors) {
+                        if (!visited.has(nid)) {
+                            // Find the actual node object in savedNodes
+                            const nodeObj = savedNodes.find((n: any) => n.id === nid);
+                            if (nodeObj) {
+                                visited.add(nid);
+                                nextLayer.push(nodeObj);
+                            }
+                        }
+                    }
+                }
+                if (nextLayer.length > 0) {
+                    layers.push(nextLayer);
+                    currentLayer = nextLayer;
+                } else {
+                    break;
+                }
+            }
+
+            // Add any remaining disconnected nodes (e.g. islands)
+            const remaining = savedNodes.filter((n: any) => !visited.has(n.id));
+            if (remaining.length > 0) {
+                layers.push(remaining);
+            }
+
+            // Animation Loop
+            let layerIndex = 0;
+            const animateLayers = () => {
+                if (layerIndex >= layers.length) {
+                    // Done
+                    setNodes(savedNodes.map(n => ({ ...n, isLoading: false }))); // Ensure clean state
+                    setLinks(savedLinks);
+                    setNotification({ message: `Graph "${name}" loaded!`, type: 'success' });
+                    return;
+                }
+
+                if (layerIndex === 0) {
+                    // Origin already set, just ensure spinner on?
+                    // Actually we set it above.
+                    // But we need to move to next layer.
+                    // Let's just wait 500ms then show Layer 1.
+                    layerIndex++;
+                    setTimeout(animateLayers, 500);
+                    return;
+                }
+
+                // Show layers 0 to layerIndex
+                const nodesToSHow = layers.slice(0, layerIndex + 1).flat();
+
+                // Stop loading spinner on previous layer nodes
+                const nodesWithState = nodesToSHow.map(n => {
+                    // Only the "newest" layer should perhaps have "isLoading" briefly?
+                    // Or maybe we turn off `isLoading` for the *previous* source?
+                    // User said "pause before opening a node".
+                    // Let's just set all to false, rely on the "pop" of new nodes.
+                    return { ...n, isLoading: false };
+                });
+
+                // Set links: All links connected between currently visible nodes
+                const visibleIds = new Set(nodesWithState.map(n => n.id));
+                const linksToShow = savedLinks.filter((l: any) => {
+                    const s = (typeof l.source === 'object') ? l.source.id : l.source;
+                    const t = (typeof l.target === 'object') ? l.target.id : l.target;
+                    return visibleIds.has(s) && visibleIds.has(t);
+                });
+
+                setNodes(nodesWithState);
+                setLinks(linksToShow);
+
+                layerIndex++;
+                setTimeout(animateLayers, 500);
+            };
+
+            // Start loop
+            setTimeout(animateLayers, 500);
+
+        } catch (e) {
+            console.error("Failed to load graph", e);
+            setError("Failed to load graph data.");
+            setNotification({ message: "Error loading graph.", type: 'error' });
+        }
+    };
+
+    const handleDeleteGraph = (name: string) => {
+        setConfirmDialog({
+            isOpen: true,
+            message: `Are you sure you want to delete "${name}"?`,
+            onConfirm: () => {
+                localStorage.removeItem(`constellations_graph_${name}`);
+                setSavedGraphs(prev => prev.filter(n => n !== name));
+                setConfirmDialog(null);
+                setNotification({ message: `Graph "${name}" deleted.`, type: 'success' });
+            }
+        });
+    };
+
     if (!isKeyReady) {
         return (
             <div className="flex flex-col items-center justify-center w-screen h-screen bg-slate-900 text-white space-y-6">
@@ -518,6 +777,11 @@ const App: React.FC = () => {
                 onToggleTextOnly={() => setIsTextOnly(!isTextOnly)}
                 onPrune={handlePrune}
                 error={error}
+                onSave={handleSaveGraph}
+                onLoad={handleLoadGraph}
+                onDeleteGraph={handleDeleteGraph}
+                onImport={handleImport}
+                savedGraphs={savedGraphs}
             />
             <Sidebar
                 selectedNode={selectedNode}
@@ -525,6 +789,38 @@ const App: React.FC = () => {
                 onSetStart={(id) => { setPathStart(id); setSearchMode('connect'); }}
                 onSetEnd={(id) => { setPathEnd(id); setSearchMode('connect'); }}
             />
+
+            {/* Notification Toast */}
+            {notification && (
+                <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-lg shadow-2xl border border-slate-700 z-50 flex items-center animate-fade-in-up">
+                    <div className={`w-3 h-3 rounded-full mr-3 ${notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span className="font-medium">{notification.message}</span>
+                </div>
+            )}
+
+            {/* Confirmation Dialog */}
+            {confirmDialog && confirmDialog.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-slate-900 text-white p-6 rounded-xl border border-slate-700 shadow-2xl max-w-sm w-full mx-4">
+                        <h3 className="text-xl font-bold mb-3">Confirm Action</h3>
+                        <p className="text-slate-300 mb-6">{confirmDialog.message}</p>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setConfirmDialog(null)}
+                                className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors font-medium"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDialog.onConfirm}
+                                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors font-medium"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
