@@ -490,16 +490,22 @@ const Graph: React.FC<GraphProps> = ({
                 }
 
                 let textY = 0;
+                let descY = 0;
                 if (dims.type === 'card') {
                     const imgOffset = (d.imageUrl && !isTextOnly) ? 120 : 0;
                     textY = -h / 2 + imgOffset + 18;
+
+                    const labelW = 200;
+                    const labelLines = wrapText(d.id, labelW);
+                    const titleHeight = labelLines.length * 15; // 13px font + padding
+                    descY = textY + titleHeight + 2;
 
                     const descLines = wrapText(d.description || "", 190);
                     g.select(".node-desc")
                         .style("display", "block")
                         .style("font-size", "12px")
                         .style("font-weight", "500")
-                        .attr("y", textY + 16)
+                        .attr("y", descY)
                         .selectAll("tspan").remove();
 
                     const descText = g.select(".node-desc");
