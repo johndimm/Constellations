@@ -125,24 +125,27 @@ const App: React.FC = () => {
         try {
             // Determine if it's a Person or a Thing (Event/Movie/etc)
             type = await classifyEntity(term);
+
+            const startNode: GraphNode = {
+                id: term.trim(),
+                type: type,
+                description: 'The starting point of your journey.',
+                x: dimensions.width / 2,
+                y: dimensions.height / 2,
+            };
+
+            setNodes([startNode]);
+            setLinks([]);
+            setSelectedNode(startNode);
+            loadNodeImage(startNode.id);
+
+            await expandNode(startNode, true);
         } catch (e) {
-            console.error("Classification error", e);
+            console.error("Search error", e);
+            setError("Search failed.");
+        } finally {
+            setIsProcessing(false);
         }
-
-        const startNode: GraphNode = {
-            id: term.trim(),
-            type: type,
-            description: 'The starting point of your journey.',
-            x: dimensions.width / 2,
-            y: dimensions.height / 2,
-        };
-
-        setNodes([startNode]);
-        setLinks([]);
-        setSelectedNode(startNode);
-        loadNodeImage(startNode.id);
-
-        await expandNode(startNode, true);
     };
 
     const handlePathSearch = async (start: string, end: string) => {
@@ -259,8 +262,8 @@ const App: React.FC = () => {
         setLinks(linksToKeep);
     };
 
-    const expandNode = useCallback(async (node: GraphNode, isInitial = false) => {
-        if (node.expanded || node.isLoading) return;
+    const expandNode = useCallback(async (node: GraphNode, isInitial = false, forceMore = false) => {
+        if (!forceMore && (node.expanded || node.isLoading)) return;
 
         setNodes(prev => prev.map(n => n.id === node.id ? { ...n, isLoading: true } : n));
         setIsProcessing(true);
@@ -337,7 +340,7 @@ const App: React.FC = () => {
                 const contextPerson = nodes.find(n => neighborIds.includes(n.id) && n.type === 'Person');
                 const context = contextPerson ? contextPerson.id : undefined;
 
-                const data = await fetchConnections(node.id, context);
+                const data = await fetchConnections(node.id, context, neighborIds);
 
                 if (data.sourceYear) {
                     nodeUpdates.set(node.id, { year: data.sourceYear });
@@ -437,6 +440,48 @@ const App: React.FC = () => {
             setIsProcessing(false);
         }
     }, [nodes, links, loadNodeImage, resolveNodeId]);
+
+    const handleExpandMore = (node: GraphNode) => {
+        expandNode(node, false, true);
+    };
+
+    const handleRecursiveDelete = (rootId: string) => {
+        const nodesToRemove = new Set<string>();
+        const queue = [rootId];
+        nodesToRemove.add(rootId);
+
+        while (queue.length > 0) {
+            const currentId = queue.shift()!;
+            links.forEach(l => {
+                const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+
+                if (s === currentId && !nodesToRemove.has(t)) {
+                    nodesToRemove.add(t);
+                    queue.push(t);
+                } else if (t === currentId && !nodesToRemove.has(s)) {
+                    nodesToRemove.add(s);
+                    queue.push(s);
+                }
+            });
+        }
+
+        setConfirmDialog({
+            isOpen: true,
+            message: `Delete "${rootId}" and ${nodesToRemove.size - 1} other connected nodes?`,
+            onConfirm: () => {
+                setNodes(prev => prev.filter(n => !nodesToRemove.has(n.id)));
+                setLinks(prev => prev.filter(l => {
+                    const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                    const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                    return !nodesToRemove.has(s) && !nodesToRemove.has(t);
+                }));
+                setSelectedNode(null);
+                setConfirmDialog(null);
+                setNotification({ message: "Branch deleted.", type: 'success' });
+            }
+        });
+    };
 
     const handleNodeClick = (node: GraphNode) => {
         // Retry image fetch if it failed previously
@@ -583,130 +628,11 @@ const App: React.FC = () => {
             if (data.isTimelineMode !== undefined) setIsTimelineMode(data.isTimelineMode);
             if (data.isTextOnly !== undefined) setIsTextOnly(data.isTextOnly);
 
-            // Clear current graph
-            setNodes([]);
-            setLinks([]);
-            setSelectedNode(null);
-
-            // Start Animation Sequence
-            // Step 1: Show origin node with loading spinner
-            const originNode = savedNodes[0];
-            const remainingNodes = savedNodes.slice(1);
-
-            // Map to track which links can be added (both endpoints must exist)
-            const linkMap = new Map<string, GraphLink>();
-            savedLinks.forEach((l: any) => linkMap.set(l.id, l));
-
-            setNodes([{ ...originNode, isLoading: true }]);
+            // Immediately restore all nodes and links without animation
+            setNodes(savedNodes.map((n: any) => ({ ...n, isLoading: false })));
+            setLinks(savedLinks);
             setSearchId(prev => prev + 1);
-
-            // BFS Layering Logic
-            const adjacency = new Map<string, string[]>();
-            savedLinks.forEach((l: any) => {
-                // Handle both object and string references just in case, though saved data usually has strings initially?
-                // Wait, saved data might be raw strings if from JSON, but d3 often converts to objects.
-                // The JSON.parse gives raw strings ideally, or objects if we saved them that way?
-                // Checking previous code: `links: links` in save. d3 force replaces them with objects.
-                // `JSON.stringify` on d3 objects often results in circular ref issues UNLESS we cleaned them or d3 handles it?
-                // Actually `JSON.stringify` handles basic objects, but d3 nodes have `parent`, etc?
-                // We should check if we need to robustly handle the ID extraction.
-                // For safety: assumes saved links rely on `source.id` or `source` (if string).
-
-                const s = (typeof l.source === 'object' && l.source !== null) ? l.source.id : l.source;
-                const t = (typeof l.target === 'object' && l.target !== null) ? l.target.id : l.target;
-
-                if (!adjacency.has(s)) adjacency.set(s, []);
-                if (!adjacency.has(t)) adjacency.set(t, []);
-                adjacency.get(s)!.push(t);
-                adjacency.get(t)!.push(s);
-            });
-
-            const layers: GraphNode[][] = [];
-            const visited = new Set<string>();
-            let currentLayer = [originNode];
-
-            visited.add(originNode.id);
-            layers.push(currentLayer);
-
-            while (currentLayer.length > 0) {
-                const nextLayer: GraphNode[] = [];
-                for (const node of currentLayer) {
-                    const neighbors = adjacency.get(node.id) || [];
-                    for (const nid of neighbors) {
-                        if (!visited.has(nid)) {
-                            // Find the actual node object in savedNodes
-                            const nodeObj = savedNodes.find((n: any) => n.id === nid);
-                            if (nodeObj) {
-                                visited.add(nid);
-                                nextLayer.push(nodeObj);
-                            }
-                        }
-                    }
-                }
-                if (nextLayer.length > 0) {
-                    layers.push(nextLayer);
-                    currentLayer = nextLayer;
-                } else {
-                    break;
-                }
-            }
-
-            // Add any remaining disconnected nodes (e.g. islands)
-            const remaining = savedNodes.filter((n: any) => !visited.has(n.id));
-            if (remaining.length > 0) {
-                layers.push(remaining);
-            }
-
-            // Animation Loop
-            let layerIndex = 0;
-            const animateLayers = () => {
-                if (layerIndex >= layers.length) {
-                    // Done
-                    setNodes(savedNodes.map(n => ({ ...n, isLoading: false }))); // Ensure clean state
-                    setLinks(savedLinks);
-                    setNotification({ message: `Graph "${name}" loaded!`, type: 'success' });
-                    return;
-                }
-
-                if (layerIndex === 0) {
-                    // Origin already set, just ensure spinner on?
-                    // Actually we set it above.
-                    // But we need to move to next layer.
-                    // Let's just wait 500ms then show Layer 1.
-                    layerIndex++;
-                    setTimeout(animateLayers, 500);
-                    return;
-                }
-
-                // Show layers 0 to layerIndex
-                const nodesToSHow = layers.slice(0, layerIndex + 1).flat();
-
-                // Stop loading spinner on previous layer nodes
-                const nodesWithState = nodesToSHow.map(n => {
-                    // Only the "newest" layer should perhaps have "isLoading" briefly?
-                    // Or maybe we turn off `isLoading` for the *previous* source?
-                    // User said "pause before opening a node".
-                    // Let's just set all to false, rely on the "pop" of new nodes.
-                    return { ...n, isLoading: false };
-                });
-
-                // Set links: All links connected between currently visible nodes
-                const visibleIds = new Set(nodesWithState.map(n => n.id));
-                const linksToShow = savedLinks.filter((l: any) => {
-                    const s = (typeof l.source === 'object') ? l.source.id : l.source;
-                    const t = (typeof l.target === 'object') ? l.target.id : l.target;
-                    return visibleIds.has(s) && visibleIds.has(t);
-                });
-
-                setNodes(nodesWithState);
-                setLinks(linksToShow);
-
-                layerIndex++;
-                setTimeout(animateLayers, 500);
-            };
-
-            // Start loop
-            setTimeout(animateLayers, 500);
+            setNotification({ message: `Graph "${name}" loaded!`, type: 'success' });
 
         } catch (e) {
             console.error("Failed to load graph", e);
@@ -788,6 +714,9 @@ const App: React.FC = () => {
                 onClose={() => setSelectedNode(null)}
                 onSetStart={(id) => { setPathStart(id); setSearchMode('connect'); }}
                 onSetEnd={(id) => { setPathEnd(id); setSearchMode('connect'); }}
+                onAddMore={handleExpandMore}
+                onRecursiveDelete={handleRecursiveDelete}
+                isProcessing={isProcessing}
             />
 
             {/* Notification Toast */}
