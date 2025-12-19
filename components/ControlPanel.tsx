@@ -244,20 +244,27 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               </h3>
               <button onClick={() => setShowShare(false)}><X size={14} className="text-slate-400" /></button>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => onSave('__COPY_LINK__')}
+                className="flex flex-col items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg transition-colors border border-slate-600"
+              >
+                <LinkIcon size={20} className="text-orange-400" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-center">Copy Link</span>
+              </button>
               <button
                 onClick={() => onSave('__COPY__')}
                 className="flex flex-col items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg transition-colors border border-slate-600"
               >
                 <Copy size={20} className="text-purple-400" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Copy JSON</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-center">Copy JSON</span>
               </button>
               <button
                 onClick={() => onSave('__EXPORT__')}
                 className="flex flex-col items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg transition-colors border border-slate-600"
               >
                 <Download size={20} className="text-indigo-400" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Download File</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-center">Download File</span>
               </button>
             </div>
             <p className="mt-3 text-[10px] text-slate-400 text-center italic">
