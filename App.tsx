@@ -446,6 +446,11 @@ const App: React.FC = () => {
     }, [nodes, links, loadNodeImage, resolveNodeId]);
 
     const handleNodeClick = (node: GraphNode) => {
+        // Retry image fetch if it failed previously
+        if (node.imageChecked && !node.imageUrl) {
+            loadNodeImage(node.id);
+        }
+
         setSelectedNode(node);
         if (!node.expanded) {
             expandNode(node);
