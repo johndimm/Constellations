@@ -53,6 +53,26 @@ const App: React.FC = () => {
     const [searchId, setSearchId] = useState(0);
 
     useEffect(() => {
+        const checkParams = async () => {
+            const params = new URLSearchParams(window.location.search);
+            const query = params.get('q');
+            const start = params.get('start');
+            const end = params.get('end');
+
+            if (query && isKeyReady) {
+                setExploreTerm(query);
+                handleStartSearch(query, 1);
+            } else if (start && end && isKeyReady) {
+                setPathStart(start);
+                setPathEnd(end);
+                setSearchMode('connect');
+                handlePathSearch(start, end);
+            }
+        };
+        checkParams();
+    }, [isKeyReady]);
+
+    useEffect(() => {
         const checkKey = async () => {
             const envKey = getEnvApiKey();
             if ((window as any).aistudio) {
@@ -116,7 +136,7 @@ const App: React.FC = () => {
         return candidate.trim();
     }, []);
 
-    const handleStartSearch = async (term: string) => {
+    const handleStartSearch = async (term: string, recursiveDepth = 0) => {
         setIsProcessing(true);
         setError(null);
         setSearchId(prev => prev + 1);
@@ -140,6 +160,38 @@ const App: React.FC = () => {
             loadNodeImage(startNode.id);
 
             await expandNode(startNode, true);
+
+            if (recursiveDepth > 0) {
+                setNotification({ message: "Auto-expanding connections...", type: 'success' });
+                // We need to wait for the nodes to be updated in the state or get them from the links
+                // However, expandNode updates the 'nodes' and 'links' state asynchronously.
+                // We'll use a small delay and then look at the current links to find the neighbors.
+                await new Promise(resolve => setTimeout(resolve, 800));
+
+                // Get neighbors from links
+                setLinks(currentLinks => {
+                    const neighbors = new Set<string>();
+                    currentLinks.forEach(l => {
+                        const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                        const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                        if (s === startNode.id) neighbors.add(t);
+                        else if (t === startNode.id) neighbors.add(s);
+                    });
+
+                    // Now we expand each neighbor
+                    setNodes(currentNodes => {
+                        neighbors.forEach(neighborId => {
+                            const nodeToExpand = currentNodes.find(n => n.id === neighborId);
+                            if (nodeToExpand && !nodeToExpand.expanded) {
+                                expandNode(nodeToExpand);
+                            }
+                        });
+                        return currentNodes;
+                    });
+
+                    return currentLinks;
+                });
+            }
         } catch (e) {
             console.error("Search error", e);
             setError("Search failed.");
@@ -536,6 +588,24 @@ const App: React.FC = () => {
     }, [notification]);
 
     const handleSaveGraph = (name: string) => {
+        if (name === '__COPY_LINK__') {
+            const baseUrl = window.location.origin + window.location.pathname;
+            let url = baseUrl;
+            if (searchMode === 'explore' && exploreTerm) {
+                url += `?q=${encodeURIComponent(exploreTerm)}`;
+            } else if (searchMode === 'connect' && pathStart && pathEnd) {
+                url += `?start=${encodeURIComponent(pathStart)}&end=${encodeURIComponent(pathEnd)}`;
+            }
+
+            navigator.clipboard.writeText(url).then(() => {
+                setNotification({ message: "Share link copied to clipboard!", type: 'success' });
+            }).catch(err => {
+                console.error('Failed to copy link: ', err);
+                setNotification({ message: "Failed to copy link.", type: 'error' });
+            });
+            return;
+        }
+
         if (name === '__EXPORT__' || name === '__COPY__') {
             const data = {
                 nodes: nodes,
