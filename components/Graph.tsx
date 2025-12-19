@@ -374,7 +374,12 @@ const Graph: React.FC<GraphProps> = ({
             const g = d3.select(this);
             const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
             const isHovered = d.id === hoveredNode?.id;
-            const color = getNodeColor(d.type);
+            let color = getNodeColor(d.type);
+
+            // Grey out nodes with missing images
+            if (d.imageChecked && !d.imageUrl) {
+                color = '#64748b'; // Slate 500
+            }
 
             g.select(".node-circle").style("display", "none");
             g.select(".node-rect").style("display", "none");
