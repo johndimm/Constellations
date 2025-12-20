@@ -247,7 +247,7 @@ export const fetchConnectionPath = async (start: string, end: string): Promise<P
       }
     });
 
-    const response = await withTimeout<GenerateContentResponse>(apiCall, 20000, "Pathfinding timed out");
+    const response = await withTimeout<GenerateContentResponse>(apiCall, 60000, "Pathfinding timed out");
     const text = response.text;
     if (!text) return { path: [] };
     return JSON.parse(text) as PathResponse;

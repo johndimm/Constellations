@@ -54,22 +54,26 @@ export const fetchWikipediaImage = async (query: string): Promise<string | null>
     // Try 'intitle' first for stricter matching (good for finding book versions of movies -> posters)
     let booksUrl = `https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(query)}&maxResults=1`;
     let booksRes = await fetch(booksUrl, { signal: controller.signal });
-    let booksData = await booksRes.json();
 
-    if (booksData.items?.[0]?.volumeInfo?.imageLinks?.thumbnail) {
-      clearTimeout(timeoutId);
-      return booksData.items[0].volumeInfo.imageLinks.thumbnail.replace('http://', 'https://');
+    if (booksRes.ok) {
+      let booksData = await booksRes.json();
+      if (booksData.items?.[0]?.volumeInfo?.imageLinks?.thumbnail) {
+        clearTimeout(timeoutId);
+        return booksData.items[0].volumeInfo.imageLinks.thumbnail.replace('http://', 'https://');
+      }
     }
 
     // 4. Google Books Fallback (General)
     // If intitle failed, try general query
     booksUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=1`;
     booksRes = await fetch(booksUrl, { signal: controller.signal });
-    booksData = await booksRes.json();
 
-    if (booksData.items?.[0]?.volumeInfo?.imageLinks?.thumbnail) {
-      clearTimeout(timeoutId);
-      return booksData.items[0].volumeInfo.imageLinks.thumbnail.replace('http://', 'https://');
+    if (booksRes.ok) {
+      let booksData = await booksRes.json();
+      if (booksData.items?.[0]?.volumeInfo?.imageLinks?.thumbnail) {
+        clearTimeout(timeoutId);
+        return booksData.items[0].volumeInfo.imageLinks.thumbnail.replace('http://', 'https://');
+      }
     }
 
   } catch (e) {

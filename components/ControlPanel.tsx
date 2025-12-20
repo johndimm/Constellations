@@ -163,9 +163,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         </button>
 
         <div className="flex items-center justify-between mb-4 gap-2">
-          <h1 className="text-xl font-bold text-red-500 whitespace-nowrap overflow-visible flex-shrink-0">
+          <a
+            href={window.location.origin + window.location.pathname}
+            className="text-xl font-bold text-red-500 whitespace-nowrap overflow-visible flex-shrink-0 hover:text-red-400 transition-colors"
+          >
             Constellations
-          </h1>
+          </a>
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
             <button
               onClick={onToggleTimeline}
