@@ -70,13 +70,10 @@ const Graph: React.FC<GraphProps> = ({
 
         // Events/Things
         if (isTimeline) {
-            // Timeline Card Mode
-            const baseHeight = 50; // Title + Padding
-            const imgHeight = (node.imageUrl && !textOnly) ? 120 : 0;
-            const descHeight = node.description ? 45 : 0;
+            // Timeline Card Mode: Fixed height for consistent layout
             return {
                 w: 220,
-                h: baseHeight + imgHeight + descHeight,
+                h: 220,
                 r: 120, // Collision radius
                 type: 'card'
             };
@@ -458,21 +455,7 @@ const Graph: React.FC<GraphProps> = ({
                     .attr("stroke", isHovered ? "#f59e0b" : "#fff")
                     .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
-                if (dims.type === 'card' && d.imageUrl && !isTextOnly) {
-                    const imgH = 120;
-                    g.select("image")
-                        .style("display", "block")
-                        .attr("href", d.imageUrl)
-                        .attr("x", -w / 2).attr("y", -h / 2)
-                        .attr("width", w).attr("height", imgH)
-                        .attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`)
-                        .style("opacity", (d.fetchingImage) ? 0.7 : 1);
-
-                    g.select(`#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("rect")
-                        .attr("x", -w / 2).attr("y", -h / 2)
-                        .attr("width", w).attr("height", imgH)
-                        .attr("rx", 0);
-                } else if (dims.type === 'box' && d.imageUrl && !isTextOnly) {
+                if (dims.type === 'box' && d.imageUrl && !isTextOnly) {
                     g.select("image")
                         .style("display", "block")
                         .attr("href", d.imageUrl)
@@ -491,18 +474,46 @@ const Graph: React.FC<GraphProps> = ({
 
                 let textY = 0;
                 let descY = 0;
-                if (dims.type === 'card') {
-                    const imgOffset = (d.imageUrl && !isTextOnly) ? 120 : 0;
-                    textY = -h / 2 + imgOffset + 18;
+                let imgH = 120; // Default
 
+                if (dims.type === 'card') {
                     const labelW = 200;
                     const labelLines = wrapText(d.id, labelW);
-                    const titleHeight = labelLines.length * 15; // 13px font + padding
-                    descY = textY + titleHeight + 2;
-
                     const descLines = wrapText(d.description || "", 190);
+
+                    // Calculate text height
+                    const titleH = labelLines.length * 15.6;
+                    const descH = descLines.length > 0 ? descLines.length * 14.4 + 6 : 0;
+                    const bottomPadding = 12;
+                    const textAreaH = titleH + descH + bottomPadding + 15; // 15 for gap above title
+
+                    imgH = (d.imageUrl && !isTextOnly) ? h - textAreaH : 0;
+
+                    // Positions
+                    const imgY = -h / 2;
+                    textY = imgY + imgH + 15;
+                    descY = textY + titleH + 6;
+
+                    // Update Image and ClipPath with calculated imgH
+                    if (imgH > 0) {
+                        g.select("image")
+                            .style("display", "block")
+                            .attr("href", d.imageUrl || "")
+                            .attr("x", -w / 2).attr("y", imgY)
+                            .attr("width", w).attr("height", imgH)
+                            .attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`)
+                            .style("opacity", (d.fetchingImage) ? 0.7 : 1);
+
+                        g.select(`#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("rect")
+                            .attr("x", -w / 2).attr("y", imgY)
+                            .attr("width", w).attr("height", imgH)
+                            .attr("rx", 0);
+                    } else {
+                        g.select("image").style("display", "none");
+                    }
+
                     g.select(".node-desc")
-                        .style("display", "block")
+                        .style("display", descLines.length > 0 ? "block" : "none")
                         .style("font-size", "12px")
                         .style("font-weight", "500")
                         .attr("y", descY)
