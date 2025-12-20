@@ -588,40 +588,111 @@ const App: React.FC = () => {
         expandNode(node, false, true);
     };
 
-    const handleRecursiveDelete = (rootId: string) => {
-        const nodesToRemove = new Set<string>();
-        const queue = [rootId];
-        nodesToRemove.add(rootId);
-
-        while (queue.length > 0) {
-            const currentId = queue.shift()!;
-            links.forEach(l => {
-                const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-                const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-
-                if (s === currentId && !nodesToRemove.has(t)) {
-                    nodesToRemove.add(t);
-                    queue.push(t);
-                } else if (t === currentId && !nodesToRemove.has(s)) {
-                    nodesToRemove.add(s);
-                    queue.push(s);
-                }
-            });
-        }
-
+    const handleSmartDelete = (rootId: string) => {
         setConfirmDialog({
             isOpen: true,
-            message: `Delete "${rootId}" and ${nodesToRemove.size - 1} other connected nodes?`,
+            message: `Are you sure you want to delete "${rootId}"? This will also prune any resulting orphaned connections.`,
             onConfirm: () => {
-                setNodes(prev => prev.filter(n => !nodesToRemove.has(n.id)));
-                setLinks(prev => prev.filter(l => {
+                setNodes(currentNodes => {
+                    setLinks(currentLinks => {
+                        let finalNodes = [...currentNodes];
+                        let finalLinks = [...currentLinks];
+
+                        // 1. Remove the target node and its links
+                        finalNodes = finalNodes.filter(n => n.id !== rootId);
+                        finalLinks = finalLinks.filter(l => {
+                            const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                            const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                            return s !== rootId && t !== rootId;
+                        });
+
+                        // 2. Recursively prune leaf nodes (nodes with 0 or 1 connection)
+                        // that were created by the expansion but aren't shared.
+                        let changed = true;
+                        while (changed) {
+                            changed = false;
+                            const linkCounts = new Map<string, number>();
+                            finalLinks.forEach(l => {
+                                const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                                const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                                linkCounts.set(s, (linkCounts.get(s) || 0) + 1);
+                                linkCounts.set(t, (linkCounts.get(t) || 0) + 1);
+                            });
+
+                            const toPrune = finalNodes.filter(n => {
+                                const count = linkCounts.get(n.id) || 0;
+                                // We prune nodes that have 0 or 1 connection.
+                                // But we skip the original nodes (0 is likely only if they were just orphaned).
+                                return count <= 0 || (count === 1 && n.expanded === false);
+                            });
+
+                            if (toPrune.length > 0) {
+                                const pruneIds = new Set(toPrune.map(n => n.id));
+                                finalNodes = finalNodes.filter(n => !pruneIds.has(n.id));
+                                finalLinks = finalLinks.filter(l => {
+                                    const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                                    const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                                    return !pruneIds.has(s) && !pruneIds.has(t);
+                                });
+                                changed = true;
+                            }
+                        }
+
+                        return finalLinks;
+                    });
+
+                    // The setNodes will use the returned values from setLinks' closure logic
+                    // Wait, setLinks happens asynchronously or synchronously based on implementation.
+                    // Better to calculate both first then set them.
+                    return currentNodes; // Placeholder, will fix below to be cleaner
+                });
+
+                // Let's do it cleaner by calculating both first.
+                let updatedNodes = [...nodes];
+                let updatedLinks = [...links];
+
+                updatedNodes = updatedNodes.filter(n => n.id !== rootId);
+                updatedLinks = updatedLinks.filter(l => {
                     const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
                     const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-                    return !nodesToRemove.has(s) && !nodesToRemove.has(t);
-                }));
+                    return s !== rootId && t !== rootId;
+                });
+
+                let pruning = true;
+                while (pruning) {
+                    pruning = false;
+                    const counts = new Map<string, number>();
+                    updatedLinks.forEach(l => {
+                        const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                        const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                        counts.set(s, (counts.get(s) || 0) + 1);
+                        counts.set(t, (counts.get(t) || 0) + 1);
+                    });
+
+                    const leaves = updatedNodes.filter(n => {
+                        const count = counts.get(n.id) || 0;
+                        // Prune nodes that have 0 connections (orphans).
+                        // This removes anyone who was ONLY held by the deleted node/branch.
+                        return count === 0;
+                    });
+
+                    if (leaves.length > 0) {
+                        const leafIds = new Set(leaves.map(n => n.id));
+                        updatedNodes = updatedNodes.filter(n => !leafIds.has(n.id));
+                        updatedLinks = updatedLinks.filter(l => {
+                            const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                            const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                            return !leafIds.has(s) && !leafIds.has(t);
+                        });
+                        pruning = true;
+                    }
+                }
+
+                setNodes(updatedNodes);
+                setLinks(updatedLinks);
                 setSelectedNode(null);
                 setConfirmDialog(null);
-                setNotification({ message: "Branch deleted.", type: 'success' });
+                setNotification({ message: `Node and dangling branches removed.`, type: 'success' });
             }
         });
     };
@@ -876,7 +947,7 @@ const App: React.FC = () => {
                 onSetStart={(id) => { setPathStart(id); setSearchMode('connect'); }}
                 onSetEnd={(id) => { setPathEnd(id); setSearchMode('connect'); }}
                 onAddMore={handleExpandMore}
-                onRecursiveDelete={handleRecursiveDelete}
+                onSmartDelete={handleSmartDelete}
                 isProcessing={isProcessing}
             />
 

@@ -8,11 +8,11 @@ interface SidebarProps {
   onSetStart: (id: string) => void;
   onSetEnd: (id: string) => void;
   onAddMore?: (node: GraphNode) => void;
-  onRecursiveDelete?: (nodeId: string) => void;
+  onSmartDelete?: (nodeId: string) => void;
   isProcessing?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onSetStart, onSetEnd, onAddMore, onRecursiveDelete, isProcessing }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onSetStart, onSetEnd, onAddMore, onSmartDelete, isProcessing }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -89,9 +89,9 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onSetStart, on
                     {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
                   </button>
                   <button
-                    onClick={() => onRecursiveDelete?.(selectedNode.id)}
+                    onClick={() => onSmartDelete?.(selectedNode.id)}
                     className="text-slate-400 hover:text-red-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700"
-                    title="Delete this node and all its children"
+                    title="Delete this node and prune dangling branches"
                   >
                     <Trash2 size={18} />
                   </button>
