@@ -3,14 +3,16 @@ import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
 
 const SYSTEM_INSTRUCTION = `
 You are a collaboration graph generator.
-Your goal is to build a graph where Nodes are "Things" (Events, Movies, Projects) AND "People".
+Your goal is to build a graph where Nodes are "Things" (Events, Movies, Projects, Academic Papers, Book) AND "People".
 
 Rules:
-1. If the Source is a "Thing" (Movie, Event), return distinct, high-impact **People** involved.
-2. If the Source is a "Person", return distinct **Things** (Events, Projects, Works, Crimes, Battles) they are famous for with years.
-3. **Crucial**: Entities must be SPECIFIC named entities.
-4. **Formatting**: Omit leading "The" from Event/Project names unless part of a proper title (e.g., use "Great Depression" instead of "The Great Depression").
-5. Use Title Case for all names.
+1. If the Source is a "Thing" (Movie, Event, Paper), return distinct, high-impact **People** involved.
+2. If the Source is a "Person", return distinct **Things** (Events, Projects, Works, Crimes, Battles, Academic Papers, Books) they are famous for with years.
+3. If the person is an Academic, focus on their most cited **Papers** and **Books**.
+4. If the source is an Academic Paper or Book, return the **Authors** (Co-authorship).
+5. **Crucial**: Entities must be SPECIFIC named entities.
+6. **Formatting**: Omit leading "The" from Event/Project names unless part of a proper title (e.g., use "Great Depression" instead of "The Great Depression").
+7. Use Title Case for all names.
 
 Return strict JSON.
 `;
@@ -74,7 +76,7 @@ export const classifyEntity = async (term: string): Promise<string> => {
       contents: `Classify "${term}".
       Return JSON with a "type" field.
       If it is a specific Person (real, fictional, alias, criminal identity, e.g. "Zodiac Killer", "Jack the Ripper"), type = "Person".
-      If it is a Movie, Event, Book, Project, Place, Organization, or generic Concept, type = "Event".`,
+      If it is a Movie, Event, Book, Academic Paper, Project, Place, Organization, or generic Concept, type = "Event".`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -115,7 +117,7 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
       model: "gemini-2.5-flash",
       contents: `${contextualPrompt}${excludePrompt}
       1. Identify the 'year' it occurred/started (integer) if applicable (e.g. release year, event date).
-      2. Find 5-6 key people connected to it.`,
+      2. Find 5-6 key people connected to it. If this is an Academic Paper/Book, return the primary Authors (Co-authorship).`,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -159,10 +161,10 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
 
   const contextPrompt = excludeNodes.length > 0
     ? `The user graph already contains these nodes connected to ${personName}: ${JSON.stringify(excludeNodes)}. 
-       Return 6-8 significant movies, historical events, crimes, battles, or projects that are NOT the ones listed above.
+       Return 6-8 significant movies, historical events, academic papers, books, or projects that are NOT the ones listed above.
        Focus on fresh, distinct connections.`
-    : `List 6-8 DISTINCT, significant movies, historical events, crimes, battles, or projects associated with "${personName}".
-       If the person is a criminal or historical figure known for specific acts, list those acts as events.`;
+    : `List 6-8 DISTINCT, significant movies, historical events, academic papers, books, or projects associated with "${personName}".
+       If the person is an academic, list their most cited papers and books. If the person is a criminal or historical figure known for specific acts, list those acts as events.`;
 
   try {
     const apiCall = ai.models.generateContent({
@@ -215,8 +217,12 @@ export const fetchConnectionPath = async (start: string, end: string): Promise<P
     const apiCall = ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `Find a valid connection path between "${start}" and "${end}".
-            The path should be a sequence of entities (People, Events, Movies, Organizations) connecting the two.
-            Adjacent entities must be directly connected (e.g. Actor -> Movie -> Director -> Event -> Person).
+            STRICT RULE: The path MUST follow an alternating sequence (Bipartite structure):
+            - A "Person" MUST connect to a "Thing" (Movie, Paper, Event, Project, Book).
+            - A "Thing" MUST connect to a "Person".
+            - DIRECT connections between two People (e.g. "co-author of") or two Things are FORBIDDEN. You must reveal the hidden internal step (e.g. the specific Paper or Movie they shared).
+            
+            Adjacent entities must be directly connected (e.g. Person A -> Movie X -> Person B -> Event Y -> Person C).
             Try to keep the path under 6 steps if possible (Six Degrees concept).
             
             Return the full sequence as an ordered list, starting with "${start}" and ending with "${end}".
