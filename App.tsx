@@ -697,6 +697,37 @@ const App: React.FC = () => {
         });
     };
 
+    const handleExpandLeaves = useCallback(async (node: GraphNode) => {
+        const neighborLinks = links.filter(l =>
+            (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
+            (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
+        );
+        const neighborIds = neighborLinks.map(l => {
+            const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+            const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+            return s === node.id ? t : s;
+        });
+
+        const leavesToExpand = nodes.filter(n => neighborIds.includes(n.id) && !n.expanded && !n.isLoading);
+
+        if (leavesToExpand.length === 0) {
+            setNotification({ message: "No unexpanded leaf nodes found.", type: 'error' });
+            return;
+        }
+
+        setNotification({ message: `Expanding ${leavesToExpand.length} nodes...`, type: 'success' });
+
+        for (const leaf of leavesToExpand) {
+            try {
+                await expandNode(leaf);
+                // Smaller delay since expandNode has its own processing time
+                await new Promise(resolve => setTimeout(resolve, 300));
+            } catch (e) {
+                console.warn(`Failed to expand leaf ${leaf.id}`, e);
+            }
+        }
+    }, [nodes, links, expandNode]);
+
     const handleNodeClick = (node: GraphNode) => {
         // Retry image fetch if it failed previously
         if (node.imageChecked && !node.imageUrl) {
@@ -947,6 +978,7 @@ const App: React.FC = () => {
                 onSetStart={(id) => { setPathStart(id); setSearchMode('connect'); }}
                 onSetEnd={(id) => { setPathEnd(id); setSearchMode('connect'); }}
                 onAddMore={handleExpandMore}
+                onExpandLeaves={handleExpandLeaves}
                 onSmartDelete={handleSmartDelete}
                 isProcessing={isProcessing}
             />

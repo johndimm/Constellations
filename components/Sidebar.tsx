@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { GraphNode } from '../types';
-import { X, ExternalLink, Flag, Target, ChevronUp, ChevronDown, Plus, Loader2, Trash2 } from 'lucide-react';
+import { X, ExternalLink, Flag, Target, ChevronUp, ChevronDown, Plus, Loader2, Trash2, Maximize } from 'lucide-react';
 
 interface SidebarProps {
   selectedNode: GraphNode | null;
@@ -8,11 +8,12 @@ interface SidebarProps {
   onSetStart: (id: string) => void;
   onSetEnd: (id: string) => void;
   onAddMore?: (node: GraphNode) => void;
+  onExpandLeaves?: (node: GraphNode) => void;
   onSmartDelete?: (nodeId: string) => void;
   isProcessing?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onSetStart, onSetEnd, onAddMore, onSmartDelete, isProcessing }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onSetStart, onSetEnd, onAddMore, onExpandLeaves, onSmartDelete, isProcessing }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -80,6 +81,14 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onSetStart, on
             <div className="flex items-center gap-2 shrink-0 ml-2">
               {selectedNode.expanded && (
                 <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => onExpandLeaves?.(selectedNode)}
+                    disabled={isProcessing}
+                    className="text-slate-400 hover:text-emerald-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50"
+                    title="Expand all unexpanded neighbor nodes"
+                  >
+                    <Maximize size={18} />
+                  </button>
                   <button
                     onClick={() => onAddMore?.(selectedNode)}
                     disabled={isProcessing}
