@@ -211,78 +211,169 @@ const App: React.FC = () => {
         setSelectedNode(null);
 
         try {
-            const pathData = await fetchConnectionPath(start, end);
-            if (pathData.path.length < 2) {
-                setError("Could not find a valid path between these entities.");
-                setIsProcessing(false);
+            // 1. Classify start and end
+            const [startType, endType] = await Promise.all([
+                classifyEntity(start),
+                classifyEntity(end)
+            ]);
+
+            const startNode: GraphNode = {
+                id: start.trim(),
+                type: startType,
+                description: 'Start of path discovery.',
+                x: dimensions.width / 4,
+                y: dimensions.height / 2,
+                expanded: false
+            };
+
+            const endNode: GraphNode = {
+                id: end.trim(),
+                type: endType,
+                description: 'Destination of path discovery.',
+                x: (dimensions.width / 4) * 3,
+                y: dimensions.height / 2,
+                expanded: false
+            };
+
+            // Set initial state ONCE to avoid multiple layout resets
+            setNodes([startNode, endNode]);
+            setLinks([]); // Reset links explicitly
+            loadNodeImage(startNode.id);
+            loadNodeImage(endNode.id);
+
+            // 2. Expand both endpoints concurrently to show "work"
+            setNotification({ message: `Exploring "${start}" and "${end}"...`, type: 'success' });
+
+            // Wait a small bit for initial nodes to render
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            try {
+                // Expanding endpoints should NOT clear the path nodes we just added
+                await Promise.all([
+                    expandNode(startNode, true).catch(e => console.warn("Start expansion failed", e)),
+                    expandNode(endNode, true).catch(e => console.warn("End expansion failed", e))
+                ]);
+            } catch (e) {
+                console.warn("Endpoints expansion partially failed", e);
+            }
+
+            // 3. Fetch the path in background
+            setNotification({ message: "Finding hidden connections...", type: 'success' });
+
+            // Thinking messages loop to avoid "dead air"
+            const thinkingMessages = [
+                "Scanning world history...",
+                "Analyzing relationships...",
+                "Connecting the dots...",
+                "Consulting historical records...",
+                "Building the bridge..."
+            ];
+            let msgIndex = 0;
+            const thinkingInterval = setInterval(() => {
+                setNotification({ message: thinkingMessages[msgIndex], type: 'success' });
+                msgIndex = (msgIndex + 1) % thinkingMessages.length;
+            }, 3000);
+
+            let pathData;
+            try {
+                pathData = await fetchConnectionPath(start, end);
+            } catch (err: any) {
+                if (err.message?.includes("timed out")) {
+                    setError("Pathfinding timed out. The connection might be too complex or obscure.");
+                } else {
+                    setError("The AI failed to find a connection. Try more common entities.");
+                }
+                return;
+            } finally {
+                clearInterval(thinkingInterval);
+            }
+
+            if (!pathData.path || pathData.path.length < 2) {
+                setError("The AI couldn't bridge these two entities. Try a different pair.");
                 return;
             }
 
-            let newNodes: GraphNode[] = [];
-            let newLinks: GraphLink[] = [];
-            // nodeUpdates not strictly needed for fresh path but good for code consistency if we reused logic
-            // But here we are building fresh.
+            // 4. Discover path one by one
+            let currentTailId = startNode.id;
+            const steps = pathData.path.length - 1;
 
-            let previousNodeId: string | null = null;
+            for (let i = 1; i <= steps; i++) {
+                const step = pathData.path[i];
+                await new Promise(resolve => setTimeout(resolve, 500));
 
-            for (let i = 0; i < pathData.path.length; i++) {
-                const entity = pathData.path[i];
-                // Pass empty array for current nodes effectively starting fresh for resolution
-                const resolvedId = resolveNodeId(entity.id, [], newNodes);
+                setNotification({
+                    message: `Stitching path... step ${i} of ${steps}: ${step.id}`,
+                    type: 'success'
+                });
 
-                // We only check within newNodes since we are starting fresh
-                const pendingNode = newNodes.find(n => n.id === resolvedId);
+                const tailId = currentTailId;
+                const currentStep = step;
+                let nodeToExpand: GraphNode | null = null;
+                let resolvedIdForNextStep = currentStep.id;
 
-                if (!pendingNode) {
-                    const newNode: GraphNode = {
-                        id: resolvedId,
-                        type: entity.type,
-                        description: entity.description,
-                        year: entity.year,
-                        x: (dimensions.width / 2) + ((i - pathData.path.length / 2) * 150),
-                        y: dimensions.height / 2 + (Math.random() * 50),
+                setNodes(currentNodes => {
+                    const norm = normalizeForDedup(currentStep.id);
+                    const existing = currentNodes.find(n => normalizeForDedup(n.id) === norm);
+                    const resolvedId = existing ? existing.id : currentStep.id;
+                    resolvedIdForNextStep = resolvedId;
+
+                    const newNode: GraphNode = existing ? {
+                        ...existing,
+                        description: currentStep.description,
+                        year: currentStep.year || existing.year,
+                        expanded: existing.expanded
+                    } : {
+                        id: currentStep.id,
+                        type: currentStep.type,
+                        description: currentStep.description,
+                        year: currentStep.year,
+                        // Place intermediate nodes between clusters to reduce drift
+                        x: (dimensions.width / 2) + (i - steps / 2) * 50,
+                        y: (dimensions.height / 2) + Math.sin(i) * 50,
                         expanded: false
                     };
-                    newNodes.push(newNode);
-                }
 
-                if (previousNodeId) {
-                    const linkId = `${previousNodeId}-${resolvedId}`;
-                    const reverseLinkId = `${resolvedId}-${previousNodeId}`;
+                    nodeToExpand = newNode;
 
-                    // Simple check in newLinks only
-                    const linkExists = newLinks.some(l => l.id === linkId || l.id === reverseLinkId);
+                    const updatedNodes = existing
+                        ? currentNodes.map(n => n.id === existing.id ? newNode : n)
+                        : [...currentNodes, newNode];
 
-                    if (!linkExists) {
-                        newLinks.push({
-                            source: previousNodeId,
+                    setSelectedNode(newNode);
+
+                    setLinks(currentLinks => {
+                        const linkId = `${tailId}-${resolvedId}`;
+                        const reverseLinkId = `${resolvedId}-${tailId}`;
+                        if (currentLinks.some(l => l.id === linkId || l.id === reverseLinkId)) return currentLinks;
+
+                        return [...currentLinks, {
+                            source: tailId,
                             target: resolvedId,
                             id: linkId,
-                            label: entity.justification || "Connected"
-                        });
-                    }
+                            label: currentStep.justification || "Connected"
+                        }];
+                    });
+
+                    loadNodeImage(resolvedId);
+                    return updatedNodes;
+                });
+
+                // Trigger expansion on the intermediate node to "show work" as requested by user
+                if (nodeToExpand) {
+                    const target = nodeToExpand;
+                    setTimeout(() => {
+                        expandNode(target).catch(e => console.warn("Intermediate expansion failed", e));
+                    }, 100);
                 }
 
-                previousNodeId = resolvedId;
+                currentTailId = resolvedIdForNextStep;
             }
 
-            // Set entirely new state
-            setNodes(newNodes);
-            setLinks(newLinks);
-
-            newNodes.forEach((n, index) => {
-                setTimeout(() => {
-                    loadNodeImage(n.id);
-                }, 300 * index);
-            });
-
-            if (newNodes.length > 0) {
-                setSelectedNode(newNodes[0]);
-            }
+            setNotification({ message: "Path discovery complete!", type: 'success' });
 
         } catch (err) {
             console.error("Path search failed", err);
-            setError("Failed to generate a path. Try different entities.");
+            setError("An unexpected error occurred. Please try again.");
         } finally {
             setIsProcessing(false);
         }

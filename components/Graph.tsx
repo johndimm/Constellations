@@ -132,8 +132,21 @@ const Graph: React.FC<GraphProps> = ({
     useEffect(() => {
         if (!svgRef.current) return;
 
+        // Filter out and CLONE links to avoid D3 mutation issues and ensure fresh node lookups
+        const validLinks = links
+            .filter(link => {
+                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                return nodes.some(n => n.id === sourceId) && nodes.some(n => n.id === targetId);
+            })
+            .map(link => ({
+                ...link,
+                source: typeof link.source === 'object' ? link.source.id : link.source,
+                target: typeof link.target === 'object' ? link.target.id : link.target
+            }));
+
         const simulation = d3.forceSimulation<GraphNode, GraphLink>(nodes)
-            .force("link", d3.forceLink<GraphNode, GraphLink>(links).id(d => d.id).distance(100))
+            .force("link", d3.forceLink<GraphNode, GraphLink>(validLinks).id(d => d.id).distance(100))
             .force("charge", d3.forceManyBody().strength(-300))
             .force("center", d3.forceCenter(width / 2, height / 2))
             .velocityDecay(0.4);
@@ -280,24 +293,34 @@ const Graph: React.FC<GraphProps> = ({
         });
 
         const nodeMap = new Map(nodes.map(n => [n.id, n]));
-        links.forEach(link => {
-            let srcId = typeof link.source === 'object' ? (link.source as GraphNode).id : link.source as string;
-            let tgtId = typeof link.target === 'object' ? (link.target as GraphNode).id : link.target as string;
-            if (nodeMap.has(srcId)) link.source = nodeMap.get(srcId)!;
-            if (nodeMap.has(tgtId)) link.target = nodeMap.get(tgtId)!;
-        });
 
-        container.selectAll("line.link").remove();
+        // Filter out and CLONE links to avoid D3 mutation issues and ensure fresh node lookups.
+        // We convert back to string IDs to force D3 to re-resolve the objects.
+        // This avoids stale object references from previous renders causing "drift".
+        const validLinks = links
+            .filter(link => {
+                const sourceId = typeof link.source === 'object' ? (link.source as GraphNode).id : link.source;
+                const targetId = typeof link.target === 'object' ? (link.target as GraphNode).id : link.target;
+                return nodeMap.has(sourceId) && nodeMap.has(targetId);
+            })
+            .map(link => ({
+                ...link,
+                source: typeof link.source === 'object' ? (link.source as GraphNode).id : (link.source as string),
+                target: typeof link.target === 'object' ? (link.target as GraphNode).id : (link.target as string)
+            }));
 
-        const linkSel = container.selectAll<SVGPathElement, GraphLink>(".link").data(links, d => d.id);
-        linkSel.enter().insert("path", ".node")
+        const linkSel = container.selectAll<SVGPathElement, GraphLink>(".link").data(validLinks, d => d.id);
+
+        linkSel.exit().remove();
+
+        const linkEnter = linkSel.enter().insert("path", ".node")
             .attr("class", "link")
             .attr("fill", "none")
             .attr("stroke", "#dc2626")
             .attr("stroke-opacity", 0.7)
             .attr("stroke-width", 3.5)
             .attr("stroke-linecap", "round");
-        linkSel.exit().remove();
+
 
         const nodeSel = container.selectAll<SVGGElement, GraphNode>(".node").data(nodes, d => d.id);
 
@@ -570,17 +593,22 @@ const Graph: React.FC<GraphProps> = ({
             .on("mouseout", () => setHoveredNode(null));
 
         simulation.nodes(nodes);
-        (simulation.force("link") as d3.ForceLink<GraphNode, GraphLink>).links(links);
+        try {
+            const linkForce = simulation.force("link") as d3.ForceLink<GraphNode, GraphLink>;
+            linkForce.links(validLinks);
+        } catch (e) {
+            console.error("D3 forceLink initialization failed:", e);
+        }
 
-        const hasStructureChanged = nodes.length !== prevNodesLen.current || links.length !== prevLinksLen.current;
+        const hasStructureChanged = nodes.length !== prevNodesLen.current || validLinks.length !== prevLinksLen.current;
         if (hasStructureChanged) {
-            simulation.alpha(1).restart();
+            simulation.alpha(0.8).restart();
         } else {
-            simulation.alpha(0.3).restart();
+            simulation.alphaTarget(0); // Ensure it cools down if nothing changed
         }
 
         prevNodesLen.current = nodes.length;
-        prevLinksLen.current = links.length;
+        prevLinksLen.current = validLinks.length;
 
         let axisGroup = container.select<SVGGElement>(".timeline-axis");
         if (axisGroup.empty()) {
@@ -593,10 +621,19 @@ const Graph: React.FC<GraphProps> = ({
 
         simulation.on("tick", () => {
             allLinks.attr("d", d => {
-                const sx = (d.source as GraphNode).x!;
-                const sy = (d.source as GraphNode).y!;
-                const tx = (d.target as GraphNode).x!;
-                const ty = (d.target as GraphNode).y!;
+                if (!d.source || !d.target) return "";
+                const source = d.source as GraphNode;
+                const target = d.target as GraphNode;
+
+                if (typeof source === 'string' || typeof target === 'string') return "";
+
+                const sx = source.x;
+                const sy = source.y;
+                const tx = target.x;
+                const ty = target.y;
+
+                if (sx === undefined || sy === undefined || tx === undefined || ty === undefined ||
+                    isNaN(sx) || isNaN(sy) || isNaN(tx) || isNaN(ty)) return "";
 
                 const dx = tx - sx;
                 const dy = ty - sy;
