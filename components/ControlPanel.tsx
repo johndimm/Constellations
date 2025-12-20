@@ -195,6 +195,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   setShowSave(true);
                   setShowLoad(false);
                   setShowShare(false);
+                  setShowHelp(false);
                 }}
                 className="text-slate-400 hover:text-green-400 p-1.5"
                 title="Save Graph"
@@ -202,7 +203,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 <div className="flex items-center font-bold text-xs"><ArrowRight className="rotate-90 mr-1" size={12} /> SAVE</div>
               </button>
               <button
-                onClick={() => { setShowLoad(true); setShowSave(false); setShowShare(false); }}
+                onClick={() => { setShowLoad(true); setShowSave(false); setShowShare(false); setShowHelp(false); }}
                 className="text-slate-400 hover:text-blue-400 p-1.5"
                 title="Load Graph"
               >
@@ -210,7 +211,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               </button>
 
               <button
-                onClick={() => { setShowShare(!showShare); setShowSave(false); setShowLoad(false); }}
+                onClick={() => { setShowShare(!showShare); setShowSave(false); setShowLoad(false); setShowHelp(false); }}
                 className="text-slate-400 hover:text-purple-400 p-1.5"
                 title="Share Graph"
               >
@@ -228,12 +229,53 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               <button onClick={onClear} className="text-slate-400 hover:text-red-400 p-1.5">
                 <Trash2 size={16} />
               </button>
-              <button onClick={() => setShowHelp(!showHelp)} className="text-slate-400 hover:text-white p-1.5">
+              <button onClick={() => { setShowHelp(!showHelp); setShowSave(false); setShowLoad(false); setShowShare(false); }} className="text-slate-400 hover:text-white p-1.5">
                 <HelpCircle size={16} />
               </button>
             </div>
           </div>
         </div>
+
+        {/* Help Dialog */}
+        {showHelp && (
+          <div className="mb-4 bg-slate-800 p-4 rounded-lg border border-slate-600 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <HelpCircle size={14} /> Help & Info
+              </h3>
+              <button onClick={() => setShowHelp(false)}><X size={14} className="text-slate-400" /></button>
+            </div>
+            <div className="space-y-3 text-xs text-slate-300">
+              <p>Welcome to <strong>Constellations</strong>, an AI-powered graph exploration tool.</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li><strong>Explore:</strong> Find entities and expand their connections.</li>
+                <li><strong>Connect:</strong> Discover the hidden path between any two points.</li>
+                <li><strong>Timeline:</strong> View events and lives across the river of time.</li>
+              </ul>
+              <div className="pt-2 border-t border-slate-700 flex flex-col gap-2">
+                <a
+                  href="https://www.linkedin.com/in/johndimm/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors font-medium"
+                >
+                  <LinkIcon size={14} /> Created by John Dimm
+                </a>
+                <div className="flex justify-between items-center">
+                  <a
+                    href="https://github.com/johndimm/Constellations"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 transition-colors font-medium"
+                  >
+                    <Github size={14} /> View on GitHub
+                  </a>
+                  <span className="text-[10px] text-slate-500 italic">v1.2.0</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Share Dialog */}
         {showShare && (
@@ -369,7 +411,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             {searchMode === 'explore' ? (
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <input type="text" value={exploreTerm} onChange={(e) => setExploreTerm(e.target.value)} placeholder="Enter an event..." className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-8 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" disabled={isProcessing} />
+                  <input type="text" value={exploreTerm} onChange={(e) => setExploreTerm(e.target.value)} placeholder="Enter a person or event..." className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-8 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" disabled={isProcessing} />
                   <Search className="absolute left-3 top-3.5 text-slate-400" size={16} />
                   {exploreTerm && (
                     <button type="button" onClick={() => setExploreTerm('')} className="absolute right-2 top-3.5 text-slate-400 hover:text-white">
@@ -420,7 +462,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 
