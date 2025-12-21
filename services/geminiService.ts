@@ -66,7 +66,7 @@ const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg: string): Prom
 
 const GEMINI_TIMEOUT_MS = 15000; // 15 seconds
 
-export const classifyEntity = async (term: string): Promise<string> => {
+export const classifyEntity = async (term: string): Promise<{ type: string; description: string }> => {
   const apiKey = getEnvApiKey();
   const ai = new GoogleGenAI({ apiKey });
 
@@ -82,21 +82,22 @@ export const classifyEntity = async (term: string): Promise<string> => {
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            type: { type: Type.STRING, enum: ["Person", "Event"] }
+            type: { type: Type.STRING, enum: ["Person", "Event"] },
+            description: { type: Type.STRING }
           },
-          required: ["type"]
+          required: ["type", "description"]
         }
       }
     });
 
     const response = await withTimeout<GenerateContentResponse>(apiCall, 5000, "Classification timed out");
     const text = response.text;
-    if (!text) return 'Event';
+    if (!text) return { type: 'Event', description: '' };
     const json = JSON.parse(text);
-    return json.type;
+    return { type: json.type, description: json.description || '' };
   } catch (error) {
     console.warn("Classification failed, defaulting to Event:", error);
-    return 'Event';
+    return { type: 'Event', description: '' };
   }
 };
 

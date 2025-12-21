@@ -143,13 +143,13 @@ const App: React.FC = () => {
 
         let type = 'Event';
         try {
-            // Determine if it's a Person or a Thing (Event/Movie/etc)
-            type = await classifyEntity(term);
+            // Determine if it's a Person or a Thing (Event/Movie/etc) and get description
+            const { type, description } = await classifyEntity(term);
 
             const startNode: GraphNode = {
                 id: term.trim(),
                 type: type,
-                description: 'The starting point of your journey.',
+                description: description || '',
                 x: dimensions.width / 2,
                 y: dimensions.height / 2,
             };
@@ -212,15 +212,15 @@ const App: React.FC = () => {
 
         try {
             // 1. Classify start and end
-            const [startType, endType] = await Promise.all([
+            const [startClassification, endClassification] = await Promise.all([
                 classifyEntity(start),
                 classifyEntity(end)
             ]);
 
             const startNode: GraphNode = {
                 id: start.trim(),
-                type: startType,
-                description: 'Start of path discovery.',
+                type: startClassification.type,
+                description: startClassification.description || 'Start of path discovery.',
                 x: dimensions.width / 4,
                 y: dimensions.height / 2,
                 expanded: false
@@ -228,8 +228,8 @@ const App: React.FC = () => {
 
             const endNode: GraphNode = {
                 id: end.trim(),
-                type: endType,
-                description: 'Destination of path discovery.',
+                type: endClassification.type,
+                description: endClassification.description || 'Destination of path discovery.',
                 x: (dimensions.width / 4) * 3,
                 y: dimensions.height / 2,
                 expanded: false
@@ -734,6 +734,21 @@ const App: React.FC = () => {
             loadNodeImage(node.id);
         }
 
+        // If in connect mode, auto-fill start/end inputs
+        if (searchMode === 'connect') {
+            if (!pathStart) {
+                // First click: set as start
+                setPathStart(node.id);
+            } else if (!pathEnd) {
+                // Second click: set as end
+                setPathEnd(node.id);
+            } else {
+                // Both filled, reset and start over with this node as start
+                setPathStart(node.id);
+                setPathEnd('');
+            }
+        }
+
         setSelectedNode(node);
         if (!node.expanded) {
             expandNode(node);
@@ -975,8 +990,7 @@ const App: React.FC = () => {
             <Sidebar
                 selectedNode={selectedNode}
                 onClose={() => setSelectedNode(null)}
-                onSetStart={(id) => { setPathStart(id); setSearchMode('connect'); }}
-                onSetEnd={(id) => { setPathEnd(id); setSearchMode('connect'); }}
+
                 onAddMore={handleExpandMore}
                 onExpandLeaves={handleExpandLeaves}
                 onSmartDelete={handleSmartDelete}
