@@ -4,7 +4,7 @@ import ControlPanel from './components/ControlPanel';
 import Sidebar from './components/Sidebar';
 import { GraphNode, GraphLink } from './types';
 import { fetchConnections, fetchPersonWorks, classifyEntity, fetchConnectionPath } from './services/geminiService';
-import { fetchWikipediaImage } from './services/wikipediaService';
+import { fetchWikipediaImage, fetchWikipediaSummary } from './services/wikipediaService';
 import { Key } from 'lucide-react';
 
 const getEnvApiKey = () => {
@@ -276,7 +276,16 @@ const App: React.FC = () => {
 
             let pathData;
             try {
-                pathData = await fetchConnectionPath(start, end);
+                // Fetch Wikipedia summaries for both ends to help Gemini find a real path
+                const [startWiki, endWiki] = await Promise.all([
+                    fetchWikipediaSummary(start),
+                    fetchWikipediaSummary(end)
+                ]);
+                
+                pathData = await fetchConnectionPath(start, end, {
+                    startWiki: startWiki || undefined,
+                    endWiki: endWiki || undefined
+                });
             } catch (err: any) {
                 if (err.message?.includes("timed out")) {
                     setError("Pathfinding timed out. The connection might be too complex or obscure.");
@@ -428,7 +437,10 @@ const App: React.FC = () => {
                     return s === node.id ? t : s;
                 });
 
-                const data = await fetchPersonWorks(node.id, neighborNames);
+                // Fetch Wikipedia summary to improve Gemini's accuracy
+                const wikiSummary = await fetchWikipediaSummary(node.id);
+
+                const data = await fetchPersonWorks(node.id, neighborNames, wikiSummary || undefined);
 
                 data.works.forEach(work => {
                     const resolvedId = resolveNodeId(work.entity, nodes, newNodes);
@@ -483,7 +495,10 @@ const App: React.FC = () => {
                 const contextPerson = nodes.find(n => neighborIds.includes(n.id) && n.type === 'Person');
                 const context = contextPerson ? contextPerson.id : undefined;
 
-                const data = await fetchConnections(node.id, context, neighborIds);
+                // Fetch Wikipedia summary to improve Gemini's accuracy for new shows/events
+                const wikiSummary = await fetchWikipediaSummary(node.id);
+
+                const data = await fetchConnections(node.id, context, neighborIds, wikiSummary || undefined);
 
                 if (data.sourceYear) {
                     nodeUpdates.set(node.id, { year: data.sourceYear });
