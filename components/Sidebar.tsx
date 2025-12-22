@@ -14,6 +14,13 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onExpandLeaves, onSmartDelete, isProcessing }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [activeAction, setActiveAction] = useState<'expand' | 'add' | null>(null);
+
+  useEffect(() => {
+    if (!isProcessing) {
+      setActiveAction(null);
+    }
+  }, [isProcessing]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -63,20 +70,26 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onE
                 {selectedNode.expanded && (
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => onExpandLeaves?.(selectedNode)}
+                      onClick={() => {
+                        setActiveAction('expand');
+                        onExpandLeaves?.(selectedNode);
+                      }}
                       disabled={isProcessing}
-                      className="text-slate-400 hover:text-emerald-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50"
+                      className="text-slate-400 hover:text-emerald-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50 flex items-center justify-center min-w-[32px] min-h-[32px]"
                       title="Expand all unexpanded neighbor nodes"
                     >
-                      <Maximize size={18} />
+                      {isProcessing && activeAction === 'expand' ? <Loader2 size={18} className="animate-spin" /> : <Maximize size={18} />}
                     </button>
                     <button
-                      onClick={() => onAddMore?.(selectedNode)}
+                      onClick={() => {
+                        setActiveAction('add');
+                        onAddMore?.(selectedNode);
+                      }}
                       disabled={isProcessing}
-                      className="text-slate-400 hover:text-indigo-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50"
+                      className="text-slate-400 hover:text-indigo-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50 flex items-center justify-center min-w-[32px] min-h-[32px]"
                       title="Add more connections (6-8 more)"
                     >
-                      {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                      {isProcessing && activeAction === 'add' ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
                     </button>
                     <button
                       onClick={() => onSmartDelete?.(selectedNode.id)}
