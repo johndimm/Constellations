@@ -3,7 +3,13 @@ export const fetchWikipediaImage = async (query: string): Promise<string | null>
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-  const excludePatterns = ['flag', 'logo', 'seal', 'emblem', 'map', 'icon', 'folder', 'ambox', 'edit-clear', 'cartoon', 'caricature', 'drawing', 'sketch', 'illustration', 'scientist', 'person', 'outline'];
+  const excludePatterns = [
+    'flag', 'logo', 'seal', 'emblem', 'map', 'icon', 'folder', 'ambox', 'edit-clear', 
+    'cartoon', 'caricature', 'drawing', 'sketch', 'illustration', 'scientist', 'person', 'outline',
+    'pen', 'writing', 'stationery', 'ballpoint', 'refill', 'ink', 'graffiti', 'scribble',
+    'building', 'house', 'facade', 'monument', 'statue', 'sculpture', 'medallion', 'coin',
+    'crystal', 'clear', 'kedit', 'oojs', 'ui-icon', 'progressive', 'symbol', 'template'
+  ];
 
   // Helper to fetch image info from either Wikipedia or Commons
   const fetchImageInfo = async (fileTitle: string, signal: AbortSignal): Promise<string | null> => {
@@ -32,63 +38,84 @@ export const fetchWikipediaImage = async (query: string): Promise<string | null>
 
   const fetchPageImage = async (title: string, signal: AbortSignal): Promise<string | null> => {
     try {
-      // 1. Try pageimages first (official thumbnail)
-      const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages|pageprops&titles=${encodeURIComponent(title)}&pithumbsize=500&redirects=1&origin=*`;
+      // 1. Get page info, thumbnail, and all images in one go
+      const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages|pageprops|images&titles=${encodeURIComponent(title)}&pithumbsize=500&imlimit=50&redirects=1&origin=*`;
       const res = await fetch(url, { signal });
       const data = await res.json();
       
-      // Handle redirects in the response
-      let resolvedTitle = title;
-      if (data.query?.redirects && data.query.redirects.length > 0) {
-        resolvedTitle = data.query.redirects[0].to;
-      }
-
       const pages = data.query?.pages;
-      if (pages) {
-        const page = Object.values(pages)[0] as any;
-        if (page?.pageprops && page.pageprops.disambiguation !== undefined) return null;
-        if (page?.thumbnail?.source) {
-          const src = page.thumbnail.source.toLowerCase();
-          const filename = src.split('/').pop() || '';
-          if (!excludePatterns.some(p => filename.includes(p)) && !filename.includes('.svg')) {
-            return page.thumbnail.source;
-          }
-        }
-      }
+      if (!pages) return null;
+      
+      const page = Object.values(pages)[0] as any;
+      if (page?.pageprops && page.pageprops.disambiguation !== undefined) return null;
 
-      // 2. Fallback: list all images on the page
-      const listUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=images&titles=${encodeURIComponent(resolvedTitle)}&imlimit=50&origin=*`;
-      const listRes = await fetch(listUrl, { signal });
-      const listData = await listRes.json();
-      const listPages = listData.query?.pages;
-      if (listPages) {
-        const page = Object.values(listPages)[0] as any;
-        if (page?.images) {
-          const cleanQuery = query.replace(/[()]/g, ' ').toLowerCase();
-          const queryWords = cleanQuery.split(/\s+/).filter(w => w.length > 1);
-          
-          const sortedImages = [...page.images].sort((a: any, b: any) => {
-            const getScore = (img: any) => {
-              const t = img.title.toLowerCase();
-              if (excludePatterns.some(p => t.includes(p))) return -1000;
-              let s = 0;
-              if (t.includes('poster') || t.includes('cover')) s += 100;
-              if (t.includes('portrait') || t.includes('photo')) s += 80;
-              const matches = queryWords.filter(w => t.includes(w)).length;
-              s += (matches / Math.max(1, queryWords.length)) * 200;
-              if (t.includes('.jpg') || t.includes('.jpeg')) s += 20;
-              return s;
-            };
-            return getScore(b) - getScore(a);
+      const candidates: { title: string; score: number; url?: string }[] = [];
+
+      // Add official thumbnail as a candidate
+      if (page?.thumbnail?.source) {
+        const src = page.thumbnail.source.toLowerCase();
+        const filename = src.split('/').pop() || '';
+        if (!excludePatterns.some(p => filename.includes(p)) && !filename.includes('.svg')) {
+          candidates.push({ 
+            title: page.pageimage || filename, 
+            score: 100, // Bonus for being the official thumbnail
+            url: page.thumbnail.source 
           });
-
-          for (const img of sortedImages.slice(0, 5)) {
-            const url = await fetchImageInfo(img.title, signal);
-            if (url) return url;
-          }
         }
       }
-    } catch (e) {}
+
+      // Add other images on the page
+      if (page?.images) {
+        page.images.forEach((img: any) => {
+          if (candidates.some(c => c.title === img.title)) return;
+          candidates.push({ title: img.title, score: 0 });
+        });
+      }
+
+      if (candidates.length === 0) return null;
+
+      const cleanQuery = query.replace(/[()]/g, ' ').toLowerCase();
+      const queryWords = cleanQuery.split(/\s+/).filter(w => w.length > 1);
+
+      const scoredCandidates = candidates.map(c => {
+        const t = c.title.toLowerCase();
+        let s = c.score;
+
+        if (excludePatterns.some(p => t.includes(p))) return { ...c, score: -1000 };
+
+        if (t.includes('poster') || t.includes('cover')) s += 300;
+        if (t.includes('portrait') || t.includes('photo') || t.includes('face') || t.includes('headshot')) s += 200;
+        if (t.includes('crop') || t.includes('head')) s += 150;
+        if (t.includes('film') || t.includes('movie') || t.includes('tv') || t.includes('series')) s += 80;
+        
+        // Reward solo portraits, penalize group shots
+        if (t.includes('with') || t.includes(' and ') || t.includes(' family') || t.includes(' group')) s -= 250;
+        
+        // Bonus for matching the query words exactly in the filename
+        const matches = queryWords.filter(w => t.includes(w)).length;
+        s += (matches / Math.max(1, queryWords.length)) * 400;
+        
+        // Penalty for non-JPEG/PNG (like SVG or WebM)
+        if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
+        if (t.includes('.jpg') || t.includes('.jpeg')) s += 50;
+        if (t.includes('.png')) s += 20;
+        
+        // Prefer solo filenames
+        const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
+        s -= (wordCount * 10);
+
+        return { ...c, score: s };
+      }).sort((a, b) => b.score - a.score);
+
+      const best = scoredCandidates[0];
+      if (!best || best.score < -100) return null;
+
+      if (best.url) return best.url;
+      return await fetchImageInfo(best.title, signal);
+
+    } catch (e) {
+      console.error(`Error in fetchPageImage for ${title}:`, e);
+    }
     return null;
   };
 
@@ -108,16 +135,29 @@ export const fetchWikipediaImage = async (query: string): Promise<string | null>
   try {
     const baseTitle = query.includes('(') ? query.split('(')[0].trim() : query;
 
-    // Attempt 1: Direct Lookup
-    console.log(`🔍 [ImageSearch] Attempt 1 (Direct): "${query}"`);
-    const directImg = await fetchPageImage(query, controller.signal);
+    // Attempt 1: Media-Aware Search + Direct Lookup
+    console.log(`🔍 [ImageSearch] Attempt 1 (Media-Aware): "${query}"`);
+    const initialSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&origin=*`;
+    const initialSearchRes = await fetch(initialSearchUrl, { signal: controller.signal });
+    const initialSearchData = await initialSearchRes.json();
+    
+    let bestTitle = query;
+    if (initialSearchData.query?.search?.length) {
+      const results = initialSearchData.query.search;
+      const suffixes = ["(TV series)", "(film)", "(miniseries)", "(series)", "(book)", "(TV program)"];
+      const mediaResult = results.find((r: any) => 
+        suffixes.some(s => r.title.toLowerCase().includes(s.toLowerCase()))
+      );
+      bestTitle = mediaResult ? mediaResult.title : results[0].title;
+    }
+
+    const directImg = await fetchPageImage(bestTitle, controller.signal);
     if (directImg) return directImg;
 
     // Attempt 2: Base Title + Suffixes
     const suffixes = [" (TV series)", " (film)", " (series)", " (book)", " (miniseries)", " (TV program)"];
     for (const suffix of suffixes) {
       const titleToTry = baseTitle + suffix;
-      // Skip if exactly the same as initial query
       if (titleToTry === query) continue;
       
       console.log(`🔍 [ImageSearch] Attempt 2 (Suffix): "${titleToTry}"`);
@@ -136,10 +176,24 @@ export const fetchWikipediaImage = async (query: string): Promise<string | null>
         const t = res.title.toLowerCase();
         if (excludePatterns.some(p => t.includes(p))) return { res, score: -1000 };
         let s = 0;
-        if (t.includes('portrait') || t.includes('photo')) s += 100;
+        if (t.includes('portrait') || t.includes('photo') || t.includes('face') || t.includes('headshot')) s += 200;
+        if (t.includes('poster') || t.includes('cover')) s += 300;
+        if (t.includes('crop') || t.includes('head')) s += 150;
+        if (t.includes('film') || t.includes('movie') || t.includes('tv') || t.includes('series')) s += 80;
+        
+        if (t.includes('with') || t.includes(' and ') || t.includes(' family') || t.includes(' group')) s -= 250;
+        
         const matches = baseWords.filter(w => t.includes(w));
         if (matches.length < Math.min(2, baseWords.length)) return { res, score: -500 };
         s += (matches.length / baseWords.length) * 500;
+        
+        if (t.includes('.jpg') || t.includes('.jpeg')) s += 50;
+        if (t.includes('.png')) s += 20;
+        if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
+        
+        const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
+        s -= (wordCount * 10);
+        
         return { res, score: s };
       }).sort((a: any, b: any) => b.score - a.score);
 
@@ -178,12 +232,8 @@ export const fetchWikipediaSummary = async (query: string): Promise<string | nul
   try {
     console.log(`📡 [Wiki] Fetching summary for "${query}"`);
     
-    // Clean query: "The Beast in Me (TV Series)" -> "The Beast in Me"
     const cleanQuery = query.replace(/\s*\(.*\)\s*/g, '').trim();
 
-    // 1. Try a search with a higher limit to find the best media-related candidate
-    // This handles cases like "The Beast in Me" where the song might be result #1 
-    // but the TV series is result #2.
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl);
     const searchData = await searchRes.json();
@@ -191,8 +241,6 @@ export const fetchWikipediaSummary = async (query: string): Promise<string | nul
     let bestTitle = query;
     if (searchData.query?.search?.length) {
       const results = searchData.query.search;
-      
-      // Heuristic: Prefer results with media suffixes
       const suffixes = ["(TV series)", "(film)", "(miniseries)", "(series)", "(book)", "(TV program)"];
       const mediaResult = results.find((r: any) => 
         suffixes.some(s => r.title.toLowerCase().includes(s.toLowerCase()))
@@ -207,7 +255,6 @@ export const fetchWikipediaSummary = async (query: string): Promise<string | nul
       }
     }
 
-    // 2. Fetch the summary for the best title
     const summaryUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(bestTitle)}&redirects=1&origin=*`;
     const summaryRes = await fetch(summaryUrl);
     const summaryData = await summaryRes.json();
@@ -217,7 +264,19 @@ export const fetchWikipediaSummary = async (query: string): Promise<string | nul
       const page = Object.values(pages)[0] as any;
       if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
         console.log(`✅ [Wiki] Found summary for "${page.title}" (${page.extract?.length || 0} chars)`);
-        // If the summary is too short, try searching with the clean query
+        
+        // If the summary is extremely short or we are on a generic page, try to find a more specific film/book match
+        const isGeneric = page.title.toLowerCase() === cleanQuery.toLowerCase();
+        if (isGeneric && (!page.extract || page.extract.length < 150)) {
+             console.log(`⚠️ [Wiki] Summary for "${page.title}" is generic/short, searching for media-specific versions.`);
+             const mediaSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(cleanQuery + " film")}&srlimit=1&origin=*`;
+             const mediaSearchRes = await fetch(mediaSearchUrl);
+             const mediaSearchData = await mediaSearchRes.json();
+             if (mediaSearchData.query?.search?.[0]) {
+                 return await fetchWikipediaSummary(mediaSearchData.query.search[0].title);
+             }
+        }
+        
         if ((!page.extract || page.extract.length < 50) && cleanQuery !== query) {
             console.log(`⚠️ [Wiki] Summary too short, trying search with clean query: "${cleanQuery}"`);
             return await fetchWikipediaSummary(cleanQuery);
