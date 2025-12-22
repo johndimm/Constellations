@@ -76,7 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onE
                       }}
                       disabled={isProcessing}
                       className="text-slate-400 hover:text-emerald-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50 flex items-center justify-center min-w-[32px] min-h-[32px]"
-                      title="Expand all unexpanded neighbor nodes"
+                      title="Expand ALL unexpanded nodes in the graph"
                     >
                       {isProcessing && activeAction === 'expand' ? <Loader2 size={18} className="animate-spin" /> : <Maximize size={18} />}
                     </button>

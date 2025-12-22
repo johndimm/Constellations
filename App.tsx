@@ -98,11 +98,11 @@ const App: React.FC = () => {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    const loadNodeImage = useCallback(async (nodeId: string) => {
+    const loadNodeImage = useCallback(async (nodeId: string, context?: string) => {
         if (isTextOnly) return;
 
         setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n));
-        const url = await fetchWikipediaImage(nodeId);
+        const url = await fetchWikipediaImage(nodeId, context);
         if (url) {
             setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n));
         } else {
@@ -152,6 +152,7 @@ const App: React.FC = () => {
                 description: description || '',
                 x: dimensions.width / 2,
                 y: dimensions.height / 2,
+                expanded: false
             };
 
             setNodes([startNode]);
@@ -276,11 +277,10 @@ const App: React.FC = () => {
 
             let pathData;
             try {
-                // Fetch Wikipedia summaries for both ends to help Gemini find a real path
-                const [startWiki, endWiki] = await Promise.all([
-                    fetchWikipediaSummary(start),
-                    fetchWikipediaSummary(end)
-                ]);
+            const [startWiki, endWiki] = await Promise.all([
+                fetchWikipediaSummary(start, end),
+                fetchWikipediaSummary(end, start)
+            ]);
                 
                 pathData = await fetchConnectionPath(start, end, {
                     startWiki: startWiki || undefined,
@@ -438,7 +438,7 @@ const App: React.FC = () => {
                 });
 
                 // Fetch Wikipedia summary to improve Gemini's accuracy
-                const wikiSummary = await fetchWikipediaSummary(node.id);
+                const wikiSummary = await fetchWikipediaSummary(node.id, neighborNames.join(' '));
 
                 const data = await fetchPersonWorks(node.id, neighborNames, wikiSummary || undefined);
 
@@ -455,6 +455,7 @@ const App: React.FC = () => {
                             year: work.year,
                             x: (node.x || 0) + (Math.random() - 0.5) * 200,
                             y: (node.y || 0) + (Math.random() - 0.5) * 200,
+                            expanded: false
                         };
                         newNodes.push(newNode);
                     } else {
@@ -496,7 +497,7 @@ const App: React.FC = () => {
                 const context = contextPerson ? contextPerson.id : undefined;
 
                 // Fetch Wikipedia summary to improve Gemini's accuracy for new shows/events
-                const wikiSummary = await fetchWikipediaSummary(node.id);
+                const wikiSummary = await fetchWikipediaSummary(node.id, context);
 
                 const data = await fetchConnections(node.id, context, neighborIds, wikiSummary || undefined);
 
@@ -608,74 +609,19 @@ const App: React.FC = () => {
             isOpen: true,
             message: `Are you sure you want to delete "${rootId}"? This will also prune any resulting orphaned connections.`,
             onConfirm: () => {
-                setNodes(currentNodes => {
-                    setLinks(currentLinks => {
-                        let finalNodes = [...currentNodes];
-                        let finalLinks = [...currentLinks];
-
-                        // 1. Remove the target node and its links
-                        finalNodes = finalNodes.filter(n => n.id !== rootId);
-                        finalLinks = finalLinks.filter(l => {
-                            const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-                            const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-                            return s !== rootId && t !== rootId;
-                        });
-
-                        // 2. Recursively prune leaf nodes (nodes with 0 or 1 connection)
-                        // that were created by the expansion but aren't shared.
-                        let changed = true;
-                        while (changed) {
-                            changed = false;
-                            const linkCounts = new Map<string, number>();
-                            finalLinks.forEach(l => {
-                                const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-                                const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-                                linkCounts.set(s, (linkCounts.get(s) || 0) + 1);
-                                linkCounts.set(t, (linkCounts.get(t) || 0) + 1);
-                            });
-
-                            const toPrune = finalNodes.filter(n => {
-                                const count = linkCounts.get(n.id) || 0;
-                                // We prune nodes that have 0 or 1 connection.
-                                // But we skip the original nodes (0 is likely only if they were just orphaned).
-                                return count <= 0 || (count === 1 && n.expanded === false);
-                            });
-
-                            if (toPrune.length > 0) {
-                                const pruneIds = new Set(toPrune.map(n => n.id));
-                                finalNodes = finalNodes.filter(n => !pruneIds.has(n.id));
-                                finalLinks = finalLinks.filter(l => {
-                                    const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-                                    const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-                                    return !pruneIds.has(s) && !pruneIds.has(t);
-                                });
-                                changed = true;
-                            }
-                        }
-
-                        return finalLinks;
-                    });
-
-                    // The setNodes will use the returned values from setLinks' closure logic
-                    // Wait, setLinks happens asynchronously or synchronously based on implementation.
-                    // Better to calculate both first then set them.
-                    return currentNodes; // Placeholder, will fix below to be cleaner
-                });
-
-                // Let's do it cleaner by calculating both first.
-                let updatedNodes = [...nodes];
-                let updatedLinks = [...links];
-
-                updatedNodes = updatedNodes.filter(n => n.id !== rootId);
-                updatedLinks = updatedLinks.filter(l => {
+                const currentNodes = [...nodes];
+                const currentLinks = [...links];
+                
+                let updatedNodes = currentNodes.filter(n => n.id !== rootId);
+                let updatedLinks = currentLinks.filter(l => {
                     const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
                     const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
                     return s !== rootId && t !== rootId;
                 });
 
-                let pruning = true;
-                while (pruning) {
-                    pruning = false;
+                let changed = true;
+                while (changed) {
+                    changed = false;
                     const counts = new Map<string, number>();
                     updatedLinks.forEach(l => {
                         const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
@@ -684,22 +630,26 @@ const App: React.FC = () => {
                         counts.set(t, (counts.get(t) || 0) + 1);
                     });
 
-                    const leaves = updatedNodes.filter(n => {
+                    // Prune anyone with 0 connections OR unexpanded nodes with 1 connection
+                    // BUT: Don't prune if it's the last node remaining or if it has ever been expanded.
+                    const toPrune = updatedNodes.filter(n => {
                         const count = counts.get(n.id) || 0;
-                        // Prune nodes that have 0 connections (orphans).
-                        // This removes anyone who was ONLY held by the deleted node/branch.
-                        return count === 0;
+                        // Orphans (0 connections) are always pruned unless they are the last node.
+                        if (count === 0 && updatedNodes.length > 1) return true;
+                        // Leaves (1 connection) are pruned ONLY if they haven't been expanded.
+                        if (count === 1 && !n.expanded) return true;
+                        return false;
                     });
 
-                    if (leaves.length > 0) {
-                        const leafIds = new Set(leaves.map(n => n.id));
-                        updatedNodes = updatedNodes.filter(n => !leafIds.has(n.id));
+                    if (toPrune.length > 0) {
+                        const pruneIds = new Set(toPrune.map(n => n.id));
+                        updatedNodes = updatedNodes.filter(n => !pruneIds.has(n.id));
                         updatedLinks = updatedLinks.filter(l => {
                             const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
                             const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-                            return !leafIds.has(s) && !leafIds.has(t);
+                            return !pruneIds.has(s) && !pruneIds.has(t);
                         });
-                        pruning = true;
+                        changed = true;
                     }
                 }
 
@@ -707,41 +657,32 @@ const App: React.FC = () => {
                 setLinks(updatedLinks);
                 setSelectedNode(null);
                 setConfirmDialog(null);
-                setNotification({ message: `Node and dangling branches removed.`, type: 'success' });
+                setNotification({ message: `Node and exclusive connections removed.`, type: 'success' });
             }
         });
     };
 
     const handleExpandLeaves = useCallback(async (node: GraphNode) => {
-        const neighborLinks = links.filter(l =>
-            (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
-            (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
-        );
-        const neighborIds = neighborLinks.map(l => {
-            const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-            const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-            return s === node.id ? t : s;
-        });
+        // Find all nodes in the graph that are currently unexpanded and not loading
+        const unexpandedNodes = nodes.filter(n => !n.expanded && !n.isLoading);
 
-        const leavesToExpand = nodes.filter(n => neighborIds.includes(n.id) && !n.expanded && !n.isLoading);
-
-        if (leavesToExpand.length === 0) {
-            setNotification({ message: "No unexpanded leaf nodes found.", type: 'error' });
+        if (unexpandedNodes.length === 0) {
+            setNotification({ message: "No unexpanded nodes found.", type: 'error' });
             return;
         }
 
-        setNotification({ message: `Expanding ${leavesToExpand.length} nodes...`, type: 'success' });
+        setNotification({ message: `Expanding ${unexpandedNodes.length} nodes...`, type: 'success' });
 
-        for (const leaf of leavesToExpand) {
+        for (const targetNode of unexpandedNodes) {
             try {
-                await expandNode(leaf);
-                // Smaller delay since expandNode has its own processing time
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await expandNode(targetNode);
+                // Delay to allow physics and state to settle
+                await new Promise(resolve => setTimeout(resolve, 400));
             } catch (e) {
-                console.warn(`Failed to expand leaf ${leaf.id}`, e);
+                console.warn(`Failed to expand node ${targetNode.id}`, e);
             }
         }
-    }, [nodes, links, expandNode]);
+    }, [nodes, expandNode]);
 
     const handleNodeClick = (node: GraphNode) => {
         // Retry image fetch if it failed previously
@@ -749,18 +690,12 @@ const App: React.FC = () => {
             loadNodeImage(node.id);
         }
 
-        // If in connect mode, auto-fill start/end inputs
+        // If in connect mode, auto-fill start/end inputs ONLY if they are empty
         if (searchMode === 'connect') {
             if (!pathStart) {
-                // First click: set as start
                 setPathStart(node.id);
-            } else if (!pathEnd) {
-                // Second click: set as end
+            } else if (!pathEnd && node.id !== pathStart) {
                 setPathEnd(node.id);
-            } else {
-                // Both filled, reset and start over with this node as start
-                setPathStart(node.id);
-                setPathEnd('');
             }
         }
 
@@ -774,13 +709,25 @@ const App: React.FC = () => {
         if (visibleNodes.length <= 15 && !isTextOnly) {
             visibleNodes.forEach((node, index) => {
                 if (!node.imageUrl && !node.fetchingImage && !node.imageChecked) {
+                    // Find neighbors for context to help disambiguate during image search
+                    const neighborLinks = links.filter(l =>
+                        (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
+                        (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
+                    );
+                    const neighborNames = neighborLinks.map(l => {
+                        const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                        const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                        return s === node.id ? t : s;
+                    });
+                    const context = neighborNames.join(' ');
+
                     setTimeout(() => {
-                        loadNodeImage(node.id);
+                        loadNodeImage(node.id, context);
                     }, 200 * index);
                 }
             });
         }
-    }, [loadNodeImage, isTextOnly]);
+    }, [loadNodeImage, isTextOnly, links]);
 
     const [savedGraphs, setSavedGraphs] = useState<string[]>([]);
 
@@ -973,6 +920,7 @@ const App: React.FC = () => {
                 isTimelineMode={isTimelineMode}
                 isTextOnly={isTextOnly}
                 searchId={searchId}
+                selectedNode={selectedNode}
             />
 
             <ControlPanel

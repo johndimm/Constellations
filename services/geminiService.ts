@@ -17,7 +17,9 @@ Rules:
    - For TV Shows and Movies: ALWAYS include the LEAD ACTORS and STARS (main cast), plus director/creator.
    - **CRITICAL**: Only return people who are ACTUALLY connected to the specific title. Do NOT confuse similar titles or make assumptions.
    - If you're not certain about the exact cast/crew, focus on verified, well-documented connections only.
+   - **WEIGHTING RULE**: Prefer specific, niche connections over broad, mass-participant events. A shared obscure paper or indie movie is a "stronger" link than a shared massive event like "World War II" or "The Oscars".
 2. If the Source is a "Person", return distinct **Things** (Events, Projects, Works, Crimes, Battles, Academic Papers, Books) they are famous for with years.
+   - **WEIGHTING RULE**: Prioritize unique or smaller-scale collaborations where the connection between participants is meaningful and direct.
 3. If the person is an Academic, focus on their most cited **Papers** and **Books**.
 4. If the source is an Academic Paper or Book, return the **Authors** (Co-authorship).
 5. **Crucial**: Entities must be SPECIFIC named entities.
@@ -266,6 +268,9 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
             
             Adjacent entities must be directly connected (e.g. Person A -> Movie X -> Person B -> Event Y -> Person C).
             Try to keep the path under 6 steps if possible (Six Degrees concept).
+            
+            WEIGHTING PREFERENCE: 
+            Prioritize "niche" or "exclusive" connections. For example, if two people both worked on a specific obscure research paper, that is a much stronger path link than if they both "participated" in a massive event like "World War II" or "The 2024 Olympics". Prefer the most direct and exclusive links possible.
             
             Return the full sequence as an ordered list, starting with "${start}" and ending with "${end}".
             For 'justification', explain the link to the PREVIOUS node in the chain.`,

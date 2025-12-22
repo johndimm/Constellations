@@ -1,5 +1,5 @@
 
-export const fetchWikipediaImage = async (query: string): Promise<string | null> => {
+export const fetchWikipediaImage = async (query: string, context?: string): Promise<string | null> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -97,12 +97,12 @@ export const fetchWikipediaImage = async (query: string): Promise<string | null>
         
         // Penalty for non-JPEG/PNG (like SVG or WebM)
         if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
-        if (t.includes('.jpg') || t.includes('.jpeg')) s += 50;
-        if (t.includes('.png')) s += 20;
+        if (t.includes('.jpg') || t.includes('.jpeg')) s += 100; // Increased bonus for JPEG
+        if (t.includes('.png')) s -= 50; // Penalize PNGs for people (often low-res video stills)
         
         // Prefer solo filenames
         const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
-        s -= (wordCount * 10);
+        s -= (wordCount * 15); // Stronger penalty for long, descriptive filenames
 
         return { ...c, score: s };
       }).sort((a, b) => b.score - a.score);
@@ -134,10 +134,11 @@ export const fetchWikipediaImage = async (query: string): Promise<string | null>
 
   try {
     const baseTitle = query.includes('(') ? query.split('(')[0].trim() : query;
+    const searchQuery = context ? `${query} ${context}` : query;
 
     // Attempt 1: Media-Aware Search + Direct Lookup
-    console.log(`🔍 [ImageSearch] Attempt 1 (Media-Aware): "${query}"`);
-    const initialSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&origin=*`;
+    console.log(`🔍 [ImageSearch] Attempt 1 (Media-Aware): "${searchQuery}"`);
+    const initialSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;
     const initialSearchRes = await fetch(initialSearchUrl, { signal: controller.signal });
     const initialSearchData = await initialSearchRes.json();
     
@@ -187,12 +188,12 @@ export const fetchWikipediaImage = async (query: string): Promise<string | null>
         if (matches.length < Math.min(2, baseWords.length)) return { res, score: -500 };
         s += (matches.length / baseWords.length) * 500;
         
-        if (t.includes('.jpg') || t.includes('.jpeg')) s += 50;
-        if (t.includes('.png')) s += 20;
+        if (t.includes('.jpg') || t.includes('.jpeg')) s += 100;
+        if (t.includes('.png')) s -= 50;
         if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
         
         const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
-        s -= (wordCount * 10);
+        s -= (wordCount * 15);
         
         return { res, score: s };
       }).sort((a: any, b: any) => b.score - a.score);
@@ -228,13 +229,14 @@ export const fetchWikipediaImage = async (query: string): Promise<string | null>
   return null;
 };
 
-export const fetchWikipediaSummary = async (query: string): Promise<string | null> => {
+export const fetchWikipediaSummary = async (query: string, context?: string): Promise<string | null> => {
   try {
-    console.log(`📡 [Wiki] Fetching summary for "${query}"`);
+    console.log(`📡 [Wiki] Fetching summary for "${query}"${context ? ` with context "${context}"` : ''}`);
     
     const cleanQuery = query.replace(/\s*\(.*\)\s*/g, '').trim();
+    const searchQuery = context ? `${cleanQuery} ${context}` : query;
 
-    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&origin=*`;
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl);
     const searchData = await searchRes.json();
     
@@ -265,7 +267,6 @@ export const fetchWikipediaSummary = async (query: string): Promise<string | nul
       if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
         console.log(`✅ [Wiki] Found summary for "${page.title}" (${page.extract?.length || 0} chars)`);
         
-        // If the summary is extremely short or we are on a generic page, try to find a more specific film/book match
         const isGeneric = page.title.toLowerCase() === cleanQuery.toLowerCase();
         if (isGeneric && (!page.extract || page.extract.length < 150)) {
              console.log(`⚠️ [Wiki] Summary for "${page.title}" is generic/short, searching for media-specific versions.`);
