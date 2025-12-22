@@ -14,6 +14,7 @@ interface GraphProps {
     isTimelineMode?: boolean;
     isTextOnly?: boolean;
     searchId?: number;
+    selectedNode?: GraphNode | null;
 }
 
 const Graph: React.FC<GraphProps> = ({
@@ -27,7 +28,8 @@ const Graph: React.FC<GraphProps> = ({
     isCompact = false,
     isTimelineMode = false,
     isTextOnly = false,
-    searchId = 0
+    searchId = 0,
+    selectedNode = null
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const zoomGroupRef = useRef<SVGGElement>(null);
@@ -103,6 +105,33 @@ const Graph: React.FC<GraphProps> = ({
         lines.push(currentLine);
         return lines.slice(0, 3); // Max 3 lines
     };
+
+    // Center on selected node when it changes
+    useEffect(() => {
+        if (!selectedNode || !svgRef.current || isTimelineMode) return;
+
+        const svg = d3.select(svgRef.current);
+        const zoom = d3.zoom<SVGSVGElement, unknown>().on("zoom", (event) => {
+            if (zoomGroupRef.current) {
+                d3.select(zoomGroupRef.current).attr("transform", event.transform);
+            }
+        });
+
+        // Get current transform
+        const currentTransform = d3.zoomTransform(svgRef.current);
+        const targetX = selectedNode.x ?? width / 2;
+        const targetY = selectedNode.y ?? height / 2;
+
+        // Calculate transition to center the node
+        // We keep the current scale (k) but move to targetX, targetY
+        const k = currentTransform.k;
+        const transform = d3.zoomIdentity
+            .translate(width / 2, height / 2)
+            .scale(k)
+            .translate(-targetX, -targetY);
+
+        svg.transition().duration(1000).call(zoom.transform, transform);
+    }, [selectedNode?.id, width, height, isTimelineMode]);
 
     // Reset zoom when searchId changes
     useEffect(() => {
@@ -256,12 +285,12 @@ const Graph: React.FC<GraphProps> = ({
             }));
 
         } else {
-            if (centerForce) centerForce.x(width / 2).y(height / 2).strength(0.8);
+            if (centerForce) centerForce.x(width / 2).y(height / 2).strength(1.0);
 
             // Standard vs Compact Settings
-            // Relaxed compact settings to prevent overlap
-            const chargeStrength = isCompact ? -60 : -600;
-            const linkDist = isCompact ? 50 : 150;
+            // Reduced charge to prevent aggressive drifting
+            const chargeStrength = isCompact ? -150 : -400;
+            const linkDist = isCompact ? 60 : 120;
 
             if (chargeForce) chargeForce.strength(chargeStrength);
             if (linkForce) linkForce.strength(1).distance(linkDist);
@@ -270,7 +299,7 @@ const Graph: React.FC<GraphProps> = ({
             simulation.force("y", null);
         }
 
-        simulation.alpha(0.3).restart();
+        simulation.alpha(0.5).restart();
     }, [isTimelineMode, isCompact, nodes, width, height, isTextOnly]);
 
     // Update DOM & Styles
@@ -602,9 +631,10 @@ const Graph: React.FC<GraphProps> = ({
 
         const hasStructureChanged = nodes.length !== prevNodesLen.current || validLinks.length !== prevLinksLen.current;
         if (hasStructureChanged) {
-            simulation.alpha(0.8).restart();
+            // "Warm" restart instead of hot to prevent explosion
+            simulation.alpha(0.4).restart();
         } else {
-            simulation.alphaTarget(0); // Ensure it cools down if nothing changed
+            simulation.alphaTarget(0); 
         }
 
         prevNodesLen.current = nodes.length;
