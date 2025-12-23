@@ -1,0 +1,672 @@
+{
+  "nodes": [
+    {
+      "id": "IRCAM",
+      "type": "Event",
+      "description": "IRCAM (Institut de Recherche et Coordination Acoustique/Musique) is a French institute dedicated to research in music and sound, founded by Pierre Boulez.",
+      "x": 713.5815623296878,
+      "y": 377.1827451604641,
+      "expanded": true,
+      "fetchingImage": false,
+      "isLoading": false,
+      "vx": -0.011762899505066392,
+      "vy": 0.0047524114050526735,
+      "fx": null,
+      "fy": null,
+      "index": 0,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/1/17/Predio_Ircam.jpg",
+      "imageChecked": true,
+      "year": 1977
+    },
+    {
+      "id": "Renzo Piano",
+      "type": "Person",
+      "description": "An Italian architect known for co-designing the Centre Pompidou and its adjacent IRCAM extension.",
+      "x": 504.1691684832584,
+      "y": 133.66376878637956,
+      "expanded": false,
+      "index": 1,
+      "vy": 0.006069571071587227,
+      "vx": -0.011621924145503804,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Renzo_Piano%2C_portrait.jpg/500px-Renzo_Piano%2C_portrait.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Richard Rogers",
+      "type": "Person",
+      "description": "A British architect famous for his modernist and functionalist designs, including co-designing the Centre Pompidou and the IRCAM extension.",
+      "x": 981.3013789044198,
+      "y": 199.697428051203,
+      "expanded": false,
+      "index": 2,
+      "vy": -0.0032449191247673776,
+      "vx": 0.0037815294042243897,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Richard_Rogers_-_Portrait_2008_%283x4_cropped%29.jpg/500px-Richard_Rogers_-_Portrait_2008_%283x4_cropped%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Luciano Berio",
+      "type": "Person",
+      "description": "An influential Italian composer who was closely associated with IRCAM's early research into computer music and acoustics.",
+      "x": 932.625596770687,
+      "y": 613.3677023461938,
+      "expanded": false,
+      "index": 3,
+      "vy": 0.004623049186314116,
+      "vx": 0.0027714138190480277,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/c/ce/Luciano_Berio.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Vinko Globokar",
+      "type": "Person",
+      "description": "A Slovenian composer and trombonist, renowned for his experimental approach to music and active involvement with IRCAM's research.",
+      "x": 816.9323656041855,
+      "y": 72.3208404999743,
+      "expanded": false,
+      "index": 4,
+      "vy": -0.0016126169125327454,
+      "vx": -0.00008051614278955718,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/P1680663_6._H%C3%B6rfest_Neue_Musik_%28Detmold%29_-_Epilog_%2821755278079%29.jpg/500px-P1680663_6._H%C3%B6rfest_Neue_Musik_%28Detmold%29_-_Epilog_%2821755278079%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "George Aperghis",
+      "type": "Person",
+      "description": "A Greek-French composer known for his innovative musical theatre and collaborations with IRCAM on various projects.",
+      "x": 1075.4636881438973,
+      "y": 420.47336705874693,
+      "expanded": false,
+      "index": 5,
+      "vy": 0.00024280143838350957,
+      "vx": -0.0006640227418719755,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Der_Komponist_Georges_Aperghis_in_seinem_Pariser_Atelier_02.jpg/500px-Der_Komponist_Georges_Aperghis_in_seinem_Pariser_Atelier_02.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Pierre Boulez",
+      "type": "Person",
+      "description": "A leading French composer, conductor, and founder and first director of IRCAM, pioneering electro-acoustic and computer music.",
+      "x": 1003.6938631475078,
+      "y": 516.7727515667847,
+      "expanded": false,
+      "index": 6,
+      "vy": 0.0009597315924351115,
+      "vx": 0.0005306234141855722,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/df/Pierre_Boulez_%281968%29.jpg/500px-Pierre_Boulez_%281968%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Tod Machover",
+      "type": "Person",
+      "description": "An American composer and inventor, he served as Director of Musical Research at IRCAM, contributing significantly to music technology and hyperinstruments.",
+      "x": 404.6585272800444,
+      "y": 448.45257714066946,
+      "expanded": false,
+      "index": 7,
+      "vy": -0.005222496402954954,
+      "vx": -0.015514790202974197,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Tod_Machover_JI1.jpg/500px-Tod_Machover_JI1.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Kaija Saariaho",
+      "type": "Person",
+      "description": "A renowned Finnish composer, many of her significant electro-acoustic and computer-assisted works were developed and premiered at IRCAM.",
+      "x": 698.0632492764546,
+      "y": 56.295401551067954,
+      "expanded": false,
+      "index": 8,
+      "vy": 0.0009635397491306909,
+      "vx": -0.001960369108937582,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Kaija_Saariaho_%C3%A0_la_Cit%C3%A9_de_la_Musique_%288673733623%29.jpg/500px-Kaija_Saariaho_%C3%A0_la_Cit%C3%A9_de_la_Musique_%288673733623%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Philippe Manoury",
+      "type": "Person",
+      "description": "A prominent French composer, he frequently collaborated with IRCAM, developing innovative works often involving real-time computer interaction.",
+      "x": 623.295602848808,
+      "y": 684.6028215686179,
+      "expanded": false,
+      "index": 9,
+      "vy": 0.012442352686574547,
+      "vx": 0.004433150386807906,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/1/1b/Philippe_Manoury.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Tristan Murail",
+      "type": "Person",
+      "description": "A French spectralist composer and former researcher at IRCAM, he greatly influenced the development of computer-assisted composition and spectral music.",
+      "x": 742.5531007602798,
+      "y": 697.4526156322235,
+      "expanded": false,
+      "index": 10,
+      "vy": 0.006393491233103312,
+      "vx": 0.004651979441518758,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/2/26/Spectrogram_showing_shared_partials.png",
+      "imageChecked": true
+    },
+    {
+      "id": "Max Mathews",
+      "type": "Person",
+      "description": "An American electrical engineer and computer scientist, considered the 'father of computer music,' whose early work and advice influenced IRCAM's formation.",
+      "x": 743.5948976392447,
+      "y": 167.33428813745334,
+      "expanded": false,
+      "index": 11,
+      "vy": -0.0017828886026376427,
+      "vx": 0.00167192312334398,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/Max_Mathews_on_80th_birthday.jpg/500px-Max_Mathews_on_80th_birthday.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Gérard Assayag",
+      "type": "Person",
+      "description": "A prominent researcher at IRCAM, known for his contributions to computer-aided composition and the development of the OpenMusic programming environment.",
+      "x": 429.8810625185895,
+      "y": 235.68406070882438,
+      "expanded": false,
+      "index": 12,
+      "vy": -0.015154423858443287,
+      "vx": -0.0010122226232549434,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/CSIRAC.jpg/500px-CSIRAC.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Bernard Stiegler",
+      "type": "Person",
+      "description": "A French philosopher who directed the research and development department at IRCAM during the 1990s, focusing on the relationship between technology and culture.",
+      "x": 549.4976256389208,
+      "y": 244.73535823457024,
+      "expanded": false,
+      "index": 13,
+      "vy": 0.002572473647376115,
+      "vx": -0.0014608913433729366,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/2016_HTNM_Bernard_Stiegler_%2830301265471%29_%28cropped%29.jpg/500px-2016_HTNM_Bernard_Stiegler_%2830301265471%29_%28cropped%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Frank Madlener",
+      "type": "Person",
+      "description": "Served as the Director of IRCAM for over a decade, from 2006 to 2018, overseeing its development and international collaborations.",
+      "x": 813.4130630044722,
+      "y": 600.6584752171759,
+      "expanded": false,
+      "index": 14,
+      "vy": 0.0038624720754907448,
+      "vx": 0.0007747021166499193,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/HistoricPlacesNationalRegisterPlaque.JPG/500px-HistoricPlacesNationalRegisterPlaque.JPG",
+      "imageChecked": true
+    },
+    {
+      "id": "Jean-Louis Giavitto",
+      "type": "Person",
+      "description": "A research director at IRCAM, specializing in symbolic computation, programming languages, and formal methods applied to music and sound.",
+      "x": 1027.719836844935,
+      "y": 310.2702229214232,
+      "expanded": false,
+      "index": 15,
+      "vy": -0.00017929609544416712,
+      "vx": 0.00116007287331349,
+      "fetchingImage": false,
+      "imageUrl": "https://books.google.com/books/content?id=eP-6DuNjt-gC&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api",
+      "imageChecked": true
+    },
+    {
+      "id": "Xavier Rodet",
+      "type": "Person",
+      "description": "A researcher at IRCAM known for his pioneering work in real-time signal processing, sound analysis, synthesis, and voice transformation.",
+      "x": 935.9531722966756,
+      "y": 88.51309769739288,
+      "expanded": false,
+      "index": 16,
+      "vy": -0.0032749494633867345,
+      "vx": 0.0026243676457032,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/CSIRAC.jpg/500px-CSIRAC.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Georges Pompidou",
+      "type": "Person",
+      "description": "As President of France, he was the visionary behind the creation of the Centre Pompidou, which houses and is organizationally linked with IRCAM.",
+      "x": 694.1085252818752,
+      "y": 587.6909479770022,
+      "expanded": false,
+      "index": 17,
+      "vy": 0.006243193607613431,
+      "vx": -0.00005952633016484887,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/b/b5/Georges_Pompidou_and_Antoine_Pinay_1969_%28cropped%29_2.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Robert Bordaz",
+      "type": "Person",
+      "description": "He served as the first president of the Centre Pompidou, overseeing its establishment and the integration of affiliated institutions like IRCAM.",
+      "x": 470.8284769128732,
+      "y": 348.4440054714576,
+      "expanded": false,
+      "index": 18,
+      "vy": -0.008259848877518947,
+      "vx": -0.018159353088771545,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Museum_Kanal.jpg/500px-Museum_Kanal.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Michel Guy",
+      "type": "Person",
+      "description": "He was a French Secretary of State for Culture who played a crucial role in the political and cultural realization of the Centre Pompidou and IRCAM.",
+      "x": 524.2943683758483,
+      "y": 457.65869095364576,
+      "expanded": false,
+      "index": 19,
+      "vy": 0.010971175255683533,
+      "vx": -0.015290628696411509,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Michel-Tabachnik_%28cropped%29.jpg/500px-Michel-Tabachnik_%28cropped%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Jean Tinguely",
+      "type": "Person",
+      "description": "A Swiss sculptor who, with Niki de Saint Phalle, designed the Stravinsky Fountain, located above the underground sections of IRCAM.",
+      "x": 453.2088998603906,
+      "y": 558.1280384861926,
+      "expanded": false,
+      "index": 20,
+      "vy": -0.007871024215235067,
+      "vx": -0.008233655250739602,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Portrait_of_Jean_Tinguely%2C_1961.jpg/500px-Portrait_of_Jean_Tinguely%2C_1961.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Niki de Saint Phalle",
+      "type": "Person",
+      "description": "A French-American artist who collaborated with Jean Tinguely on the design and creation of the iconic Stravinsky Fountain above IRCAM.",
+      "x": 623.0147531240365,
+      "y": 149.86169788955726,
+      "expanded": false,
+      "index": 21,
+      "vy": -0.002789782189399707,
+      "vx": -0.009021795866725668,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dc/Niki_de_Saint_Phalle_by_Lothar_Wolleh.jpg/500px-Niki_de_Saint_Phalle_by_Lothar_Wolleh.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Miller Puckette",
+      "type": "Person",
+      "description": "American computer music researcher and software developer, best known for creating the Max programming language while at IRCAM.",
+      "x": 908.3375041715087,
+      "y": 295.6889358444438,
+      "expanded": false,
+      "index": 22,
+      "vy": 0.0012312360712821862,
+      "vx": -0.006179171696196974,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/43/Miller_Puckette_auf_der_Linux_Audio_Conference_2014_in_Karlsruhe.jpg/500px-Miller_Puckette_auf_der_Linux_Audio_Conference_2014_in_Karlsruhe.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Jean-Claude Risset",
+      "type": "Person",
+      "description": "French composer and computer music pioneer who conducted fundamental research in digital sound synthesis and psychoacoustics at IRCAM.",
+      "x": 668.4461905459901,
+      "y": 260.89259135795714,
+      "expanded": false,
+      "index": 23,
+      "vy": -0.0049710907312180575,
+      "vx": -0.001590921362772513,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/Jean-Claude_Risset_au_StuStu.jpg/500px-Jean-Claude_Risset_au_StuStu.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Jonathan Harvey",
+      "type": "Person",
+      "description": "British composer of spectral and electronic music, known for creating several major works at IRCAM.",
+      "x": 642.3457509662071,
+      "y": 479.41409867245835,
+      "expanded": false,
+      "index": 24,
+      "vy": 0.01323077090642253,
+      "vx": -0.016069200755054143,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/9/95/G_g_g_titles.JPG",
+      "imageChecked": true
+    },
+    {
+      "id": "Laurent Bayle",
+      "type": "Person",
+      "description": "French cultural administrator who served as the Director of IRCAM from 1992 to 2000, overseeing its artistic and scientific development.",
+      "x": 571.737023275054,
+      "y": 576.3763253004374,
+      "expanded": false,
+      "index": 25,
+      "vy": 0.018179315412882112,
+      "vx": -0.010910315852530326,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f8/Gaspard_Laurent_Bayle_%281774-1816%29_Wellcome_M0010375.jpg/500px-Gaspard_Laurent_Bayle_%281774-1816%29_Wellcome_M0010375.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Iannis Xenakis",
+      "type": "Person",
+      "description": "Greek-French composer and architect, influential in computer-assisted composition and worked with early computer systems like UPIC at IRCAM.",
+      "x": 862.5603212933464,
+      "y": 183.22810768589525,
+      "expanded": false,
+      "index": 26,
+      "vy": 0.0004750910204533304,
+      "vx": 0.000427144490484227,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/58/XenakisMDaniel_crop.jpg/500px-XenakisMDaniel_crop.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Roger Reynolds",
+      "type": "Person",
+      "description": "American composer recognized for his use of computer technology in music, who created several compositions utilizing the resources and researchers at IRCAM.",
+      "x": 956.3741457815955,
+      "y": 406.6355429405331,
+      "expanded": false,
+      "index": 27,
+      "vy": -0.0005101495293065288,
+      "vx": -0.002618339794670549,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/95/Uxmal-portrait-of-Roger-Reynolds.jpg/500px-Uxmal-portrait-of-Roger-Reynolds.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Peter Rice",
+      "type": "Person",
+      "description": "Lead structural engineer for the Centre Pompidou, whose innovative design shaped the building housing IRCAM.",
+      "x": 837.2816905387475,
+      "y": 392.4712542258872,
+      "expanded": false,
+      "index": 28,
+      "vy": 0.0009617553945122047,
+      "vx": -0.004212680895815734,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/0/01/Peter_Rice_%281879-1944%29_portrait.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "François de Brémond d'Ars",
+      "type": "Person",
+      "description": "Influential acoustical consultant who played a key role in designing the specialized sound environments of IRCAM.",
+      "x": 789.5183429294937,
+      "y": 278.34561015378614,
+      "expanded": false,
+      "index": 29,
+      "vy": -0.0009668483112032916,
+      "vx": -0.00440781307617151,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Fran%C3%A7ois_de_La_Rochefoucauld.jpg/500px-Fran%C3%A7ois_de_La_Rochefoucauld.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Jean Prouvé",
+      "type": "Person",
+      "description": "Acclaimed architect and designer who served as the president of the jury that selected Renzo Piano and Richard Rogers' design for the Centre Pompidou.",
+      "x": 884.4258533368005,
+      "y": 502.82495646343904,
+      "expanded": false,
+      "index": 30,
+      "vy": -0.0006695454380022362,
+      "vx": -0.001031569983107621,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Jean_Prouv%C3%A9_%281981%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Ted Happold",
+      "type": "Person",
+      "description": "Prominent structural engineer at Ove Arup & Partners, contributing significantly to the engineering design of the Centre Pompidou project.",
+      "x": 590.4531225364603,
+      "y": 357.54209411844204,
+      "expanded": false,
+      "index": 31,
+      "vy": 0.008929059402257437,
+      "vx": -0.018911660989699826,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b6/AscotStand.JPG/500px-AscotStand.JPG",
+      "imageChecked": true
+    },
+    {
+      "id": "François Bouygues",
+      "type": "Person",
+      "description": "Founder and head of Bouygues Construction, a major contractor involved in the construction of the Centre Pompidou complex, including IRCAM.",
+      "x": 765.0274663719974,
+      "y": 490.87133240219623,
+      "expanded": false,
+      "index": 32,
+      "vy": 0.005158611091601378,
+      "vx": -0.0018558429671869875,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/6/6c/MaillotEritrea2.jpg",
+      "imageChecked": true
+    }
+  ],
+  "links": [
+    {
+      "source": "IRCAM",
+      "target": "Renzo Piano",
+      "id": "IRCAM-Renzo Piano",
+      "label": "Architect"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Richard Rogers",
+      "id": "IRCAM-Richard Rogers",
+      "label": "Architect"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Luciano Berio",
+      "id": "IRCAM-Luciano Berio",
+      "label": "Composer"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Vinko Globokar",
+      "id": "IRCAM-Vinko Globokar",
+      "label": "Composer"
+    },
+    {
+      "source": "IRCAM",
+      "target": "George Aperghis",
+      "id": "IRCAM-George Aperghis",
+      "label": "Composer"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Pierre Boulez",
+      "id": "IRCAM-Pierre Boulez",
+      "label": "Founding Director"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Tod Machover",
+      "id": "IRCAM-Tod Machover",
+      "label": "Director of Musical Research"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Kaija Saariaho",
+      "id": "IRCAM-Kaija Saariaho",
+      "label": "Composer"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Philippe Manoury",
+      "id": "IRCAM-Philippe Manoury",
+      "label": "Composer"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Tristan Murail",
+      "id": "IRCAM-Tristan Murail",
+      "label": "Composer and Researcher"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Max Mathews",
+      "id": "IRCAM-Max Mathews",
+      "label": "Pioneer of Computer Music"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Gérard Assayag",
+      "id": "IRCAM-Gérard Assayag",
+      "label": "Senior Researcher & Composer"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Bernard Stiegler",
+      "id": "IRCAM-Bernard Stiegler",
+      "label": "Research Director & Philosopher"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Frank Madlener",
+      "id": "IRCAM-Frank Madlener",
+      "label": "Director"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Jean-Louis Giavitto",
+      "id": "IRCAM-Jean-Louis Giavitto",
+      "label": "Senior Researcher"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Xavier Rodet",
+      "id": "IRCAM-Xavier Rodet",
+      "label": "Senior Researcher"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Georges Pompidou",
+      "id": "IRCAM-Georges Pompidou",
+      "label": "Initiator"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Robert Bordaz",
+      "id": "IRCAM-Robert Bordaz",
+      "label": "First President of Centre Pompidou"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Michel Guy",
+      "id": "IRCAM-Michel Guy",
+      "label": "Secretary of State for Culture"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Jean Tinguely",
+      "id": "IRCAM-Jean Tinguely",
+      "label": "Co-creator of Stravinsky Fountain"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Niki de Saint Phalle",
+      "id": "IRCAM-Niki de Saint Phalle",
+      "label": "Co-creator of Stravinsky Fountain"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Miller Puckette",
+      "id": "IRCAM-Miller Puckette",
+      "label": "Computer Music Researcher"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Jean-Claude Risset",
+      "id": "IRCAM-Jean-Claude Risset",
+      "label": "Computer Music Pioneer"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Jonathan Harvey",
+      "id": "IRCAM-Jonathan Harvey",
+      "label": "Composer in Residence"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Laurent Bayle",
+      "id": "IRCAM-Laurent Bayle",
+      "label": "Director"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Iannis Xenakis",
+      "id": "IRCAM-Iannis Xenakis",
+      "label": "Composer and Researcher"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Roger Reynolds",
+      "id": "IRCAM-Roger Reynolds",
+      "label": "Composer in Residence"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Peter Rice",
+      "id": "IRCAM-Peter Rice",
+      "label": "Structural Engineer"
+    },
+    {
+      "source": "IRCAM",
+      "target": "François de Brémond d'Ars",
+      "id": "IRCAM-François de Brémond d'Ars",
+      "label": "Acoustical Consultant"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Jean Prouvé",
+      "id": "IRCAM-Jean Prouvé",
+      "label": "Jury President, Centre Pompidou Competition"
+    },
+    {
+      "source": "IRCAM",
+      "target": "Ted Happold",
+      "id": "IRCAM-Ted Happold",
+      "label": "Structural Engineer"
+    },
+    {
+      "source": "IRCAM",
+      "target": "François Bouygues",
+      "id": "IRCAM-François Bouygues",
+      "label": "Construction Executive"
+    }
+  ],
+  "searchMode": "explore",
+  "exploreTerm": "IRCAM",
+  "pathStart": "Geoffrey Hinton",
+  "pathEnd": "yoshua bengio",
+  "isCompact": false,
+  "isTimelineMode": false,
+  "isTextOnly": false,
+  "date": 1766457838111
+}

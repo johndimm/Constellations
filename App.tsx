@@ -52,25 +52,36 @@ const App: React.FC = () => {
     const [pathEnd, setPathEnd] = useState('');
     const [searchId, setSearchId] = useState(0);
 
-    useEffect(() => {
-        const checkParams = async () => {
-            const params = new URLSearchParams(window.location.search);
-            const query = params.get('q');
-            const start = params.get('start');
-            const end = params.get('end');
+    // Centralized apply-graph helper to reuse for imports/localStorage/public graphs
+    const applyGraphData = useCallback((data: any, sourceLabel: string) => {
+        try {
+            const savedNodes = data.nodes || [];
+            const savedLinks = data.links || [];
 
-            if (query && isKeyReady) {
-                setExploreTerm(query);
-                handleStartSearch(query, 1);
-            } else if (start && end && isKeyReady) {
-                setPathStart(start);
-                setPathEnd(end);
-                setSearchMode('connect');
-                handlePathSearch(start, end);
+            if (savedNodes.length === 0) {
+                setNotification({ message: `Graph "${sourceLabel}" is empty.`, type: 'error' });
+                return;
             }
-        };
-        checkParams();
-    }, [isKeyReady]);
+
+            if (data.searchMode) setSearchMode(data.searchMode);
+            if (data.exploreTerm) setExploreTerm(data.exploreTerm);
+            if (data.pathStart) setPathStart(data.pathStart);
+            if (data.pathEnd) setPathEnd(data.pathEnd);
+            if (data.isCompact !== undefined) setIsCompact(data.isCompact);
+            if (data.isTimelineMode !== undefined) setIsTimelineMode(data.isTimelineMode);
+            if (data.isTextOnly !== undefined) setIsTextOnly(data.isTextOnly);
+
+            setNodes(savedNodes.map((n: any) => ({ ...n, isLoading: false })));
+            setLinks(savedLinks);
+            setSearchId(prev => prev + 1);
+            setError(null);
+            setNotification({ message: `Graph "${sourceLabel}" loaded!`, type: 'success' });
+        } catch (e) {
+            console.error("Failed to apply graph data", e);
+            setError("Failed to load graph data.");
+            setNotification({ message: "Error loading graph.", type: 'error' });
+        }
+    }, []);
 
     useEffect(() => {
         const checkKey = async () => {
@@ -387,6 +398,43 @@ const App: React.FC = () => {
             setIsProcessing(false);
         }
     };
+
+    // Load initial graph based on URL params (static or live)
+    useEffect(() => {
+        const checkParams = async () => {
+            const params = new URLSearchParams(window.location.search);
+            const graphName = params.get('graph');
+            const query = params.get('q');
+            const start = params.get('start');
+            const end = params.get('end');
+
+            // If a static graph is requested, prefer loading that over live queries
+            if (graphName && isKeyReady) {
+                try {
+                    const res = await fetch(`/graphs/${graphName}.json`);
+                    if (!res.ok) throw new Error(`Graph file not found: ${graphName}.json`);
+                    const data = await res.json();
+                    applyGraphData(data, graphName);
+                    return;
+                } catch (err) {
+                    console.error("Failed to load public graph", err);
+                    setNotification({ message: `Could not load graph "${graphName}".`, type: 'error' });
+                    // Fall through to other params if provided
+                }
+            }
+
+            if (query && isKeyReady) {
+                setExploreTerm(query);
+                handleStartSearch(query, 1);
+            } else if (start && end && isKeyReady) {
+                setPathStart(start);
+                setPathEnd(end);
+                setSearchMode('connect');
+                handlePathSearch(start, end);
+            }
+        };
+        checkParams();
+    }, [isKeyReady, applyGraphData, handlePathSearch, handleStartSearch]);
 
     const handlePrune = () => {
         const linkCounts = new Map<string, number>();
@@ -834,15 +882,11 @@ const App: React.FC = () => {
     };
 
     const handleImport = (data: any) => {
-        try {
-            if (!data.nodes || !data.links) throw new Error("Missing nodes or links");
-            setNodes(data.nodes.map((n: any) => ({ ...n })));
-            setLinks(data.links.map((l: any) => ({ ...l })));
-            setNotification({ message: "Graph imported successfully!", type: 'success' });
-        } catch (e) {
-            console.error(e);
-            setNotification({ message: "Failed to import graph.", type: 'error' });
+        if (!data.nodes || !data.links) {
+            setNotification({ message: "Invalid graph JSON.", type: 'error' });
+            return;
         }
+        applyGraphData(data, "Imported graph");
     };
 
     const handleLoadGraph = (name: string) => {
@@ -851,29 +895,7 @@ const App: React.FC = () => {
 
         try {
             const data = JSON.parse(dataStr);
-            const savedNodes = data.nodes || [];
-            const savedLinks = data.links || [];
-
-            if (savedNodes.length === 0) {
-                setNotification({ message: `Graph "${name}" is empty.`, type: 'error' });
-                return;
-            }
-
-            // Restore other state
-            if (data.searchMode) setSearchMode(data.searchMode);
-            if (data.exploreTerm) setExploreTerm(data.exploreTerm);
-            if (data.pathStart) setPathStart(data.pathStart);
-            if (data.pathEnd) setPathEnd(data.pathEnd);
-            if (data.isCompact !== undefined) setIsCompact(data.isCompact);
-            if (data.isTimelineMode !== undefined) setIsTimelineMode(data.isTimelineMode);
-            if (data.isTextOnly !== undefined) setIsTextOnly(data.isTextOnly);
-
-            // Immediately restore all nodes and links without animation
-            setNodes(savedNodes.map((n: any) => ({ ...n, isLoading: false })));
-            setLinks(savedLinks);
-            setSearchId(prev => prev + 1);
-            setNotification({ message: `Graph "${name}" loaded!`, type: 'success' });
-
+            applyGraphData(data, name);
         } catch (e) {
             console.error("Failed to load graph", e);
             setError("Failed to load graph data.");

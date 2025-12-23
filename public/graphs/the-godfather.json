@@ -1,0 +1,444 @@
+{
+  "nodes": [
+    {
+      "id": "The Godfather",
+      "type": "Event",
+      "description": "The Godfather is a classic American crime film directed by Francis Ford Coppola.",
+      "x": 659.9841880654632,
+      "y": 289.41427061174653,
+      "fetchingImage": false,
+      "isLoading": false,
+      "index": 0,
+      "vy": -0.005219230185479155,
+      "vx": -0.007521861607654902,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/1/1c/Godfather_ver1.jpg",
+      "imageChecked": true,
+      "fx": null,
+      "fy": null,
+      "year": 1972,
+      "expanded": true
+    },
+    {
+      "id": "Francis Ford Coppola",
+      "type": "Person",
+      "description": "An American film director, producer, and screenwriter known for directing The Godfather trilogy.",
+      "x": 585.6987329203755,
+      "y": 484.2682243508533,
+      "expanded": true,
+      "index": 1,
+      "vy": -0.0046724972197350586,
+      "vx": -0.0070357427492194115,
+      "fetchingImage": false,
+      "fx": null,
+      "fy": null,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/0/0b/Francis_Ford_Coppola_on_December_8%2C_2024_in_the_White_House_Oval_Office_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Mario Puzo",
+      "type": "Person",
+      "description": "An American author and screenwriter best known for his crime novels about the Mafia, most notably The Godfather.",
+      "x": 639.3431218483371,
+      "y": 98.87063329596188,
+      "expanded": false,
+      "index": 2,
+      "vy": -0.005253477190421,
+      "vx": -0.010041217564708403,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/48/Mario_Puzo_1972_%28cropped%29.jpg/500px-Mario_Puzo_1972_%28cropped%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Marlon Brando",
+      "type": "Person",
+      "description": "An American actor who played Vito Corleone and won an Academy Award for Best Actor for his performance.",
+      "x": 855.9056551718301,
+      "y": 346.0682682013824,
+      "expanded": true,
+      "index": 3,
+      "vy": -0.005210836276306817,
+      "vx": -0.00676909774722043,
+      "fx": null,
+      "fy": null,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Marlon_Brando_publicity_for_One-Eyed_Jacks.png/500px-Marlon_Brando_publicity_for_One-Eyed_Jacks.png",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Al Pacino",
+      "type": "Person",
+      "description": "An American actor who played Michael Corleone and was nominated for an Academy Award for Best Supporting Actor.",
+      "x": 490.31774242216625,
+      "y": 268.0671362752464,
+      "expanded": false,
+      "index": 4,
+      "vy": -0.0037172338273781923,
+      "vx": -0.008332751280484874,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Al_Pacino_2016_%2830401544240%29.jpg/500px-Al_Pacino_2016_%2830401544240%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "James Caan",
+      "type": "Person",
+      "description": "An American actor who played Sonny Corleone and was nominated for an Academy Award for Best Supporting Actor.",
+      "x": 751.1207489734745,
+      "y": 142.4970493424511,
+      "expanded": false,
+      "index": 5,
+      "vy": -0.007467577370889706,
+      "vx": -0.008916512637849159,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/James_Caan_Cannes_2013.jpg/500px-James_Caan_Cannes_2013.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Robert Duvall",
+      "type": "Person",
+      "description": "An American actor who played Tom Hagen and was nominated for an Academy Award for Best Supporting Actor.",
+      "x": 533.9834627853305,
+      "y": 156.29800066254782,
+      "expanded": false,
+      "index": 6,
+      "vy": -0.004356500518556583,
+      "vx": -0.009711526506606097,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Robert_Duvall_by_David_Shankbone_%28cropped_2%29.jpg/500px-Robert_Duvall_by_David_Shankbone_%28cropped_2%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "I Remember Mama",
+      "type": "Play",
+      "description": "Broadway debut",
+      "year": 1944,
+      "x": 963.7505281972506,
+      "y": 409.2686784237919,
+      "index": 7,
+      "vy": -0.006143243453778647,
+      "vx": -0.0062018709097234155,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/George_Stevens_and_Barbara_Bel_Geddes_I_Remember_Mama.jpg/500px-George_Stevens_and_Barbara_Bel_Geddes_I_Remember_Mama.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "A Streetcar Named Desire",
+      "type": "Movie",
+      "description": "Reprising role as Stanley Kowalski, Oscar-nominated",
+      "year": 1951,
+      "x": 1039.8933166154732,
+      "y": 303.90485797688456,
+      "index": 8,
+      "vy": -0.007203912160238857,
+      "vx": -0.007555603828394684,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/6/66/StreetcarNamedDesire.JPG",
+      "imageChecked": true
+    },
+    {
+      "id": "The Wild One",
+      "type": "Movie",
+      "description": "Portrayal of Johnny Strabler, iconic rebellious leader",
+      "year": 1953,
+      "x": 1016.9727393710492,
+      "y": 527.8893683644272,
+      "index": 9,
+      "vy": -0.006720145649490561,
+      "vx": -0.005672899310916547,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/c/cf/Wildoneposter.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "On the Waterfront",
+      "type": "Movie",
+      "description": "Won Academy Award for Best Actor as a dockworker",
+      "year": 1954,
+      "x": 1093.0899859785798,
+      "y": 422.50897129932287,
+      "index": 10,
+      "vy": -0.007395023085143539,
+      "vx": -0.006433258905896906,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ee/On_the_Waterfront_%281954_poster%29.jpg/500px-On_the_Waterfront_%281954_poster%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "One-Eyed Jacks",
+      "type": "Movie",
+      "description": "Directorial film debut and starring role",
+      "year": 1961,
+      "x": 869.7082977999156,
+      "y": 181.9977712157747,
+      "index": 11,
+      "vy": -0.0050362844040202385,
+      "vx": -0.009560417946196477,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/One-Eyed_Jacks_%281959_poster%29.jpg/500px-One-Eyed_Jacks_%281959_poster%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Last Tango in Paris",
+      "type": "Movie",
+      "description": "Oscar-nominated role as an American expatriate",
+      "year": 1973,
+      "x": 999.6949998159191,
+      "y": 180.28799987150217,
+      "index": 12,
+      "vy": -0.006839595178919763,
+      "vx": -0.00953620470970697,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/d/d5/LastTango.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Roots: The Next Generations",
+      "type": "TV Show",
+      "description": "Won Primetime Emmy Award for Outstanding Supporting Actor",
+      "year": 1979,
+      "x": 887.6557656100492,
+      "y": 514.6669920202927,
+      "index": 13,
+      "vy": -0.005885002900504663,
+      "vx": -0.005964479457287826,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/0/0c/RootsNextGen.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Apocalypse Now",
+      "type": "Movie",
+      "description": "Starred in the epic war film",
+      "year": 1979,
+      "x": 758.4052483613923,
+      "y": 528.5482114605439,
+      "index": 14,
+      "vy": -0.005185662465256286,
+      "vx": -0.006034857761143451,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/c/c2/Apocalypse_Now_poster.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Patton",
+      "type": "Movie",
+      "description": "Biographical war film",
+      "year": 1970,
+      "x": 452.0319548238732,
+      "y": 623.5072379333119,
+      "index": 15,
+      "vy": -0.003116475111663237,
+      "vx": -0.006536262652689257,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/General_George_Patton_by_Robert_F._Cranston%2C_Lee_Elkins%2C_and_Harry_Warnecke%2C_1945%2C_color_carbro_print%2C_from_the_National_Portrait_Gallery_-_NPG-NPG_95_404Patton-000002.jpg/500px-thumbnail.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "American Graffiti",
+      "type": "Movie",
+      "description": "Coming-of-age comedy-drama film",
+      "year": 1973,
+      "x": 397.6354759664659,
+      "y": 505.4440431035188,
+      "index": 16,
+      "vy": -0.0030389917171607093,
+      "vx": -0.007155063639330231,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/e/e6/American_graffiti_ver1.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "The Conversation",
+      "type": "Movie",
+      "description": "Neo-noir psychological thriller film",
+      "year": 1974,
+      "x": 690.499758264659,
+      "y": 639.3931938179956,
+      "index": 17,
+      "vy": -0.0049889673140209615,
+      "vx": -0.0060969273905620985,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/e/e0/Theconversation.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "The Godfather Part II",
+      "type": "Movie",
+      "description": "Epic crime drama film",
+      "year": 1974,
+      "x": 721.6151761267339,
+      "y": 403.86859442830865,
+      "index": 18,
+      "vy": -0.004706451050289319,
+      "vx": -0.008128725177089272,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/0/03/Godfather_part_ii.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "The Outsiders",
+      "type": "Movie",
+      "description": "Coming-of-age drama film",
+      "year": 1983,
+      "x": 449.1349540544041,
+      "y": 386.08151691248645,
+      "index": 19,
+      "vy": -0.003457802169837101,
+      "vx": -0.00803731326630097,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/f/fa/Outsidersposter.jpeg",
+      "imageChecked": true
+    },
+    {
+      "id": "Megalopolis",
+      "type": "Movie",
+      "description": "Epic science fiction drama film",
+      "year": 2024,
+      "x": 567.8606640235217,
+      "y": 682.5110673386886,
+      "index": 20,
+      "vy": -0.004072396960382095,
+      "vx": -0.0058222940556977056,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/32/2014_NASA_Earth_Observatory_image_of_Pearl_River_Delta.jpg/500px-2014_NASA_Earth_Observatory_image_of_Pearl_River_Delta.jpg",
+      "imageChecked": true
+    }
+  ],
+  "links": [
+    {
+      "source": "The Godfather",
+      "target": "Francis Ford Coppola",
+      "id": "The Godfather-Francis Ford Coppola",
+      "label": "Director, Co-screenwriter"
+    },
+    {
+      "source": "The Godfather",
+      "target": "Mario Puzo",
+      "id": "The Godfather-Mario Puzo",
+      "label": "Author, Co-screenwriter"
+    },
+    {
+      "source": "The Godfather",
+      "target": "Marlon Brando",
+      "id": "The Godfather-Marlon Brando",
+      "label": "Lead Actor"
+    },
+    {
+      "source": "The Godfather",
+      "target": "Al Pacino",
+      "id": "The Godfather-Al Pacino",
+      "label": "Lead Actor"
+    },
+    {
+      "source": "The Godfather",
+      "target": "James Caan",
+      "id": "The Godfather-James Caan",
+      "label": "Actor"
+    },
+    {
+      "source": "The Godfather",
+      "target": "Robert Duvall",
+      "id": "The Godfather-Robert Duvall",
+      "label": "Actor"
+    },
+    {
+      "source": "Marlon Brando",
+      "target": "I Remember Mama",
+      "id": "Marlon Brando-I Remember Mama",
+      "label": "1944"
+    },
+    {
+      "source": "Marlon Brando",
+      "target": "A Streetcar Named Desire",
+      "id": "Marlon Brando-A Streetcar Named Desire",
+      "label": "1951"
+    },
+    {
+      "source": "Marlon Brando",
+      "target": "The Wild One",
+      "id": "Marlon Brando-The Wild One",
+      "label": "1953"
+    },
+    {
+      "source": "Marlon Brando",
+      "target": "On the Waterfront",
+      "id": "Marlon Brando-On the Waterfront",
+      "label": "1954"
+    },
+    {
+      "source": "Marlon Brando",
+      "target": "One-Eyed Jacks",
+      "id": "Marlon Brando-One-Eyed Jacks",
+      "label": "1961"
+    },
+    {
+      "source": "Marlon Brando",
+      "target": "Last Tango in Paris",
+      "id": "Marlon Brando-Last Tango in Paris",
+      "label": "1973"
+    },
+    {
+      "source": "Marlon Brando",
+      "target": "Roots: The Next Generations",
+      "id": "Marlon Brando-Roots: The Next Generations",
+      "label": "1979"
+    },
+    {
+      "source": "Marlon Brando",
+      "target": "Apocalypse Now",
+      "id": "Marlon Brando-Apocalypse Now",
+      "label": "1979"
+    },
+    {
+      "source": "Francis Ford Coppola",
+      "target": "Patton",
+      "id": "Francis Ford Coppola-Patton",
+      "label": "1970"
+    },
+    {
+      "source": "Francis Ford Coppola",
+      "target": "American Graffiti",
+      "id": "Francis Ford Coppola-American Graffiti",
+      "label": "1973"
+    },
+    {
+      "source": "Francis Ford Coppola",
+      "target": "The Conversation",
+      "id": "Francis Ford Coppola-The Conversation",
+      "label": "1974"
+    },
+    {
+      "source": "Francis Ford Coppola",
+      "target": "The Godfather Part II",
+      "id": "Francis Ford Coppola-The Godfather Part II",
+      "label": "1974"
+    },
+    {
+      "source": "Francis Ford Coppola",
+      "target": "Apocalypse Now",
+      "id": "Francis Ford Coppola-Apocalypse Now",
+      "label": "1979"
+    },
+    {
+      "source": "Francis Ford Coppola",
+      "target": "The Outsiders",
+      "id": "Francis Ford Coppola-The Outsiders",
+      "label": "1983"
+    },
+    {
+      "source": "Francis Ford Coppola",
+      "target": "Megalopolis",
+      "id": "Francis Ford Coppola-Megalopolis",
+      "label": "2024"
+    }
+  ],
+  "searchMode": "explore",
+  "exploreTerm": "The Godfather",
+  "pathStart": "",
+  "pathEnd": "",
+  "isCompact": false,
+  "isTimelineMode": false,
+  "isTextOnly": false,
+  "date": 1766345324590
+}
