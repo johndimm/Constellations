@@ -71,7 +71,15 @@ const App: React.FC = () => {
             if (data.isTimelineMode !== undefined) setIsTimelineMode(data.isTimelineMode);
             if (data.isTextOnly !== undefined) setIsTextOnly(data.isTextOnly);
 
-            setNodes(savedNodes.map((n: any) => ({ ...n, isLoading: false })));
+            // Strip any residual forces/drag so pre-bundled graphs don't keep spinning
+            setNodes(savedNodes.map((n: any) => ({
+                ...n,
+                isLoading: false,
+                vx: 0,
+                vy: 0,
+                fx: null,
+                fy: null
+            })));
             setLinks(savedLinks);
             setSearchId(prev => prev + 1);
             setError(null);
@@ -434,7 +442,9 @@ const App: React.FC = () => {
             }
         };
         checkParams();
-    }, [isKeyReady, applyGraphData, handlePathSearch, handleStartSearch]);
+        // handleStartSearch/handlePathSearch are stable enough for initial load; avoid reruns on every render
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isKeyReady, applyGraphData]);
 
     const handlePrune = () => {
         const linkCounts = new Map<string, number>();
