@@ -77,14 +77,31 @@ const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg: string): Prom
   });
 };
 
-const GEMINI_TIMEOUT_MS = 15000; // 15 seconds
+const withRetry = async <T>(fn: () => Promise<T>, attempts = 2, backoffMs = 300): Promise<T> => {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (i < attempts - 1) {
+        const delay = backoffMs * (i + 1);
+        await new Promise(res => setTimeout(res, delay));
+      }
+    }
+  }
+  throw lastError;
+};
+
+const GEMINI_TIMEOUT_MS = 30000; // 30 seconds for heavier graph expansions
+const CLASSIFY_TIMEOUT_MS = 8000;
 
 export const classifyEntity = async (term: string): Promise<{ type: string; description: string }> => {
   const apiKey = getEnvApiKey();
   const ai = new GoogleGenAI({ apiKey });
 
   try {
-    const apiCall = ai.models.generateContent({
+    const makeApiCall = () => ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `Classify "${term}".
       Return JSON with a "type" field.
@@ -103,7 +120,11 @@ export const classifyEntity = async (term: string): Promise<{ type: string; desc
       }
     });
 
-    const response = await withTimeout<GenerateContentResponse>(apiCall, 5000, "Classification timed out");
+    const response = await withRetry(
+      () => withTimeout<GenerateContentResponse>(makeApiCall(), CLASSIFY_TIMEOUT_MS, "Classification timed out"),
+      2,
+      400
+    );
     const text = response.text;
     if (!text) return { type: 'Event', description: '' };
     const json = JSON.parse(text);
@@ -137,7 +158,7 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
       console.log(wikiContext);
     }
     
-    const apiCall = ai.models.generateContent({
+    const makeApiCall = () => ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `${contextualPrompt}${wikiPrompt}${excludePrompt}
       1. Identify the 'year' it occurred/started (integer) if applicable (e.g. release year, event date).
@@ -170,7 +191,11 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
       }
     });
 
-    const response = await withTimeout<GenerateContentResponse>(apiCall, GEMINI_TIMEOUT_MS, "Gemini API request timed out");
+    const response = await withRetry(
+      () => withTimeout<GenerateContentResponse>(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
+      2,
+      600
+    );
 
     const text = response.text;
     if (!text) return { people: [] };
@@ -203,7 +228,7 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
     console.log(`🤖 [Gemini] fetchPersonWorks for "${personName}"`);
     if (wikiContext) console.log(`📖 [Gemini] Using Wikipedia context (first 100 chars): "${wikiContext.substring(0, 100)}..."`);
 
-    const apiCall = ai.models.generateContent({
+    const makeApiCall = () => ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `${wikiPrompt}${contextPrompt}
       Ensure each entry is a different entity. Do NOT duplicate entities.
@@ -234,7 +259,11 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
       }
     });
 
-    const response = await withTimeout<GenerateContentResponse>(apiCall, GEMINI_TIMEOUT_MS, "Gemini API request timed out");
+    const response = await withRetry(
+      () => withTimeout<GenerateContentResponse>(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
+      2,
+      600
+    );
 
     const text = response.text;
     if (!text) return { works: [] };
@@ -258,7 +287,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     : "";
 
   try {
-    const apiCall = ai.models.generateContent({
+    const makeApiCall = () => ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `${wikiPrompt}Find a valid connection path between "${start}" and "${end}".
             STRICT RULE: The path MUST follow an alternating sequence (Bipartite structure):
@@ -300,7 +329,11 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
       }
     });
 
-    const response = await withTimeout<GenerateContentResponse>(apiCall, 60000, "Pathfinding timed out");
+    const response = await withRetry(
+      () => withTimeout<GenerateContentResponse>(makeApiCall(), 60000, "Pathfinding timed out"),
+      2,
+      800
+    );
     const text = response.text;
     if (!text) return { path: [] };
     return JSON.parse(text) as PathResponse;

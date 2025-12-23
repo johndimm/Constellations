@@ -1,0 +1,1414 @@
+{
+  "nodes": [
+    {
+      "id": "francois mitterand",
+      "type": "Person",
+      "description": "Former President of France",
+      "x": 339.6009825501673,
+      "y": 178.737854837855,
+      "expanded": true,
+      "fetchingImage": false,
+      "index": 0,
+      "vy": -0.003089905954843503,
+      "vx": -0.0017044657352344016,
+      "isLoading": false,
+      "fx": null,
+      "fy": null,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/President_Fran%C3%A7ois_Mitterrand_in_1983.jpg/500px-President_Fran%C3%A7ois_Mitterrand_in_1983.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "emmanuel macron",
+      "type": "Person",
+      "description": "French politician and statesman, identified as François Mitterrand in the provided text.",
+      "x": 1138.4364377592376,
+      "y": 573.1254307013855,
+      "expanded": true,
+      "fetchingImage": false,
+      "index": 1,
+      "vy": -0.0025047211303847574,
+      "vx": -0.006380300965972498,
+      "isLoading": false,
+      "fx": null,
+      "fy": null,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/Emmanuel_Macron_-_June_2025_%283x4_cropped%29.jpg/500px-Emmanuel_Macron_-_June_2025_%283x4_cropped%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Minister of Economics and Finance",
+      "type": "Political Office",
+      "description": "Served under President François Hollande",
+      "year": 2014,
+      "x": 1312.4075300752438,
+      "y": 536.0279116747678,
+      "index": 2,
+      "vy": -0.0031577452333826188,
+      "vx": -0.005854960418394872,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/76/Visit_of_Roland_Lescure%2C_Minister_attached_to_the_French_Minister_for_Economics%2C_to_the_European_Commission_-_2022_%28cropped%29.jpg/500px-Visit_of_Roland_Lescure%2C_Minister_attached_to_the_French_Minister_for_Economics%2C_to_the_European_Commission_-_2022_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "En Marche!",
+      "type": "Political Party/Movement",
+      "description": "Founded a centrist and pro-European political movement",
+      "year": 2016,
+      "x": 1286.75619417833,
+      "y": 624.295874771685,
+      "index": 3,
+      "vy": -0.001280458628126437,
+      "vx": -0.0061167192039670824,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Emmanuel_Macron_%28cropped%29.jpg/500px-Emmanuel_Macron_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "2017 French Presidential Election",
+      "type": "Political Event",
+      "description": "Elected President of France, defeating Marine Le Pen",
+      "year": 2017,
+      "x": 1209.0244330492865,
+      "y": 467.0405817806913,
+      "index": 4,
+      "vy": -0.0024066406870881284,
+      "vx": -0.008494741642592469,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f2/Portrait_3_-_Flickr_-_dupontaignan_%28cropped%29.jpg/500px-Portrait_3_-_Flickr_-_dupontaignan_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "Labor Law Reforms",
+      "type": "Legislation/Policy",
+      "description": "Oversaw reforms to labour laws, taxation, and pensions during his presidency",
+      "year": 2017,
+      "x": 1052.656826039577,
+      "y": 567.4874684241785,
+      "index": 5,
+      "vy": -0.00036621382001478264,
+      "vx": -0.00734541566949308,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Lutfe_Siddiqui_Presides_Over_Labor_Law_Reforms_Meeting_Dhaka_2025-05-12_%28PID-0001937%29.jpg/500px-Lutfe_Siddiqui_Presides_Over_Labor_Law_Reforms_Meeting_Dhaka_2025-05-12_%28PID-0001937%29.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "Yellow Vests Protests",
+      "type": "Event",
+      "description": "Increasing protests against his reforms",
+      "year": 2018,
+      "x": 1240.9246779423722,
+      "y": 704.0200791019879,
+      "index": 6,
+      "vy": -0.0013649285279422087,
+      "vx": -0.008178299614429209,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/2018-12-29_14-58-30_manif-GJ-Belfort.jpg/500px-2018-12-29_14-58-30_manif-GJ-Belfort.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "2022 French Presidential Election",
+      "type": "Political Event",
+      "description": "Elected to a second term, again defeating Marine Le Pen",
+      "year": 2022,
+      "x": 1223.0418403971819,
+      "y": 557.9559961801154,
+      "index": 7,
+      "vy": -0.002650478007047357,
+      "vx": -0.005330964455184152,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/Portrait_%C3%89ric_Zemmour%2C_avril_2022_cropped.jpg/500px-Portrait_%C3%89ric_Zemmour%2C_avril_2022_cropped.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "2023 French Pension Reforms",
+      "type": "Legislation/Policy",
+      "description": "Government passed legislation raising the retirement age from 62 to 64, leading to public sector strikes and protests",
+      "year": 2023,
+      "x": 1150.1273646272323,
+      "y": 718.6843785018344,
+      "index": 8,
+      "vy": -0.0032035510658761767,
+      "vx": -0.009091429857229355,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/Manifestation_retraites_11_f%C3%A9vrier_2023_Besan%C3%A7on_Toufik-de-Planoise.jpg/500px-Manifestation_retraites_11_f%C3%A9vrier_2023_Besan%C3%A7on_Toufik-de-Planoise.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "Thérèse Raquin",
+      "type": "Book",
+      "description": "Novel, an early work of the Naturalism movement exploring passion and crime.",
+      "year": 1867,
+      "x": 485.8065836689238,
+      "y": 234.19000096173923,
+      "index": 9,
+      "vy": -0.006250058491692976,
+      "vx": -0.0005754098985163046,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/7/7d/In_Secret.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "L'Assommoir",
+      "type": "Book",
+      "description": "Novel, a major work in the Rougon-Macquart series, depicting the social ills of alcoholism and poverty in working-class Paris.",
+      "year": 1877,
+      "x": 363.09677505423906,
+      "y": 96.25985300592181,
+      "index": 10,
+      "vy": -0.00884452605908039,
+      "vx": -0.0014412306384638026,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/6/6b/L%27Assommoir1.jpeg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "Nana",
+      "type": "Book",
+      "description": "Novel, part of the Rougon-Macquart series, portraying a courtesan in Second Empire France.",
+      "year": 1880,
+      "x": 399.56837009596535,
+      "y": 396.41954987289915,
+      "index": 11,
+      "vy": -0.002004945663705018,
+      "vx": 0.0019002454978404543,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/Emile_Zolo-Nana-Coverpage.jpg/500px-Emile_Zolo-Nana-Coverpage.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "Germinal",
+      "type": "Book",
+      "description": "Novel, a seminal work of the Naturalist movement depicting a coal miners' strike and the struggles of the working class.",
+      "year": 1885,
+      "x": 347.57889911189295,
+      "y": 320.5814806319494,
+      "index": 12,
+      "vy": -0.002688874331739626,
+      "vx": 0.0006567657404696753,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/61/Germinal_first_edition_cover.jpg/500px-Germinal_first_edition_cover.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "La Bête Humaine",
+      "type": "Book",
+      "description": "Novel, part of the Rougon-Macquart series, exploring themes of heredity, environment, and violence within human nature.",
+      "year": 1890,
+      "x": 307.8050993972073,
+      "y": 403.4535711915942,
+      "index": 13,
+      "vy": 0.00043860899650384174,
+      "vx": 0.0029403662944402316,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/1/18/La_B%C3%AAte_humaine_1938_film_poster.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "J'Accuse...!",
+      "type": "Newspaper Opinion",
+      "description": "Renowned open letter published in L'Aurore, accusing the French government of antisemitism and obstruction of justice in the Dreyfus Affair.",
+      "year": 1898,
+      "x": 254.48617846799607,
+      "y": 164.14069362660254,
+      "index": 14,
+      "vy": -0.0038042007945605673,
+      "vx": -0.003865381596735459,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/1/1b/An_Officer_and_A_Spy_poster.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true,
+      "fx": null,
+      "fy": null
+    },
+    {
+      "id": "Dreyfus Affair",
+      "type": "Historical Event",
+      "description": "Major political scandal and miscarriage of justice in France, in which Zola played a pivotal role as a public figure and journalist in the exoneration of Alfred Dreyfus.",
+      "year": 1894,
+      "x": 198.97556990799444,
+      "y": 237.56807849537654,
+      "index": 15,
+      "vy": -0.00861773688680229,
+      "vx": -0.008309457540385718,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Alfred_Dreyfus_%281859-1935%29_-_photo_originale.jpg/500px-Alfred_Dreyfus_%281859-1935%29_-_photo_originale.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "Bombing of the Rainbow Warrior",
+      "type": "Thing",
+      "description": "A controversial event where a Greenpeace vessel was bombed under Mitterrand's orders.",
+      "year": 1985,
+      "x": 737.1808751872867,
+      "y": 381.1770582792374,
+      "expanded": false,
+      "fetchingImage": false,
+      "index": 16,
+      "vy": -0.006643848092946795,
+      "vx": -0.008005752507791689,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Schip_Rainbow_Warrior_van_Greenpeace_in_Scheveningen%2C_Bestanddeelnr_930-2632.jpg/500px-Schip_Rainbow_Warrior_van_Greenpeace_in_Scheveningen%2C_Bestanddeelnr_930-2632.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "fx": null,
+      "fy": null
+    },
+    {
+      "id": "Contes à Ninon",
+      "type": "Book",
+      "description": "Collection of short stories by Émile Zola",
+      "year": 1864,
+      "x": 424.4752647794638,
+      "y": 165.65834364141494,
+      "index": 17,
+      "vy": -0.008094047833746598,
+      "vx": 0.00041299176645674153,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/Manet%2C_Edouard_-_Portrait_of_Emile_Zola.jpg/500px-Manet%2C_Edouard_-_Portrait_of_Emile_Zola.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "La Fortune des Rougon",
+      "type": "Book",
+      "description": "First novel in the Rougon-Macquart series by Émile Zola",
+      "year": 1871,
+      "x": 453.2841516065122,
+      "y": 78.26885656852976,
+      "index": 18,
+      "vy": -0.007964948466801047,
+      "vx": -0.00039985300012981145,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/ZolaFortuneRougons.jpg/500px-ZolaFortuneRougons.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "Le Ventre de Paris",
+      "type": "Book",
+      "description": "Novel by Émile Zola, part of the Rougon-Macquart cycle",
+      "year": 1873,
+      "x": 439.2058507716269,
+      "y": 313.3624696942219,
+      "index": 19,
+      "vy": -0.0007097154269257563,
+      "vx": 0.002910467197461606,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f0/ZolaBellyParis.jpg/500px-ZolaBellyParis.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true,
+      "fx": null,
+      "fy": null
+    },
+    {
+      "id": "Au Bonheur des Dames",
+      "type": "Book",
+      "description": "Novel by Émile Zola, part of the Rougon-Macquart cycle, focusing on a department store",
+      "year": 1883,
+      "x": 392.6418089215278,
+      "y": 9.13443703023604,
+      "index": 20,
+      "vy": -0.008694654416119144,
+      "vx": -0.0009123887280058035,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/d/d4/Au_Bonheur_des_Dames_manuscript.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "L'Œuvre",
+      "type": "Book",
+      "description": "Novel by Émile Zola, part of the Rougon-Macquart cycle, exploring the art world",
+      "year": 1886,
+      "x": 273.82017296934686,
+      "y": 74.29133569787895,
+      "index": 21,
+      "vy": -0.0059994529851580235,
+      "vx": -0.003593617931024037,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/e/ed/ZolaMasterpiece.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "La Débâcle",
+      "type": "Book",
+      "description": "Novel by Émile Zola, part of the Rougon-Macquart cycle, depicting the Franco-Prussian War",
+      "year": 1892,
+      "x": 290.2711908728872,
+      "y": 248.78909648733497,
+      "index": 22,
+      "vy": 0.0008848875662929093,
+      "vx": -0.009080262230110563,
+      "fx": null,
+      "fy": null,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/Le_Radical_publie_La_D%C3%A9b%C3%A2cle_par_Emile_Zola%2C_5c.jpg/500px-Le_Radical_publie_La_D%C3%A9b%C3%A2cle_par_Emile_Zola%2C_5c.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "Lourdes",
+      "type": "Book",
+      "description": "First novel in 'Les Trois Villes' series by Émile Zola",
+      "year": 1858,
+      "x": 514.5320553306653,
+      "y": 146.8674342485723,
+      "index": 23,
+      "vy": -0.007660244911995044,
+      "vx": 0.0006016612379747032,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Lourdes_city.jpg/500px-Lourdes_city.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "Fécondité",
+      "type": "Book",
+      "description": "First novel in 'Les Quatre Évangiles' series by Émile Zola",
+      "year": 1899,
+      "x": 250.4071272581268,
+      "y": 331.62412162550515,
+      "index": 24,
+      "vy": 0.004876297192521671,
+      "vx": -0.004618076598190423,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Baby_on_Tiptoes.jpg/500px-Baby_on_Tiptoes.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "expanded": true
+    },
+    {
+      "id": "Émile Zola",
+      "type": "Person",
+      "description": "French novelist, journalist, and playwright, known for naturalism and his role in the political liberalization of France.",
+      "x": 386.2852887054984,
+      "y": 243.73456687478372,
+      "expanded": false,
+      "index": 25,
+      "vy": -0.00317232607696672,
+      "vx": -0.002601534096461712,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/%C3%89mile_Zola_by_Carjat.jpg/500px-%C3%89mile_Zola_by_Carjat.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Jean Renoir",
+      "type": "Person",
+      "description": "An influential French film director, he directed the acclaimed 1938 film adaptation of La Bête Humaine.",
+      "x": 217.55688852598385,
+      "y": 411.0938908918791,
+      "expanded": false,
+      "index": 26,
+      "vy": 0.00391259396836138,
+      "vx": -0.0074552683209779345,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Gabrielle_et_Jean%2C_by_Pierre-Auguste_Renoir%2C_from_C2RMF_cropped.jpg/500px-Gabrielle_et_Jean%2C_by_Pierre-Auguste_Renoir%2C_from_C2RMF_cropped.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Jean Gabin",
+      "type": "Person",
+      "description": "A prominent French actor, he starred as Jacques Lantier in Jean Renoir's 1938 film adaptation of La Bête Humaine.",
+      "x": 359.0313980740284,
+      "y": 472.49788784641896,
+      "expanded": false,
+      "index": 27,
+      "vy": 0.00022021239510374086,
+      "vx": 0.00430274867888306,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Jean_Gabin%2C_1904-1976_%28cropped%29.jpg/500px-Jean_Gabin%2C_1904-1976_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Simone Simon",
+      "type": "Person",
+      "description": "A French actress, she played Séverine Roubaud in the 1938 film adaptation of La Bête Humaine.",
+      "x": 262.9473800751979,
+      "y": 476.95407510407443,
+      "expanded": false,
+      "index": 28,
+      "vy": -0.000888724154326032,
+      "vx": 0.00006082619275346677,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/f/f9/10_August_1942_face_detail%2C_Simone_Simon_Cat_People_promotional_photo_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Fernand Ledoux",
+      "type": "Person",
+      "description": "A Belgian-born French actor, he portrayed Roubaud in Jean Renoir's 1938 film La Bête Humaine.",
+      "x": 313.94747946090183,
+      "y": 538.5855640072781,
+      "expanded": false,
+      "index": 29,
+      "vy": -0.001833817184519232,
+      "vx": 0.001328235240994486,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/1/18/La_B%C3%AAte_humaine_1938_film_poster.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Alfred Dreyfus",
+      "type": "Person",
+      "description": "A French army officer of Jewish descent, he was falsely accused of treason, becoming the central figure of the Dreyfus Affair that 'J'Accuse...!' protested.",
+      "x": 168.96621940142478,
+      "y": 155.57129382301315,
+      "expanded": false,
+      "index": 30,
+      "vy": -0.00029437139132040217,
+      "vx": -0.005443099503785033,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Alfred_Dreyfus_%281859-1935%29_-_photo_originale.jpg/500px-Alfred_Dreyfus_%281859-1935%29_-_photo_originale.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Georges Clemenceau",
+      "type": "Person",
+      "description": "A French statesman who served as Prime Minister, he was the editor of the newspaper 'L'Aurore' which published Émile Zola's 'J'Accuse...!'.",
+      "x": 187.90176115633042,
+      "y": 77.87132984281253,
+      "expanded": false,
+      "index": 31,
+      "vy": -0.0004595362754258981,
+      "vx": -0.0035251563019930844,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Georges_Clemenceau_par_Nadar.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Marie-Georges Picquart",
+      "type": "Person",
+      "description": "A French army officer and head of military intelligence, he uncovered evidence proving Alfred Dreyfus's innocence, at great personal cost.",
+      "x": 307.77160995133283,
+      "y": -4.716426173057019,
+      "expanded": false,
+      "index": 32,
+      "vy": -0.0053114786406935535,
+      "vx": -0.0016285469299679913,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/1/1b/An_Officer_and_A_Spy_poster.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Ferdinand Esterhazy",
+      "type": "Person",
+      "description": "A French army major, he was the real perpetrator of the treason for which Alfred Dreyfus was falsely convicted, as revealed during the Dreyfus Affair.",
+      "x": 222.1199505024985,
+      "y": 5.559743304419405,
+      "expanded": false,
+      "index": 33,
+      "vy": -0.0025715523005722394,
+      "vx": -0.007936230217393998,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Headstone_Ferdinand_Walsin_Esterhazy.jpg/500px-Headstone_Ferdinand_Walsin_Esterhazy.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Mathieu Dreyfus",
+      "type": "Person",
+      "description": "The elder brother of Alfred Dreyfus, he tirelessly campaigned for his brother's exoneration and played a crucial role in bringing the truth to light.",
+      "x": 115.92490017956905,
+      "y": 215.4188110651905,
+      "expanded": false,
+      "index": 34,
+      "vy": -0.003957709982290725,
+      "vx": -0.010666286578942408,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/1/1b/An_Officer_and_A_Spy_poster.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Georges Picquart",
+      "type": "Person",
+      "description": "A French army officer who uncovered evidence that exonerated Dreyfus and implicated Major Esterházy.",
+      "x": 166.21627960083154,
+      "y": 349.1406525750323,
+      "expanded": false,
+      "index": 35,
+      "vy": -0.0016489648858480953,
+      "vx": -0.006121863393267034,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/2/20/Picquart.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Ferdinand Walsin Esterházy",
+      "type": "Person",
+      "description": "A French army officer who was the true author of the 'bordereau' that led to Dreyfus's false conviction.",
+      "x": 107.37451787286668,
+      "y": 294.9488713219469,
+      "expanded": false,
+      "index": 36,
+      "vy": -0.0030748523406461583,
+      "vx": -0.004985055866981007,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Headstone_Ferdinand_Walsin_Esterhazy.jpg/500px-Headstone_Ferdinand_Walsin_Esterhazy.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Bernadette Soubirous",
+      "type": "Person",
+      "description": "French peasant girl who reported seeing apparitions of the Virgin Mary, leading to the establishment of the Sanctuary of Lourdes.",
+      "x": 627.1103549164255,
+      "y": 268.40537035501654,
+      "expanded": false,
+      "index": 37,
+      "vy": -0.006159942510198948,
+      "vx": -0.000017062783417600737,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/The_Song_of_Bernadette_%281946_poster%29.jpg/500px-The_Song_of_Bernadette_%281946_poster%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Abbé Dominique Peyramale",
+      "type": "Person",
+      "description": "Parish priest of Lourdes who initially challenged Bernadette's claims but later became a staunch supporter of the apparitions.",
+      "x": 586.9316336109499,
+      "y": 100.4651463583905,
+      "expanded": false,
+      "index": 38,
+      "vy": -0.008829977420560546,
+      "vx": 0.00003101282814875012,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/The_Song_of_Bernadette_%281946_poster%29.jpg/500px-The_Song_of_Bernadette_%281946_poster%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Louis Bouriette",
+      "type": "Person",
+      "description": "A quarryman who experienced the first officially recognized miraculous healing at Lourdes, recovering from blindness.",
+      "x": 550.3340141553148,
+      "y": 290.99934119694694,
+      "expanded": false,
+      "index": 39,
+      "vy": -0.006649101228011214,
+      "vx": 0.0006505544485474134,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/The_Song_of_Bernadette_%281946_poster%29.jpg/500px-The_Song_of_Bernadette_%281946_poster%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Dr. Henri Dozous",
+      "type": "Person",
+      "description": "Local physician who observed and documented the events at Lourdes, providing early medical reports on the miraculous cures.",
+      "x": 569.1658729957312,
+      "y": 213.2550539752795,
+      "expanded": false,
+      "index": 40,
+      "vy": -0.006882506063709483,
+      "vx": 0.0004909183431533073,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/Virgilio_Tojetti_1877_Our_Lady_of_Lourdes.jpg/500px-Virgilio_Tojetti_1877_Our_Lady_of_Lourdes.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Pope Pius IX",
+      "type": "Person",
+      "description": "Pope during the time of the apparitions who officially approved the veneration of Our Lady of Lourdes in 1862.",
+      "x": 633.4032102963655,
+      "y": 165.58255737605472,
+      "expanded": false,
+      "index": 41,
+      "vy": -0.008431921988594597,
+      "vx": -0.0004986071353474289,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/G.P.A.Healy%2C_Portrait_of_Pope_Pius_IX_%281871%29.jpg/500px-G.P.A.Healy%2C_Portrait_of_Pope_Pius_IX_%281871%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "François Hollande",
+      "type": "Person",
+      "description": "Served as President of France from 2012 to 2017, during which Emmanuel Macron was appointed Minister of Economics and Finance.",
+      "x": 1254.8281434654405,
+      "y": 371.0490582614754,
+      "expanded": true,
+      "index": 42,
+      "vy": -0.006153594092740762,
+      "vx": -0.006970806569911269,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Fran%C3%A7ois_Hollande_-_2017_%2827869823159%29_%28cropped_2%29.jpg/500px-Fran%C3%A7ois_Hollande_-_2017_%2827869823159%29_%28cropped_2%29.jpg",
+      "imageChecked": true,
+      "isLoading": false,
+      "fx": null,
+      "fy": null
+    },
+    {
+      "id": "Manuel Valls",
+      "type": "Person",
+      "description": "Served as Prime Minister of France, leading the second Valls government in which Emmanuel Macron was appointed Economics Minister.",
+      "x": 1406.249794141342,
+      "y": 568.6897999601416,
+      "expanded": false,
+      "index": 43,
+      "vy": -0.0015909907127996375,
+      "vx": -0.004165911696647038,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/Manuel_Valls_2025_%28cropped%29.jpg/500px-Manuel_Valls_2025_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Marine Le Pen",
+      "type": "Person",
+      "description": "French politician who was defeated by Emmanuel Macron in the second round of the 2017 French Presidential Election.",
+      "x": 1127.3483029276038,
+      "y": 493.91167176209586,
+      "expanded": false,
+      "index": 44,
+      "vy": -0.002475074386906901,
+      "vx": -0.008938179284784378,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/en/thumb/5/58/Marine_Pr%C3%A9sidente_2017.png/500px-Marine_Pr%C3%A9sidente_2017.png",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "François Fillon",
+      "type": "Person",
+      "description": "French politician whose affair partly contributed to Emmanuel Macron's victory in the 2017 French Presidential Election.",
+      "x": 1175.17477418434,
+      "y": 387.9970264253569,
+      "expanded": false,
+      "index": 45,
+      "vy": -0.005606343645996088,
+      "vx": -0.0018247752979086644,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Fran%C3%A7ois_Fillon_2010.jpg/500px-Fran%C3%A7ois_Fillon_2010.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Muriel Pénicaud",
+      "type": "Person",
+      "description": "As Minister of Labour, she was the key architect and implementer of Emmanuel Macron's 2017 labor law reforms.",
+      "x": 1184.407645875065,
+      "y": 638.589345002473,
+      "expanded": false,
+      "index": 46,
+      "vy": -0.000564163964344649,
+      "vx": -0.00885828137599102,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Portrait_Muriel_P%C3%A9nicaud_%28cropped%29.jpg/500px-Portrait_Muriel_P%C3%A9nicaud_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Édouard Philippe",
+      "type": "Person",
+      "description": "As Prime Minister, he oversaw the government's legislative agenda, including the significant labor law reforms under President Macron.",
+      "x": 1104.7181563925092,
+      "y": 645.6471485729319,
+      "expanded": false,
+      "index": 47,
+      "vy": -0.003156937236049754,
+      "vx": -0.009053939363071032,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/%C3%89douard_Philippe_%C3%A0_Ch%C3%A2lons-en-Champagne_en_2023._%28cropped%29.jpg/500px-%C3%89douard_Philippe_%C3%A0_Ch%C3%A2lons-en-Champagne_en_2023._%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Laurent Berger",
+      "type": "Person",
+      "description": "As the head of France's largest trade union (CFDT), he played a central role in negotiations and reactions to Macron's labor reforms.",
+      "x": 1064.1350058736173,
+      "y": 718.4765292742106,
+      "expanded": false,
+      "index": 48,
+      "vy": -0.0002839516516840331,
+      "vx": -0.009271335769133261,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Laurent_Berger.jpg/500px-Laurent_Berger.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Philippe Martinez",
+      "type": "Person",
+      "description": "As the leader of the CGT, he was a prominent figure in opposing and organizing protests against Macron's labor law reforms.",
+      "x": 1024.777221006747,
+      "y": 648.8327161069591,
+      "expanded": false,
+      "index": 49,
+      "vy": -0.0006405994930906431,
+      "vx": -0.008849260989464489,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/f/f1/PhilippeMartinez.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Elisabeth Borne",
+      "type": "Person",
+      "description": "As Prime Minister, she oversaw the government's efforts to pass the pension reforms.",
+      "x": 1246.3509627605188,
+      "y": 789.8425118835435,
+      "expanded": false,
+      "index": 50,
+      "vy": -0.0015571715483081636,
+      "vx": -0.002866349965433651,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/La_Premi%C3%A8re_ministre_fran%C3%A7aise_%C3%89lisabeth_Borne_%28cropped%29.jpg/500px-La_Premi%C3%A8re_ministre_fran%C3%A7aise_%C3%89lisabeth_Borne_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Olivier Dussopt",
+      "type": "Person",
+      "description": "He was the minister directly responsible for drafting and defending the 2023 pension reform bill.",
+      "x": 1105.0193659356185,
+      "y": 791.908096641147,
+      "expanded": false,
+      "index": 51,
+      "vy": -0.000520981643158085,
+      "vx": -0.004621353209297822,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Olivier_Dussopt_%28cropped%29.jpg/500px-Olivier_Dussopt_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "Mathilde Panot",
+      "type": "Person",
+      "description": "She led the main left-wing opposition party's parliamentary efforts against the pension reform.",
+      "x": 1176.2343818267484,
+      "y": 828.3535988088378,
+      "expanded": false,
+      "index": 52,
+      "vy": -0.002600969187220623,
+      "vx": -0.0035328900444963314,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/3/36/Mathilde_Panot%2C_d%C3%A9put%C3%A9e_du_Val-de-Marne_%28cropped%29.jpg",
+      "imageChecked": true,
+      "isLoading": false
+    },
+    {
+      "id": "First Secretary of Socialist Party",
+      "type": "Political Role",
+      "description": "Served as the First Secretary of the French Socialist Party",
+      "year": 1997,
+      "x": 1340.4913608869108,
+      "y": 363.45486923615255,
+      "expanded": false,
+      "index": 53,
+      "vy": -0.005160419656790565,
+      "vx": -0.006865052444684681,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Olivier_Faure_PSE-CARCA--1194_%28cropped%29.jpg/500px-Olivier_Faure_PSE-CARCA--1194_%28cropped%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Mayor of Tulle",
+      "type": "Political Role",
+      "description": "Served as Mayor of the city of Tulle",
+      "year": 2001,
+      "x": 1381.2309848112156,
+      "y": 280.9966773705538,
+      "expanded": false,
+      "index": 54,
+      "vy": -0.005960624822345682,
+      "vx": -0.007072272644537023,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/70/Tulle_Pr%C3%A9fecture.jpg/500px-Tulle_Pr%C3%A9fecture.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "2012 French Presidential Election",
+      "type": "Political Event",
+      "description": "Won the French Presidential Election, becoming President of France",
+      "year": 2012,
+      "x": 1199.2838574775374,
+      "y": 305.43702899929525,
+      "expanded": false,
+      "index": 55,
+      "vy": -0.007174411033477003,
+      "vx": -0.0069985233840606995,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f2/Portrait_3_-_Flickr_-_dupontaignan_%28cropped%29.jpg/500px-Portrait_3_-_Flickr_-_dupontaignan_%28cropped%29.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Operation Serval",
+      "type": "Military Operation",
+      "description": "Launched military intervention in Mali during his presidency",
+      "year": 2013,
+      "x": 1298.3594383092213,
+      "y": 445.1987960467389,
+      "expanded": false,
+      "index": 56,
+      "vy": -0.004926150410476265,
+      "vx": -0.008301850249585357,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/Insigne_Serval.JPG/500px-Insigne_Serval.JPG",
+      "imageChecked": true
+    },
+    {
+      "id": "Paris Attacks",
+      "type": "Historical Event",
+      "description": "President during the November 2015 terrorist attacks in Paris",
+      "year": 2015,
+      "x": 1289.4133168172048,
+      "y": 286.9584872499338,
+      "expanded": false,
+      "index": 57,
+      "vy": -0.005713553178276191,
+      "vx": -0.006798601832335224,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/13_November_2015_Paris_attacks_-_montage.jpg/500px-13_November_2015_Paris_attacks_-_montage.jpg",
+      "imageChecked": true
+    },
+    {
+      "id": "Paris Agreement",
+      "type": "International Treaty",
+      "description": "Signed international agreement on climate change",
+      "year": 2016,
+      "x": 1390.255301173693,
+      "y": 440.8577960452005,
+      "expanded": false,
+      "index": 58,
+      "vy": -0.004829063688069635,
+      "vx": -0.008257913413230431,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Probability_that_countries_achieve_their_Paris_Agreement_Goals_according_to_their_nationally_determined_contributions_%28NDCs%29.webp/500px-Probability_that_countries_achieve_their_Paris_Agreement_Goals_according_to_their_nationally_determined_contributions_%28NDCs%29.webp.png",
+      "imageChecked": true
+    },
+    {
+      "id": "Les Leçons du pouvoir",
+      "type": "Book",
+      "description": "Authored a memoir reflecting on his presidency",
+      "year": 2018,
+      "x": 1432.367467774943,
+      "y": 359.0586276064211,
+      "expanded": false,
+      "index": 59,
+      "vy": -0.003776887441676184,
+      "vx": -0.0063609147550006805,
+      "fetchingImage": false,
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Fran%C3%A7ois_Hollande_-_2017_%2827869823159%29_%28cropped_2%29.jpg/500px-Fran%C3%A7ois_Hollande_-_2017_%2827869823159%29_%28cropped_2%29.jpg",
+      "imageChecked": true
+    }
+  ],
+  "links": [
+    {
+      "source": "emmanuel macron",
+      "target": "Minister of Economics and Finance",
+      "id": "emmanuel macron-Minister of Economics and Finance",
+      "label": "2014"
+    },
+    {
+      "source": "emmanuel macron",
+      "target": "En Marche!",
+      "id": "emmanuel macron-En Marche!",
+      "label": "2016"
+    },
+    {
+      "source": "emmanuel macron",
+      "target": "2017 French Presidential Election",
+      "id": "emmanuel macron-2017 French Presidential Election",
+      "label": "2017"
+    },
+    {
+      "source": "emmanuel macron",
+      "target": "Labor Law Reforms",
+      "id": "emmanuel macron-Labor Law Reforms",
+      "label": "2017"
+    },
+    {
+      "source": "emmanuel macron",
+      "target": "Yellow Vests Protests",
+      "id": "emmanuel macron-Yellow Vests Protests",
+      "label": "2018"
+    },
+    {
+      "source": "emmanuel macron",
+      "target": "COVID-19 Pandemic Response in France",
+      "id": "emmanuel macron-COVID-19 Pandemic Response in France",
+      "label": "2020"
+    },
+    {
+      "source": "emmanuel macron",
+      "target": "2022 French Presidential Election",
+      "id": "emmanuel macron-2022 French Presidential Election",
+      "label": "2022"
+    },
+    {
+      "source": "emmanuel macron",
+      "target": "2023 French Pension Reforms",
+      "id": "emmanuel macron-2023 French Pension Reforms",
+      "label": "2023"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "Thérèse Raquin",
+      "id": "francois mitterand-Thérèse Raquin",
+      "label": "1867"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "L'Assommoir",
+      "id": "francois mitterand-L'Assommoir",
+      "label": "1877"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "Nana",
+      "id": "francois mitterand-Nana",
+      "label": "1880"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "Germinal",
+      "id": "francois mitterand-Germinal",
+      "label": "1885"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "La Bête Humaine",
+      "id": "francois mitterand-La Bête Humaine",
+      "label": "1890"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "J'Accuse...!",
+      "id": "francois mitterand-J'Accuse...!",
+      "label": "1898"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "Dreyfus Affair",
+      "id": "francois mitterand-Dreyfus Affair",
+      "label": "1898"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "Bombing of the Rainbow Warrior",
+      "id": "francois mitterand-Bombing of the Rainbow Warrior",
+      "label": "François Mitterrand was faced with a major controversy after ordering the bombing of the Rainbow Warrior in Auckland."
+    },
+    {
+      "source": "Bombing of the Rainbow Warrior",
+      "target": "emmanuel macron",
+      "id": "Bombing of the Rainbow Warrior-emmanuel macron",
+      "label": "The provided information for 'Emmanuel Macron' describes him as François Mitterrand, who was involved in the Bombing of the Rainbow Warrior."
+    },
+    {
+      "source": "francois mitterand",
+      "target": "Contes à Ninon",
+      "id": "francois mitterand-Contes à Ninon",
+      "label": "1864"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "La Fortune des Rougon",
+      "id": "francois mitterand-La Fortune des Rougon",
+      "label": "1871"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "Le Ventre de Paris",
+      "id": "francois mitterand-Le Ventre de Paris",
+      "label": "1873"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "Au Bonheur des Dames",
+      "id": "francois mitterand-Au Bonheur des Dames",
+      "label": "1883"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "L'Œuvre",
+      "id": "francois mitterand-L'Œuvre",
+      "label": "1886"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "La Débâcle",
+      "id": "francois mitterand-La Débâcle",
+      "label": "1892"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "Lourdes",
+      "id": "francois mitterand-Lourdes",
+      "label": "1894"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "Fécondité",
+      "id": "francois mitterand-Fécondité",
+      "label": "1899"
+    },
+    {
+      "source": "Thérèse Raquin",
+      "target": "Émile Zola",
+      "id": "Thérèse Raquin-Émile Zola",
+      "label": "Author"
+    },
+    {
+      "source": "L'Assommoir",
+      "target": "Émile Zola",
+      "id": "L'Assommoir-Émile Zola",
+      "label": "Author"
+    },
+    {
+      "source": "Nana",
+      "target": "Émile Zola",
+      "id": "Nana-Émile Zola",
+      "label": "Author"
+    },
+    {
+      "source": "La Bête Humaine",
+      "target": "Émile Zola",
+      "id": "La Bête Humaine-Émile Zola",
+      "label": "Author"
+    },
+    {
+      "source": "La Bête Humaine",
+      "target": "Jean Renoir",
+      "id": "La Bête Humaine-Jean Renoir",
+      "label": "Director"
+    },
+    {
+      "source": "La Bête Humaine",
+      "target": "Jean Gabin",
+      "id": "La Bête Humaine-Jean Gabin",
+      "label": "Lead Actor"
+    },
+    {
+      "source": "La Bête Humaine",
+      "target": "Simone Simon",
+      "id": "La Bête Humaine-Simone Simon",
+      "label": "Lead Actress"
+    },
+    {
+      "source": "La Bête Humaine",
+      "target": "Fernand Ledoux",
+      "id": "La Bête Humaine-Fernand Ledoux",
+      "label": "Actor"
+    },
+    {
+      "source": "J'Accuse...!",
+      "target": "Émile Zola",
+      "id": "J'Accuse...!-Émile Zola",
+      "label": "Author"
+    },
+    {
+      "source": "J'Accuse...!",
+      "target": "Alfred Dreyfus",
+      "id": "J'Accuse...!-Alfred Dreyfus",
+      "label": "Subject"
+    },
+    {
+      "source": "J'Accuse...!",
+      "target": "Georges Clemenceau",
+      "id": "J'Accuse...!-Georges Clemenceau",
+      "label": "Publisher"
+    },
+    {
+      "source": "J'Accuse...!",
+      "target": "Marie-Georges Picquart",
+      "id": "J'Accuse...!-Marie-Georges Picquart",
+      "label": "Investigator"
+    },
+    {
+      "source": "J'Accuse...!",
+      "target": "Ferdinand Esterhazy",
+      "id": "J'Accuse...!-Ferdinand Esterhazy",
+      "label": "True Culprit"
+    },
+    {
+      "source": "J'Accuse...!",
+      "target": "Mathieu Dreyfus",
+      "id": "J'Accuse...!-Mathieu Dreyfus",
+      "label": "Advocate"
+    },
+    {
+      "source": "Dreyfus Affair",
+      "target": "Alfred Dreyfus",
+      "id": "Dreyfus Affair-Alfred Dreyfus",
+      "label": "Central Figure"
+    },
+    {
+      "source": "Dreyfus Affair",
+      "target": "Émile Zola",
+      "id": "Dreyfus Affair-Émile Zola",
+      "label": "Journalist & Advocate"
+    },
+    {
+      "source": "Dreyfus Affair",
+      "target": "Georges Picquart",
+      "id": "Dreyfus Affair-Georges Picquart",
+      "label": "Officer & Whistleblower"
+    },
+    {
+      "source": "Dreyfus Affair",
+      "target": "Ferdinand Walsin Esterházy",
+      "id": "Dreyfus Affair-Ferdinand Walsin Esterházy",
+      "label": "True Culprit"
+    },
+    {
+      "source": "Dreyfus Affair",
+      "target": "Mathieu Dreyfus",
+      "id": "Dreyfus Affair-Mathieu Dreyfus",
+      "label": "Advocate"
+    },
+    {
+      "source": "Contes à Ninon",
+      "target": "Émile Zola",
+      "id": "Contes à Ninon-Émile Zola",
+      "label": "Author"
+    },
+    {
+      "source": "La Fortune des Rougon",
+      "target": "Émile Zola",
+      "id": "La Fortune des Rougon-Émile Zola",
+      "label": "Author"
+    },
+    {
+      "source": "Le Ventre de Paris",
+      "target": "Émile Zola",
+      "id": "Le Ventre de Paris-Émile Zola",
+      "label": "Author"
+    },
+    {
+      "source": "Lourdes",
+      "target": "Bernadette Soubirous",
+      "id": "Lourdes-Bernadette Soubirous",
+      "label": "Visionary"
+    },
+    {
+      "source": "Lourdes",
+      "target": "Émile Zola",
+      "id": "Lourdes-Émile Zola",
+      "label": "Novelist"
+    },
+    {
+      "source": "Lourdes",
+      "target": "Abbé Dominique Peyramale",
+      "id": "Lourdes-Abbé Dominique Peyramale",
+      "label": "Parish Priest"
+    },
+    {
+      "source": "Lourdes",
+      "target": "Louis Bouriette",
+      "id": "Lourdes-Louis Bouriette",
+      "label": "First Miraculous Healing Recipient"
+    },
+    {
+      "source": "Lourdes",
+      "target": "Dr. Henri Dozous",
+      "id": "Lourdes-Dr. Henri Dozous",
+      "label": "Investigating Physician"
+    },
+    {
+      "source": "Lourdes",
+      "target": "Pope Pius IX",
+      "id": "Lourdes-Pope Pius IX",
+      "label": "Pontiff"
+    },
+    {
+      "source": "Fécondité",
+      "target": "Émile Zola",
+      "id": "Fécondité-Émile Zola",
+      "label": "Author"
+    },
+    {
+      "source": "La Débâcle",
+      "target": "Émile Zola",
+      "id": "La Débâcle-Émile Zola",
+      "label": "Author"
+    },
+    {
+      "source": "Minister of Economics and Finance",
+      "target": "François Hollande",
+      "id": "Minister of Economics and Finance-François Hollande",
+      "label": "President of France"
+    },
+    {
+      "source": "Minister of Economics and Finance",
+      "target": "Manuel Valls",
+      "id": "Minister of Economics and Finance-Manuel Valls",
+      "label": "Prime Minister of France"
+    },
+    {
+      "source": "2017 French Presidential Election",
+      "target": "Marine Le Pen",
+      "id": "2017 French Presidential Election-Marine Le Pen",
+      "label": "Presidential Candidate"
+    },
+    {
+      "source": "2017 French Presidential Election",
+      "target": "François Fillon",
+      "id": "2017 French Presidential Election-François Fillon",
+      "label": "Presidential Candidate"
+    },
+    {
+      "source": "2017 French Presidential Election",
+      "target": "François Hollande",
+      "id": "2017 French Presidential Election-François Hollande",
+      "label": "Former President of France"
+    },
+    {
+      "source": "Labor Law Reforms",
+      "target": "Muriel Pénicaud",
+      "id": "Labor Law Reforms-Muriel Pénicaud",
+      "label": "Minister of Labour"
+    },
+    {
+      "source": "Labor Law Reforms",
+      "target": "Édouard Philippe",
+      "id": "Labor Law Reforms-Édouard Philippe",
+      "label": "Prime Minister"
+    },
+    {
+      "source": "Labor Law Reforms",
+      "target": "Laurent Berger",
+      "id": "Labor Law Reforms-Laurent Berger",
+      "label": "Trade Union Leader (CFDT)"
+    },
+    {
+      "source": "Labor Law Reforms",
+      "target": "Philippe Martinez",
+      "id": "Labor Law Reforms-Philippe Martinez",
+      "label": "Trade Union Leader (CGT)"
+    },
+    {
+      "source": "Labor Law Reforms",
+      "target": "Marine Le Pen",
+      "id": "Labor Law Reforms-Marine Le Pen",
+      "label": "Opposition Leader"
+    },
+    {
+      "source": "2022 French Presidential Election",
+      "target": "Marine Le Pen",
+      "id": "2022 French Presidential Election-Marine Le Pen",
+      "label": "Presidential Candidate"
+    },
+    {
+      "source": "2023 French Pension Reforms",
+      "target": "Elisabeth Borne",
+      "id": "2023 French Pension Reforms-Elisabeth Borne",
+      "label": "Prime Minister of France"
+    },
+    {
+      "source": "2023 French Pension Reforms",
+      "target": "Olivier Dussopt",
+      "id": "2023 French Pension Reforms-Olivier Dussopt",
+      "label": "Minister of Labour, Full Employment and Inclusion"
+    },
+    {
+      "source": "2023 French Pension Reforms",
+      "target": "Laurent Berger",
+      "id": "2023 French Pension Reforms-Laurent Berger",
+      "label": "Former Secretary General of CFDT"
+    },
+    {
+      "source": "2023 French Pension Reforms",
+      "target": "Philippe Martinez",
+      "id": "2023 French Pension Reforms-Philippe Martinez",
+      "label": "Former Secretary General of CGT"
+    },
+    {
+      "source": "2023 French Pension Reforms",
+      "target": "Mathilde Panot",
+      "id": "2023 French Pension Reforms-Mathilde Panot",
+      "label": "President of La France Insoumise Group in National Assembly"
+    },
+    {
+      "source": "François Hollande",
+      "target": "First Secretary of Socialist Party",
+      "id": "François Hollande-First Secretary of Socialist Party",
+      "label": "1997"
+    },
+    {
+      "source": "François Hollande",
+      "target": "Mayor of Tulle",
+      "id": "François Hollande-Mayor of Tulle",
+      "label": "2001"
+    },
+    {
+      "source": "François Hollande",
+      "target": "2012 French Presidential Election",
+      "id": "François Hollande-2012 French Presidential Election",
+      "label": "2012"
+    },
+    {
+      "source": "François Hollande",
+      "target": "Operation Serval",
+      "id": "François Hollande-Operation Serval",
+      "label": "2013"
+    },
+    {
+      "source": "François Hollande",
+      "target": "Paris Attacks",
+      "id": "François Hollande-Paris Attacks",
+      "label": "2015"
+    },
+    {
+      "source": "François Hollande",
+      "target": "Paris Agreement",
+      "id": "François Hollande-Paris Agreement",
+      "label": "2016"
+    },
+    {
+      "source": "François Hollande",
+      "target": "Les Leçons du pouvoir",
+      "id": "François Hollande-Les Leçons du pouvoir",
+      "label": "2018"
+    }
+  ],
+  "searchMode": "connect",
+  "exploreTerm": "Sophia Mitri Schloss",
+  "pathStart": "francois mitterand",
+  "pathEnd": "emmanuel macron",
+  "isCompact": true,
+  "isTimelineMode": false,
+  "isTextOnly": false,
+  "date": 1766456920648
+}

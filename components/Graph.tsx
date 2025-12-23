@@ -178,7 +178,7 @@ const Graph: React.FC<GraphProps> = ({
             .force("link", d3.forceLink<GraphNode, GraphLink>(validLinks).id(d => d.id).distance(100))
             .force("charge", d3.forceManyBody().strength(-300))
             .force("center", d3.forceCenter(width / 2, height / 2))
-            .velocityDecay(0.4);
+            .velocityDecay(0.75); // Higher decay to bleed off shared angular momentum and prevent spinning
 
         simulationRef.current = simulation;
 
@@ -631,8 +631,13 @@ const Graph: React.FC<GraphProps> = ({
 
         const hasStructureChanged = nodes.length !== prevNodesLen.current || validLinks.length !== prevLinksLen.current;
         if (hasStructureChanged) {
+            // Reset velocities so new expansions don't inherit shared spin
+            simulation.nodes().forEach(n => {
+                n.vx = 0;
+                n.vy = 0;
+            });
             // "Warm" restart instead of hot to prevent explosion
-            simulation.alpha(0.4).restart();
+            simulation.alpha(0.25).restart();
         } else {
             simulation.alphaTarget(0); 
         }
