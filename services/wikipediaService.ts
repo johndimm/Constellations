@@ -265,24 +265,49 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
     if (pages) {
       const page = Object.values(pages)[0] as any;
       if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
-        console.log(`✅ [Wiki] Found summary for "${page.title}" (${page.extract?.length || 0} chars)`);
+        let extract = page.extract || "";
+        
+        // If extract is empty but page exists, try one more time with the normalized title if it's different
+        if (extract.length === 0 && summaryData.query.normalized?.[0]?.to) {
+            const normalizedTitle = summaryData.query.normalized[0].to;
+            console.log(`⚠️ [Wiki] Empty extract for "${bestTitle}", trying normalized title: "${normalizedTitle}"`);
+            return await fetchWikipediaSummary(normalizedTitle);
+        }
+
+        console.log(`✅ [Wiki] Found summary for "${page.title}" (${extract.length} chars)`);
         
         const isGeneric = page.title.toLowerCase() === cleanQuery.toLowerCase();
-        if (isGeneric && (!page.extract || page.extract.length < 150)) {
+        
+        // Robust check for if this is likely a person
+        // 1. Check if the title has 2-3 words (First Middle Last)
+        // 2. Check if it's NOT in the list of media suffixes
+        const words = page.title.split(' ');
+        const hasPersonNameFormat = words.length >= 2 && words.length <= 4 && words.every((w: string) => /^[A-Z]/.test(w));
+        const hasMediaSuffix = /\(.*\)/.test(page.title);
+        // Added check for summary text - if it starts with "Sebastian Thrun (born..." it's definitely a person
+        const summaryText = extract.toLowerCase();
+        const bioKeywords = ['born ', 'professional ', 'professor ', 'scientist ', 'engineer ', 'politician ', 'actor ', 'actress '];
+        const isLikelyPerson = (hasPersonNameFormat && !hasMediaSuffix) || bioKeywords.some(k => summaryText.includes(k));
+        
+        // Only do media-specific fallback if the summary is very short and it's NOT a person
+        if (isGeneric && extract.length < 150 && !isLikelyPerson) {
              console.log(`⚠️ [Wiki] Summary for "${page.title}" is generic/short, searching for media-specific versions.`);
              const mediaSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(cleanQuery + " film")}&srlimit=1&origin=*`;
              const mediaSearchRes = await fetch(mediaSearchUrl);
              const mediaSearchData = await mediaSearchRes.json();
              if (mediaSearchData.query?.search?.[0]) {
-                 return await fetchWikipediaSummary(mediaSearchData.query.search[0].title);
+                 const newTitle = mediaSearchData.query.search[0].title;
+                 if (newTitle !== page.title && !newTitle.includes('Judah Ben-Hur')) { // Prevent the weird Ben-Hur fallback
+                    return await fetchWikipediaSummary(newTitle);
+                 }
              }
         }
         
-        if ((!page.extract || page.extract.length < 50) && cleanQuery !== query) {
+        if (extract.length < 50 && cleanQuery !== query && !isLikelyPerson) {
             console.log(`⚠️ [Wiki] Summary too short, trying search with clean query: "${cleanQuery}"`);
             return await fetchWikipediaSummary(cleanQuery);
         }
-        return page.extract || null;
+        return extract || null;
       }
     }
     
