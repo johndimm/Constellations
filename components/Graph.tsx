@@ -178,7 +178,7 @@ const Graph: React.FC<GraphProps> = ({
             .force("link", d3.forceLink<GraphNode, GraphLink>(validLinks).id(d => d.id).distance(100))
             .force("charge", d3.forceManyBody().strength(-300))
             .force("center", d3.forceCenter(width / 2, height / 2))
-            .velocityDecay(0.4);
+            .velocityDecay(0.55); // Increased friction to help simulation settle and prevent spinning
 
         simulationRef.current = simulation;
 
@@ -285,7 +285,7 @@ const Graph: React.FC<GraphProps> = ({
             }));
 
         } else {
-            if (centerForce) centerForce.x(width / 2).y(height / 2).strength(1.0);
+            if (centerForce) centerForce.x(width / 2).y(height / 2).strength(0.08); // Reduced from 1.0 to prevent orbit/spin
 
             // Standard vs Compact Settings
             // Reduced charge to prevent aggressive drifting
@@ -299,8 +299,8 @@ const Graph: React.FC<GraphProps> = ({
             simulation.force("y", null);
         }
 
-        simulation.alpha(0.5).restart();
-    }, [isTimelineMode, isCompact, nodes, width, height, isTextOnly]);
+        simulation.alpha(0.3).restart();
+    }, [isTimelineMode, isCompact, nodes.length, width, height, isTextOnly]);
 
     // Update DOM & Styles
     useEffect(() => {

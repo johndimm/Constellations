@@ -8,21 +8,47 @@ import { fetchWikipediaImage, fetchWikipediaSummary } from './services/wikipedia
 import { Key } from 'lucide-react';
 
 const getEnvApiKey = () => {
-    let key = "";
+    // 0. Check localStorage for manually entered key
+    try {
+        if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem('GEMINI_API_KEY') || localStorage.getItem('VITE_GEMINI_API_KEY') || localStorage.getItem('API_KEY');
+            if (stored && stored.length > 5) return stored;
+        }
+    } catch (e) {}
+
+    // 0.5 Check query string / global bridge for key (browser only)
+    try {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const urlKey = params.get('key') || params.get('apiKey') || params.get('geminiKey');
+            if (urlKey && urlKey.length > 5) return urlKey;
+
+            const globalKey = (window as any).__GEMINI_API_KEY__ || (window as any).__API_KEY__ || (window as any).GEMINI_API_KEY;
+            if (globalKey && globalKey.length > 5) return globalKey;
+        }
+    } catch (e) {}
+
+    // 1. Check import.meta.env (Official Vite way)
     try {
         // @ts-ignore
         if (typeof import.meta !== 'undefined' && import.meta.env) {
             // @ts-ignore
-            key = import.meta.env.VITE_API_KEY || import.meta.env.NEXT_PUBLIC_API_KEY || import.meta.env.API_KEY || "";
+            const k = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || import.meta.env.GEMINI_API_KEY;
+            if (k && k.length > 5) return k;
         }
-    } catch (e) { }
-    if (key) return key;
+    } catch (e) {}
+
+    // 2. Check process.env (Mapped via vite.config.ts)
     try {
+        // @ts-ignore
         if (typeof process !== 'undefined' && process.env) {
-            key = process.env.VITE_API_KEY || process.env.NEXT_PUBLIC_API_KEY || process.env.REACT_APP_API_KEY || process.env.API_KEY || "";
+            // @ts-ignore
+            const k = process.env.GEMINI_API_KEY || process.env.API_KEY;
+            if (k && k.length > 5 && k !== "process.env.GEMINI_API_KEY") return k;
         }
-    } catch (e) { }
-    return key;
+    } catch (e) {}
+
+    return "";
 };
 
 // Normalize string for deduplication: lower case, remove 'the ', remove punctuation
@@ -44,6 +70,8 @@ const App: React.FC = () => {
     const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
     const [error, setError] = useState<string | null>(null);
     const [isKeyReady, setIsKeyReady] = useState(false);
+    const [manualKey, setManualKey] = useState('');
+    const [keyError, setKeyError] = useState<string | null>(null);
 
     // Search State Lifted
     const [searchMode, setSearchMode] = useState<'explore' | 'connect'>('explore');
@@ -72,24 +100,90 @@ const App: React.FC = () => {
         checkParams();
     }, [isKeyReady]);
 
-    useEffect(() => {
-        const checkKey = async () => {
-            const envKey = getEnvApiKey();
-            if ((window as any).aistudio) {
-                const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-                setIsKeyReady(hasKey || !!envKey);
-            } else {
-                if (envKey) setIsKeyReady(true);
-            }
-        };
-        checkKey();
+    const persistApiKey = useCallback((key: string) => {
+        if (!key || key.length < 6) return;
+        try {
+            localStorage.setItem('GEMINI_API_KEY', key);
+            localStorage.setItem('VITE_GEMINI_API_KEY', key);
+            localStorage.setItem('API_KEY', key);
+        } catch (e) {
+            console.warn("Unable to persist API key", e);
+        }
     }, []);
 
-    const handleSelectKey = async () => {
-        if ((window as any).aistudio) {
-            await (window as any).aistudio.openSelectKey();
-            setIsKeyReady(true);
+    const fetchAistudioKey = useCallback(async (): Promise<string> => {
+        const ai = (window as any).aistudio;
+        if (!ai) return "";
+
+        const candidateFns = ['getApiKey', 'getSelectedApiKey', 'fetchApiKey', 'fetchSelectedApiKey'];
+        for (const fn of candidateFns) {
+            const maybeFn = ai[fn];
+            if (typeof maybeFn === 'function') {
+                try {
+                    const val = await maybeFn.call(ai);
+                    if (val && typeof val === 'string' && val.length > 5) return val;
+                } catch (err) {
+                    console.warn(`[API Key] ${fn} failed`, err);
+                }
+            }
         }
+        return "";
+    }, []);
+
+    useEffect(() => {
+    const checkKey = async () => {
+        const envKey = getEnvApiKey();
+        if (envKey) {
+            persistApiKey(envKey);
+            setIsKeyReady(true);
+            return;
+        }
+        if ((window as any).aistudio) {
+            const selectedKey = await fetchAistudioKey();
+            if (selectedKey) {
+                persistApiKey(selectedKey);
+                setIsKeyReady(true);
+                return;
+            }
+            if (typeof (window as any).aistudio.hasSelectedApiKey === 'function') {
+                const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+                setIsKeyReady(hasKey);
+                return;
+            }
+        }
+        // If nothing found, stay gated and let manual entry handle it
+    };
+    checkKey();
+}, [fetchAistudioKey, persistApiKey]);
+
+    const handleSelectKey = async () => {
+        setKeyError(null);
+        try {
+            if ((window as any).aistudio?.openSelectKey) {
+                await (window as any).aistudio.openSelectKey();
+            }
+            const selectedKey = await fetchAistudioKey();
+            if (selectedKey) {
+                persistApiKey(selectedKey);
+                setIsKeyReady(true);
+            } else {
+                setKeyError("Could not retrieve a key from AI Studio. Paste it manually instead.");
+            }
+        } catch (e) {
+            console.error("Failed to fetch AI Studio key", e);
+            setKeyError("Failed to fetch AI Studio key. Please paste your key manually.");
+        }
+    };
+
+    const handleManualKeySubmit = () => {
+        setKeyError(null);
+        if (!manualKey.trim() || manualKey.trim().length < 10) {
+            setKeyError("Please paste a valid Gemini API key.");
+            return;
+        }
+        persistApiKey(manualKey.trim());
+        setIsKeyReady(true);
+        setManualKey('');
     };
 
     useEffect(() => {
@@ -591,9 +685,16 @@ const App: React.FC = () => {
                 }, 300 * (index + 1));
             });
 
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to expand node", error);
-            setError("Failed to fetch connections. The AI might be busy.");
+            const msg = error?.message || "";
+            if (msg.includes("429") || msg.includes("quota")) {
+                setError("AI Rate limit reached. Please wait a few seconds.");
+            } else if (msg.includes("timeout")) {
+                setError("The AI took too long to respond. Try again.");
+            } else {
+                setError("Failed to fetch connections. The AI might be busy.");
+            }
             setNodes(prev => prev.map(n => n.id === node.id ? { ...n, isLoading: false } : n));
         } finally {
             setIsProcessing(false);
@@ -676,8 +777,8 @@ const App: React.FC = () => {
         for (const targetNode of unexpandedNodes) {
             try {
                 await expandNode(targetNode);
-                // Delay to allow physics and state to settle
-                await new Promise(resolve => setTimeout(resolve, 400));
+                // Delay to prevent hitting rate limits during bulk expansion
+                await new Promise(resolve => setTimeout(resolve, 800));
             } catch (e) {
                 console.warn(`Failed to expand node ${targetNode.id}`, e);
             }
@@ -895,14 +996,38 @@ const App: React.FC = () => {
     };
 
     if (!isKeyReady) {
+        const hasAIStudio = typeof window !== 'undefined' && (window as any).aistudio;
         return (
-            <div className="flex flex-col items-center justify-center w-screen h-screen bg-slate-900 text-white space-y-6">
+            <div className="flex flex-col items-center justify-center w-screen h-screen bg-slate-900 text-white space-y-6 px-4">
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
                     Constellations
                 </h1>
-                <button onClick={handleSelectKey} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-medium transition-all hover:scale-105">
-                    <Key size={20} className="inline mr-2" /> Select API Key
-                </button>
+                <p className="text-slate-300">Add your Gemini API key to start exploring.</p>
+                <div className="w-full max-w-md space-y-3">
+                    <input
+                        type="password"
+                        value={manualKey}
+                        onChange={(e) => setManualKey(e.target.value)}
+                        placeholder="Paste your Gemini API key"
+                        className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                        onClick={handleManualKeySubmit}
+                        className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-medium transition-all hover:scale-[1.01]"
+                    >
+                        Save API Key
+                    </button>
+                    {hasAIStudio && (
+                        <button
+                            onClick={handleSelectKey}
+                            className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white px-6 py-3 rounded-xl font-medium transition-all hover:scale-[1.01] flex items-center justify-center gap-2"
+                        >
+                            <Key size={20} /> Select API Key from AI Studio
+                        </button>
+                    )}
+                    {keyError && <div className="text-sm text-red-300 bg-red-900/40 border border-red-700 rounded-lg px-4 py-2">{keyError}</div>}
+                    <p className="text-sm text-slate-400 text-center">Your key is stored locally in this browser only.</p>
+                </div>
             </div>
         );
     }
