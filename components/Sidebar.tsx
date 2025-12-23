@@ -9,12 +9,14 @@ interface SidebarProps {
   onExpandLeaves?: (node: GraphNode) => void;
   onSmartDelete?: (nodeId: string) => void;
   isProcessing?: boolean;
+  helpHover?: string | null;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onExpandLeaves, onSmartDelete, isProcessing }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onExpandLeaves, onSmartDelete, isProcessing, helpHover }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [activeAction, setActiveAction] = useState<'expand' | 'add' | null>(null);
+  const [showFullSummary, setShowFullSummary] = useState(false);
 
   useEffect(() => {
     if (!isProcessing) {
@@ -36,6 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onE
       } else {
         setIsCollapsed(true);
       }
+      setShowFullSummary(false);
     }
   }, [selectedNode, isMobile]);
 
@@ -61,21 +64,21 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onE
       </button>
 
       <div className={panelClasses}>
-        <div className="bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex flex-col p-6 max-h-[calc(100vh-2rem)] overflow-y-auto">
+        <div className="bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex flex-col p-6 max-h-[calc(100vh-2rem)] overflow-visible">
 
-          <div className="flex-1 overflow-y-auto">
-            <div className="flex justify-between items-start mb-4">
+          <div className="flex-1 overflow-visible">
+            <div className="flex justify-between items-start mb-4 overflow-visible">
               <h2 className="text-xl font-bold text-white leading-tight">{selectedNode.id}</h2>
-              <div className="flex items-center gap-2 shrink-0 ml-2">
+              <div className="flex items-center gap-2 shrink-0 ml-2 overflow-visible">
                 {selectedNode.expanded && (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 overflow-visible">
                     <button
                       onClick={() => {
                         setActiveAction('expand');
                         onExpandLeaves?.(selectedNode);
                       }}
                       disabled={isProcessing}
-                      className="text-slate-400 hover:text-emerald-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50 flex items-center justify-center min-w-[32px] min-h-[32px]"
+                      className={`text-slate-400 hover:text-emerald-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50 flex items-center justify-center min-w-[32px] min-h-[32px] ${helpHover === 'expand' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
                       title="Expand ALL unexpanded nodes in the graph"
                     >
                       {isProcessing && activeAction === 'expand' ? <Loader2 size={18} className="animate-spin" /> : <Maximize size={18} />}
@@ -86,14 +89,14 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onE
                         onAddMore?.(selectedNode);
                       }}
                       disabled={isProcessing}
-                      className="text-slate-400 hover:text-indigo-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50 flex items-center justify-center min-w-[32px] min-h-[32px]"
+                      className={`text-slate-400 hover:text-indigo-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50 flex items-center justify-center min-w-[32px] min-h-[32px] ${helpHover === 'add' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
                       title="Add more connections (6-8 more)"
                     >
                       {isProcessing && activeAction === 'add' ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
                     </button>
                     <button
                       onClick={() => onSmartDelete?.(selectedNode.id)}
-                      className="text-slate-400 hover:text-red-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700"
+                      className={`text-slate-400 hover:text-red-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 ${helpHover === 'delete' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
                       title="Delete this node and prune dangling branches"
                     >
                       <Trash2 size={18} />
@@ -106,7 +109,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onE
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 overflow-y-auto pr-1">
               <div>
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Type</span>
                 <p className={`${isPerson ? 'text-amber-400' : 'text-blue-400'} font-medium`}>{selectedNode.type}</p>
@@ -115,7 +118,26 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onE
               {selectedNode.description && (
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Description</span>
-                  <p className="text-slate-300 text-sm leading-relaxed mt-1">{selectedNode.description}</p>
+                  <p className="text-slate-300 text-sm leading-relaxed mt-1 whitespace-pre-wrap">{selectedNode.description}</p>
+                </div>
+              )}
+
+              {selectedNode.wikiSummary && (
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Wikipedia Summary</span>
+                  <p className="text-slate-200 text-sm leading-relaxed mt-1 whitespace-pre-wrap">
+                    {showFullSummary || selectedNode.wikiSummary.length <= 600
+                      ? selectedNode.wikiSummary
+                      : `${selectedNode.wikiSummary.slice(0, 600)}…`}
+                  </p>
+                  {selectedNode.wikiSummary.length > 600 && (
+                    <button
+                      onClick={() => setShowFullSummary(!showFullSummary)}
+                      className="mt-1 text-xs text-amber-300 hover:text-amber-200"
+                    >
+                      {showFullSummary ? 'Show less' : 'Show more'}
+                    </button>
+                  )}
                 </div>
               )}
 

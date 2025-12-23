@@ -235,6 +235,8 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
     
     const cleanQuery = query.replace(/\s*\(.*\)\s*/g, '').trim();
     const searchQuery = context ? `${cleanQuery} ${context}` : query;
+    const avoidMedia = /\b(project|program|programme|operation|war|battle|campaign|treaty|scandal)\b/i.test(cleanQuery);
+    const isMediaTitle = (title: string) => /\b(film|tv series|miniseries|series|movie|documentary|episode)\b/i.test(title);
 
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl);
@@ -244,11 +246,20 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
     if (searchData.query?.search?.length) {
       const results = searchData.query.search;
       const suffixes = ["(TV series)", "(film)", "(miniseries)", "(series)", "(book)", "(TV program)"];
-      const mediaResult = results.find((r: any) => 
+      const mediaResult = results.find((r: any) =>
         suffixes.some(s => r.title.toLowerCase().includes(s.toLowerCase()))
       );
 
-      if (mediaResult) {
+      if (avoidMedia) {
+        const nonMedia = results.find((r: any) => !isMediaTitle(r.title));
+        if (nonMedia) {
+          bestTitle = nonMedia.title;
+          console.log(`✅ [Wiki] Non-media match preferred: "${bestTitle}"`);
+        } else {
+          bestTitle = results[0].title;
+          console.log(`✅ [Wiki] No non-media match, using top result: "${bestTitle}"`);
+        }
+      } else if (mediaResult) {
         bestTitle = mediaResult.title;
         console.log(`✅ [Wiki] Media-specific match found: "${bestTitle}"`);
       } else {
@@ -266,15 +277,25 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
       const page = Object.values(pages)[0] as any;
       if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
         console.log(`✅ [Wiki] Found summary for "${page.title}" (${page.extract?.length || 0} chars)`);
+
+        // If we wanted a non-media entity but got a film/series, retry with a stronger query
+        if (avoidMedia && isMediaTitle(page.title)) {
+          const retryQuery = `${cleanQuery} project`;
+          console.log(`⚠️ [Wiki] Media page returned for "${cleanQuery}". Retrying with "${retryQuery}".`);
+          const retry = await fetchWikipediaSummary(retryQuery, context);
+          if (retry) return retry;
+        }
         
         const isGeneric = page.title.toLowerCase() === cleanQuery.toLowerCase();
         if (isGeneric && (!page.extract || page.extract.length < 150)) {
              console.log(`⚠️ [Wiki] Summary for "${page.title}" is generic/short, searching for media-specific versions.`);
-             const mediaSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(cleanQuery + " film")}&srlimit=1&origin=*`;
-             const mediaSearchRes = await fetch(mediaSearchUrl);
-             const mediaSearchData = await mediaSearchRes.json();
-             if (mediaSearchData.query?.search?.[0]) {
-                 return await fetchWikipediaSummary(mediaSearchData.query.search[0].title);
+             if (!avoidMedia) {
+                 const mediaSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(cleanQuery + " film")}&srlimit=1&origin=*`;
+                 const mediaSearchRes = await fetch(mediaSearchUrl);
+                 const mediaSearchData = await mediaSearchRes.json();
+                 if (mediaSearchData.query?.search?.[0]) {
+                     return await fetchWikipediaSummary(mediaSearchData.query.search[0].title);
+                 }
              }
         }
         

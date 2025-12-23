@@ -51,6 +51,17 @@ const App: React.FC = () => {
     const [pathStart, setPathStart] = useState('');
     const [pathEnd, setPathEnd] = useState('');
     const [searchId, setSearchId] = useState(0);
+    const [deletePreview, setDeletePreview] = useState<{ keepIds: string[], dropIds: string[] } | null>(null);
+    const [helpHover, setHelpHover] = useState<string | null>(null);
+
+    // Keep selectedNode in sync with latest node data (e.g., wikiSummary, images)
+    useEffect(() => {
+        if (!selectedNode) return;
+        const updated = nodes.find(n => n.id === selectedNode.id);
+        if (updated && updated !== selectedNode) {
+            setSelectedNode(updated);
+        }
+    }, [nodes, selectedNode]);
 
     // Centralized apply-graph helper to reuse for imports/localStorage/public graphs
     const applyGraphData = useCallback((data: any, sourceLabel: string) => {
@@ -472,6 +483,82 @@ const App: React.FC = () => {
         setLinks(linksToKeep);
     };
 
+    const computeDeleteOutcome = useCallback((rootId: string) => {
+        const remainingNodes = nodes.filter(n => n.id !== rootId);
+        const remainingLinks = links.filter(l => {
+            const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+            const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+            return s !== rootId && t !== rootId;
+        });
+
+        if (remainingNodes.length === 0) {
+            return {
+                keepNodes: [] as GraphNode[],
+                keepLinks: [] as GraphLink[],
+                keepIds: [] as string[],
+                dropIds: nodes.map(n => n.id)
+            };
+        }
+
+        const adj = new Map<string, Set<string>>();
+        remainingNodes.forEach(n => adj.set(n.id, new Set()));
+        remainingLinks.forEach(l => {
+            const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+            const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+            if (adj.has(s) && adj.has(t)) {
+                adj.get(s)!.add(t);
+                adj.get(t)!.add(s);
+            }
+        });
+
+        const visited = new Set<string>();
+        const components: string[][] = [];
+
+        for (const node of remainingNodes) {
+            if (visited.has(node.id)) continue;
+            const queue = [node.id];
+            const comp: string[] = [];
+            visited.add(node.id);
+            while (queue.length) {
+                const id = queue.shift() as string;
+                comp.push(id);
+                const neighbors = adj.get(id);
+                if (!neighbors) continue;
+                neighbors.forEach(nb => {
+                    if (!visited.has(nb)) {
+                        visited.add(nb);
+                        queue.push(nb);
+                    }
+                });
+            }
+            components.push(comp);
+        }
+
+        let largest = components[0] || [];
+        for (const comp of components) {
+            if (comp.length > largest.length) largest = comp;
+        }
+        const keepIdsSet = new Set(largest);
+
+        const keepNodes = remainingNodes.filter(n => keepIdsSet.has(n.id));
+        const keepLinks = remainingLinks.filter(l => {
+            const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+            const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+            return keepIdsSet.has(s) && keepIdsSet.has(t);
+        });
+
+        const dropIds = nodes
+            .map(n => n.id)
+            .filter(id => id === rootId || !keepIdsSet.has(id));
+
+        return {
+            keepNodes,
+            keepLinks,
+            keepIds: Array.from(keepIdsSet),
+            dropIds
+        };
+    }, [nodes, links]);
+
     const expandNode = useCallback(async (node: GraphNode, isInitial = false, forceMore = false) => {
         if (!forceMore && (node.expanded || node.isLoading)) return;
 
@@ -497,6 +584,9 @@ const App: React.FC = () => {
 
                 // Fetch Wikipedia summary to improve Gemini's accuracy
                 const wikiSummary = await fetchWikipediaSummary(node.id, neighborNames.join(' '));
+                if (wikiSummary) {
+                    nodeUpdates.set(node.id, { wikiSummary });
+                }
 
                 const data = await fetchPersonWorks(node.id, neighborNames, wikiSummary || undefined);
 
@@ -556,6 +646,9 @@ const App: React.FC = () => {
 
                 // Fetch Wikipedia summary to improve Gemini's accuracy for new shows/events
                 const wikiSummary = await fetchWikipediaSummary(node.id, context);
+                if (wikiSummary) {
+                    nodeUpdates.set(node.id, { wikiSummary });
+                }
 
                 const data = await fetchConnections(node.id, context, neighborIds, wikiSummary || undefined);
 
@@ -663,84 +756,59 @@ const App: React.FC = () => {
     };
 
     const handleSmartDelete = (rootId: string) => {
+        const preview = computeDeleteOutcome(rootId);
+        setDeletePreview({ keepIds: preview.keepIds, dropIds: preview.dropIds });
+
         setConfirmDialog({
             isOpen: true,
             message: `Are you sure you want to delete "${rootId}"? This will also prune any resulting orphaned connections.`,
             onConfirm: () => {
-                const currentNodes = [...nodes];
-                const currentLinks = [...links];
-                
-                let updatedNodes = currentNodes.filter(n => n.id !== rootId);
-                let updatedLinks = currentLinks.filter(l => {
-                    const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-                    const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-                    return s !== rootId && t !== rootId;
-                });
+                const outcome = computeDeleteOutcome(rootId);
 
-                let changed = true;
-                while (changed) {
-                    changed = false;
-                    const counts = new Map<string, number>();
-                    updatedLinks.forEach(l => {
-                        const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-                        const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-                        counts.set(s, (counts.get(s) || 0) + 1);
-                        counts.set(t, (counts.get(t) || 0) + 1);
-                    });
-
-                    // Prune anyone with 0 connections OR unexpanded nodes with 1 connection
-                    // BUT: Don't prune if it's the last node remaining or if it has ever been expanded.
-                    const toPrune = updatedNodes.filter(n => {
-                        const count = counts.get(n.id) || 0;
-                        // Orphans (0 connections) are always pruned unless they are the last node.
-                        if (count === 0 && updatedNodes.length > 1) return true;
-                        // Leaves (1 connection) are pruned ONLY if they haven't been expanded.
-                        if (count === 1 && !n.expanded) return true;
-                        return false;
-                    });
-
-                    if (toPrune.length > 0) {
-                        const pruneIds = new Set(toPrune.map(n => n.id));
-                        updatedNodes = updatedNodes.filter(n => !pruneIds.has(n.id));
-                        updatedLinks = updatedLinks.filter(l => {
-                            const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-                            const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-                            return !pruneIds.has(s) && !pruneIds.has(t);
-                        });
-                        changed = true;
-                    }
-                }
-
-                setNodes(updatedNodes);
-                setLinks(updatedLinks);
+                setNodes(outcome.keepNodes);
+                setLinks(outcome.keepLinks);
                 setSelectedNode(null);
                 setConfirmDialog(null);
-                setNotification({ message: `Node and exclusive connections removed.`, type: 'success' });
+                setDeletePreview(null);
+
+                if (outcome.keepNodes.length === 0) {
+                    setNotification({ message: `Node removed. Graph is now empty.`, type: 'success' });
+                } else {
+                    setNotification({ message: `Node removed. Kept largest connected component.`, type: 'success' });
+                }
             }
         });
     };
 
     const handleExpandLeaves = useCallback(async (node: GraphNode) => {
-        // Find all nodes in the graph that are currently unexpanded and not loading
-        const unexpandedNodes = nodes.filter(n => !n.expanded && !n.isLoading);
+        // Only expand direct neighbors of the selected node
+        const neighborIds = links.reduce<string[]>((acc, l) => {
+            const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+            const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+            if (s === node.id) acc.push(t);
+            else if (t === node.id) acc.push(s);
+            return acc;
+        }, []);
 
-        if (unexpandedNodes.length === 0) {
-            setNotification({ message: "No unexpanded nodes found.", type: 'error' });
+        const neighbors = nodes.filter(n => neighborIds.includes(n.id) && !n.expanded && !n.isLoading);
+
+        if (neighbors.length === 0) {
+            setNotification({ message: "No unexpanded neighbors.", type: 'error' });
             return;
         }
 
-        setNotification({ message: `Expanding ${unexpandedNodes.length} nodes...`, type: 'success' });
+        setNotification({ message: `Expanding ${neighbors.length} neighbors...`, type: 'success' });
 
-        for (const targetNode of unexpandedNodes) {
+        for (const targetNode of neighbors) {
             try {
                 await expandNode(targetNode);
                 // Delay to allow physics and state to settle
-                await new Promise(resolve => setTimeout(resolve, 400));
+                await new Promise(resolve => setTimeout(resolve, 300));
             } catch (e) {
                 console.warn(`Failed to expand node ${targetNode.id}`, e);
             }
         }
-    }, [nodes, expandNode]);
+    }, [nodes, links, expandNode]);
 
     const handleNodeClick = (node: GraphNode) => {
         // Retry image fetch if it failed previously
@@ -953,6 +1021,8 @@ const App: React.FC = () => {
                 isTextOnly={isTextOnly}
                 searchId={searchId}
                 selectedNode={selectedNode}
+                highlightKeepIds={deletePreview?.keepIds}
+                highlightDropIds={deletePreview?.dropIds}
             />
 
             <ControlPanel
@@ -981,16 +1051,19 @@ const App: React.FC = () => {
                 onDeleteGraph={handleDeleteGraph}
                 onImport={handleImport}
                 savedGraphs={savedGraphs}
+                helpHover={helpHover}
+                onHelpHoverChange={setHelpHover}
             />
             <Sidebar
                 selectedNode={selectedNode}
                 onClose={() => setSelectedNode(null)}
 
                 onAddMore={handleExpandMore}
-                onExpandLeaves={handleExpandLeaves}
-                onSmartDelete={handleSmartDelete}
-                isProcessing={isProcessing}
-            />
+            onExpandLeaves={handleExpandLeaves}
+            onSmartDelete={handleSmartDelete}
+            isProcessing={isProcessing}
+            helpHover={helpHover}
+        />
 
             {/* Notification Toast */}
             {notification && (
@@ -1000,22 +1073,22 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            {/* Confirmation Dialog */}
+            {/* Confirmation Dialog (no blackout, small floating card) */}
             {confirmDialog && confirmDialog.isOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                    <div className="bg-slate-900 text-white p-6 rounded-xl border border-slate-700 shadow-2xl max-w-sm w-full mx-4">
-                        <h3 className="text-xl font-bold mb-3">Confirm Action</h3>
-                        <p className="text-slate-300 mb-6">{confirmDialog.message}</p>
-                        <div className="flex justify-end gap-3">
+                <div className="fixed z-50 left-1/2 -translate-x-1/2 bottom-6">
+                    <div className="bg-slate-900/95 text-white px-5 py-4 rounded-xl border border-slate-700 shadow-2xl max-w-sm w-[92vw]">
+                        <h3 className="text-sm font-bold mb-2">Confirm delete</h3>
+                        <p className="text-xs text-slate-300 mb-4">{confirmDialog.message}</p>
+                        <div className="flex justify-end gap-3 text-sm">
                             <button
-                                onClick={() => setConfirmDialog(null)}
-                                className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors font-medium"
+                                onClick={() => { setConfirmDialog(null); setDeletePreview(null); }}
+                                className="px-3 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors font-medium"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={confirmDialog.onConfirm}
-                                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors font-medium"
+                                className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors font-semibold"
                             >
                                 Delete
                             </button>
