@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Github, HelpCircle, Minimize2, Maximize2, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, Download, Upload, Share2, Copy } from 'lucide-react';
+import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, Download, Upload, Share2, Copy } from 'lucide-react';
 
 interface ControlPanelProps {
   searchMode: 'explore' | 'connect';
@@ -28,6 +28,8 @@ interface ControlPanelProps {
   onDeleteGraph: (name: string) => void;
   onImport: (data: any) => void; // New prop for importing
   savedGraphs: string[];
+  helpHover: string | null;
+  onHelpHoverChange: (value: string | null) => void;
 }
 
 const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -56,7 +58,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onLoad,
   onDeleteGraph,
   onImport,
-  savedGraphs
+  savedGraphs,
+  helpHover,
+  onHelpHoverChange
 }) => {
   const [showHelp, setShowHelp] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
@@ -143,8 +147,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const EXAMPLES = [
     "The Godfather",
     "Watergate Scandal",
-    "Zodiac Killer",
-    "The Manhattan Project"
+    "Giant Steps",
+    "Napoleon Bonaparte"
   ];
 
   return (
@@ -165,14 +169,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       >
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
 
-          <div className="flex items-center justify-between mb-4 gap-2">
+          <div className="flex items-center justify-between mb-4 gap-2 overflow-visible">
             <a
               href={window.location.origin + window.location.pathname}
               className="text-xl font-bold text-red-500 whitespace-nowrap overflow-visible flex-shrink-0 hover:text-red-400 transition-colors"
             >
               Constellations
             </a>
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+            <div className="flex items-center gap-1.5 overflow-visible no-scrollbar pb-1">
               {/* File Operations Group */}
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
@@ -190,22 +194,23 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     setShowLoad(false);
                     setShowShare(false);
                     setShowHelp(false);
+                    onHelpHoverChange(null);
                   }}
-                  className="text-slate-400 hover:text-green-400 p-1.5"
+                  className={`text-slate-400 hover:text-amber-300 p-1.5 ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
                   title="Save Graph"
                 >
                   <div className="flex items-center font-bold text-xs"><ArrowRight className="rotate-90 mr-1" size={12} /> SAVE</div>
                 </button>
                 <button
                   onClick={() => { setShowLoad(true); setShowSave(false); setShowShare(false); setShowHelp(false); }}
-                  className="text-slate-400 hover:text-blue-400 p-1.5"
+                  className={`text-slate-400 hover:text-amber-300 p-1.5 ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
                   title="Load Graph"
                 >
                   <div className="flex items-center font-bold text-xs"><ArrowRight className="rotate-270 mr-1" size={12} /> LOAD</div>
                 </button>
                 <button
-                  onClick={() => { setShowShare(!showShare); setShowSave(false); setShowLoad(false); setShowHelp(false); }}
-                  className="text-slate-400 hover:text-purple-400 p-1.5"
+                  onClick={() => { setShowShare(!showShare); setShowSave(false); setShowLoad(false); setShowHelp(false); onHelpHoverChange(null); }}
+                  className={`text-slate-400 hover:text-amber-300 p-1.5 ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
                   title="Share Graph"
                 >
                   <div className="flex items-center font-bold text-xs"><Share2 size={12} className="mr-1" /> SHARE</div>
@@ -221,21 +226,21 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all border shrink-0 ${isTimelineMode
                     ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
                     : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400 hover:text-amber-400'
-                    }`}
+                    } ${helpHover === 'timeline' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
                   title="Toggle Timeline/Network View"
                 >
                   {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
                 </button>
                 <button
                   onClick={onToggleCompact}
-                  className="text-slate-400 hover:text-white p-1.5"
+                  className={`text-slate-400 hover:text-white p-1.5 ${helpHover === 'compact' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
                   title="Toggle Compact Mode"
                 >
                   {isCompact ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
                 </button>
                 <button
                   onClick={onToggleTextOnly}
-                  className={`p-1.5 ${isTextOnly ? 'text-indigo-400' : 'text-slate-400 hover:text-white'}`}
+                  className={`p-1.5 ${isTextOnly ? 'text-indigo-400' : 'text-slate-400 hover:text-white'} ${helpHover === 'text' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
                   title="Toggle Text-Only Mode"
                 >
                   <Type size={16} />
@@ -248,14 +253,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   onClick={() => { setShowHelp(!showHelp); setShowSave(false); setShowLoad(false); setShowShare(false); }}
-                  className="text-slate-400 hover:text-white p-1.5"
+                  className={`text-slate-400 hover:text-white p-1.5 ${helpHover === 'help' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
                   title="Help & Info"
                 >
                   <HelpCircle size={16} />
                 </button>
                 <button
                   onClick={onClear}
-                  className="text-slate-400 hover:text-red-400 p-1.5"
+                  className={`text-slate-400 hover:text-red-400 p-1.5 ${helpHover === 'clear' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
                   title="Clear Graph"
                 >
                   <Trash2 size={16} />
@@ -271,10 +276,105 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <HelpCircle size={14} /> Help & Info
                 </h3>
-                <button onClick={() => setShowHelp(false)}><X size={14} className="text-slate-400" /></button>
+                <button onClick={() => { setShowHelp(false); onHelpHoverChange(null); }}><X size={14} className="text-slate-400" /></button>
               </div>
               <div className="space-y-3 text-xs text-slate-300">
-                <p>Welcome to <strong>Constellations</strong>, an AI-powered graph exploration tool.</p>
+                <p className="text-sm text-white">
+                  <strong>New here?</strong> Start fast with a ready-made graph:{" "}
+                  <a className="text-slate-200 hover:text-white font-semibold" href="/graphs/index.html">/graphs/index.html</a>
+                </p>
+                <div className="grid gap-2 text-xs text-slate-200">
+                  <div className="bg-slate-700/40 rounded-lg p-2 border border-slate-700">
+                    <div className="font-semibold text-white mb-1">Toolbar (top left)</div>
+                    <div className="grid grid-cols-[120px_1fr] gap-x-2 gap-y-1 text-[11px] leading-tight">
+                      <span
+                        onMouseEnter={() => onHelpHoverChange('save')}
+                        onMouseLeave={() => onHelpHoverChange(null)}
+                        className="cursor-default"
+                      >
+                        <strong>Save</strong>
+                      </span>
+                      <span className="text-slate-300">Store the current graph locally</span>
+                      <span
+                        onMouseEnter={() => onHelpHoverChange('load')}
+                        onMouseLeave={() => onHelpHoverChange(null)}
+                        className="cursor-default"
+                      >
+                        <strong>Load</strong>
+                      </span>
+                      <span className="text-slate-300">Open a previously saved graph</span>
+                      <span
+                        onMouseEnter={() => onHelpHoverChange('share')}
+                        onMouseLeave={() => onHelpHoverChange(null)}
+                        className="cursor-default"
+                      >
+                        <strong>Share</strong>
+                      </span>
+                      <span className="text-slate-300">Copy link/JSON or download</span>
+                      <span
+                        onMouseEnter={() => onHelpHoverChange('timeline')}
+                        onMouseLeave={() => onHelpHoverChange(null)}
+                        className="cursor-default"
+                      >
+                        <strong>Timeline</strong>
+                      </span>
+                      <span className="text-slate-300">Switch to time view</span>
+                      <span
+                        onMouseEnter={() => onHelpHoverChange('compact')}
+                        onMouseLeave={() => onHelpHoverChange(null)}
+                        className="cursor-default"
+                      >
+                        <strong>Compact</strong>
+                      </span>
+                      <span className="text-slate-300">Tighter layout</span>
+                      <span
+                        onMouseEnter={() => onHelpHoverChange('text')}
+                        onMouseLeave={() => onHelpHoverChange(null)}
+                        className="cursor-default"
+                      >
+                        <strong>Text-only</strong>
+                      </span>
+                      <span className="text-slate-300">Hide images</span>
+                      <span
+                        onMouseEnter={() => onHelpHoverChange('clear')}
+                        onMouseLeave={() => onHelpHoverChange(null)}
+                        className="cursor-default"
+                      >
+                        <strong>Clear</strong>
+                      </span>
+                      <span className="text-slate-300">Remove all nodes</span>
+                    </div>
+                  </div>
+                  <div className="bg-slate-700/40 rounded-lg p-2 border border-slate-700">
+                    <div className="font-semibold text-white mb-1">Sidebar (top right, when a node is selected)</div>
+                    <div className="grid grid-cols-[120px_1fr] gap-x-2 gap-y-1 text-[11px] leading-tight">
+                      <span
+                        onMouseEnter={() => onHelpHoverChange('expand')}
+                        onMouseLeave={() => onHelpHoverChange(null)}
+                        className="cursor-default"
+                      >
+                        <strong>Expand all</strong>
+                      </span>
+                      <span className="text-slate-300">Expand unexpanded neighbors of the selected node</span>
+                      <span
+                        onMouseEnter={() => onHelpHoverChange('add')}
+                        onMouseLeave={() => onHelpHoverChange(null)}
+                        className="cursor-default"
+                      >
+                        <strong>Add more</strong>
+                      </span>
+                      <span className="text-slate-300">Fetch more links from this node</span>
+                      <span
+                        onMouseEnter={() => onHelpHoverChange('delete')}
+                        onMouseLeave={() => onHelpHoverChange(null)}
+                        className="cursor-default"
+                      >
+                        <strong>Delete</strong>
+                      </span>
+                      <span className="text-slate-300">Remove node and orphaned branches</span>
+                    </div>
+                  </div>
+                </div>
                 <ul className="list-disc pl-4 space-y-1">
                   <li><strong>Explore:</strong> Find entities and expand their connections.</li>
                   <li><strong>Connect:</strong> Discover the hidden path between any two points.</li>

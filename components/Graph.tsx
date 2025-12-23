@@ -15,6 +15,8 @@ interface GraphProps {
     isTextOnly?: boolean;
     searchId?: number;
     selectedNode?: GraphNode | null;
+    highlightKeepIds?: string[];
+    highlightDropIds?: string[];
 }
 
 const Graph: React.FC<GraphProps> = ({
@@ -29,12 +31,15 @@ const Graph: React.FC<GraphProps> = ({
     isTimelineMode = false,
     isTextOnly = false,
     searchId = 0,
-    selectedNode = null
+    selectedNode = null,
+    highlightKeepIds = [],
+    highlightDropIds = []
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const zoomGroupRef = useRef<SVGGElement>(null);
     const simulationRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
     const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
+    const [focusedNode, setFocusedNode] = useState<GraphNode | null>(null);
 
     // Track previous data sizes to optimize simulation restarts
     const prevNodesLen = useRef(nodes.length);
@@ -308,6 +313,10 @@ const Graph: React.FC<GraphProps> = ({
         const simulation = simulationRef.current;
         const container = d3.select(zoomGroupRef.current);
 
+        const keepHighlight = new Set(highlightKeepIds || []);
+        const dropHighlight = new Set(highlightDropIds || []);
+        const hasHighlight = keepHighlight.size > 0 || dropHighlight.size > 0;
+
         const oldNodesMap = new Map<string, GraphNode>(simulation.nodes().map(n => [n.id, n]));
         nodes.forEach(node => {
             const old = oldNodesMap.get(node.id);
@@ -440,7 +449,29 @@ const Graph: React.FC<GraphProps> = ({
             const g = d3.select(this);
             const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
             const isHovered = d.id === hoveredNode?.id;
+            const isFocused = d.id === focusedNode?.id;
             let color = getNodeColor(d.type);
+            const isDrop = dropHighlight.has(d.id);
+            const isKeep = keepHighlight.has(d.id);
+            let baseOpacity = 1;
+            if (isDrop) {
+                baseOpacity = 0.18; // strongly dim nodes that will be removed
+            } else if (hasHighlight) {
+                baseOpacity = isKeep ? 1 : 0.3; // dim non-kept nodes when previewing
+            }
+            // If a focus node exists, dim unrelated nodes
+            if (focusedNode && !isFocused) {
+                const isNeighbor = links.some(l => {
+                    const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                    const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                    return (s === focusedNode.id && t === d.id) || (t === focusedNode.id && s === d.id);
+                });
+                if (!isNeighbor) baseOpacity *= 0.25;
+            }
+            g.style("opacity", baseOpacity);
+
+            const strokeColor = isDrop ? "#f87171" : (isKeep && hasHighlight ? "#22c55e" : (isHovered ? "#f59e0b" : "#fff"));
+            const strokeWidth = isDrop ? 3.5 : (isKeep && hasHighlight ? 2.5 : 2);
 
             // Grey out nodes with missing images
             if (d.imageChecked && !d.imageUrl) {
@@ -460,7 +491,8 @@ const Graph: React.FC<GraphProps> = ({
                     .style("display", "block")
                     .attr("r", r)
                     .attr("fill", color)
-                    .attr("stroke", isHovered ? "#f59e0b" : "#fff")
+                    .attr("stroke", strokeColor)
+                    .attr("stroke-width", strokeWidth)
                     .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
                 g.select("image")
@@ -504,7 +536,8 @@ const Graph: React.FC<GraphProps> = ({
                     .attr("width", w).attr("height", h)
                     .attr("x", -w / 2).attr("y", -h / 2)
                     .attr("fill", color)
-                    .attr("stroke", isHovered ? "#f59e0b" : "#fff")
+                    .attr("stroke", strokeColor)
+                    .attr("stroke-width", strokeWidth)
                     .style("opacity", (d.fetchingImage) ? 0.7 : 1);
 
                 if (dims.type === 'box' && d.imageUrl && !isTextOnly) {
@@ -617,6 +650,7 @@ const Graph: React.FC<GraphProps> = ({
                 if (event.defaultPrevented) return;
                 event.stopPropagation();
                 onNodeClick(d);
+                setFocusedNode(d);
             })
             .on("mouseover", (e, d) => setHoveredNode(d))
             .on("mouseout", () => setHoveredNode(null));
@@ -653,6 +687,32 @@ const Graph: React.FC<GraphProps> = ({
         }
 
         const allLinks = container.selectAll<SVGPathElement, GraphLink>(".link");
+
+        const computeLinkOpacity = (d: GraphLink) => {
+            const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
+            const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
+            if (dropHighlight.has(sId) || dropHighlight.has(tId)) return 0.12;
+            if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return 0.25;
+            if (focusedNode) {
+                const isNeighbor = sId === focusedNode.id || tId === focusedNode.id;
+                return isNeighbor ? 0.9 : 0.1;
+            }
+            return 0.7;
+        };
+
+        allLinks
+            .style("stroke-opacity", computeLinkOpacity)
+            .style("stroke", d => {
+                const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
+                const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
+                if (dropHighlight.has(sId) || dropHighlight.has(tId)) return "#f87171";
+                if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return "#94a3b8";
+                if (focusedNode) {
+                    const isNeighbor = sId === focusedNode.id || tId === focusedNode.id;
+                    return isNeighbor ? "#f97316" : "#475569";
+                }
+                return "#dc2626";
+            });
 
         simulation.on("tick", () => {
             allLinks.attr("d", d => {
@@ -697,7 +757,7 @@ const Graph: React.FC<GraphProps> = ({
             }
         });
 
-    }, [nodes, links, isTimelineMode, width, height, hoveredNode, onNodeClick, isTextOnly]);
+    }, [nodes, links, isTimelineMode, width, height, hoveredNode, onNodeClick, isTextOnly, highlightKeepIds, highlightDropIds]);
 
     return (
         <svg
@@ -705,7 +765,7 @@ const Graph: React.FC<GraphProps> = ({
             width={width}
             height={height}
             className="cursor-move bg-slate-900"
-            onClick={() => setHoveredNode(null)}
+            onClick={() => { setHoveredNode(null); setFocusedNode(null); }}
         >
             <g ref={zoomGroupRef} />
         </svg>

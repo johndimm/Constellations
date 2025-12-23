@@ -97,6 +97,15 @@ const GEMINI_TIMEOUT_MS = 30000; // 30 seconds for heavier graph expansions
 const CLASSIFY_TIMEOUT_MS = 8000;
 
 export const classifyEntity = async (term: string): Promise<{ type: string; description: string }> => {
+  const normalized = term.trim().toLowerCase();
+  // Heuristic override: prefer the historical program over the movie
+  if (normalized === 'the manhattan project' || normalized === 'manhattan project') {
+    return {
+      type: 'Event',
+      description: 'World War II research and development program that produced the first nuclear weapons.'
+    };
+  }
+
   const apiKey = getEnvApiKey();
   const ai = new GoogleGenAI({ apiKey });
 

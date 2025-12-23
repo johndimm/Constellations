@@ -10,6 +10,7 @@ export interface GraphNode extends SimulationNodeDatum {
   isLoading?: boolean; // Visual state for fetching (connections)
   fetchingImage?: boolean; // State for fetching image
   imageChecked?: boolean; // Whether we have already attempted to fetch an image
+  wikiSummary?: string; // Cached Wikipedia summary for richer sidebar context
   // D3 Simulation properties explicitly defined to ensure access
   x?: number;
   y?: number;

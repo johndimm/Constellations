@@ -258,24 +258,6 @@
       "expanded": true
     },
     {
-      "id": "Bombing of the Rainbow Warrior",
-      "type": "Thing",
-      "description": "A controversial event where a Greenpeace vessel was bombed under Mitterrand's orders.",
-      "year": 1985,
-      "x": 737.1808751872867,
-      "y": 381.1770582792374,
-      "expanded": false,
-      "fetchingImage": false,
-      "index": 16,
-      "vy": -0.006643848092946795,
-      "vx": -0.008005752507791689,
-      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Schip_Rainbow_Warrior_van_Greenpeace_in_Scheveningen%2C_Bestanddeelnr_930-2632.jpg/500px-Schip_Rainbow_Warrior_van_Greenpeace_in_Scheveningen%2C_Bestanddeelnr_930-2632.jpg",
-      "imageChecked": true,
-      "isLoading": false,
-      "fx": null,
-      "fy": null
-    },
-    {
       "id": "Contes à Ninon",
       "type": "Book",
       "description": "Collection of short stories by Émile Zola",
@@ -931,6 +913,21 @@
       "fetchingImage": false,
       "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Fran%C3%A7ois_Hollande_-_2017_%2827869823159%29_%28cropped_2%29.jpg/500px-Fran%C3%A7ois_Hollande_-_2017_%2827869823159%29_%28cropped_2%29.jpg",
       "imageChecked": true
+    },
+    {
+      "id": "French Socialist Party",
+      "type": "Organization",
+      "description": "Mitterrand led the Socialist Party before winning the presidency.",
+      "expanded": false,
+      "fetchingImage": false,
+      "imageChecked": false,
+      "isLoading": false,
+      "vx": 0,
+      "vy": 0,
+      "fx": null,
+      "fy": null,
+      "x": 0,
+      "y": 0
     }
   ],
   "links": [
@@ -1023,18 +1020,6 @@
       "target": "Dreyfus Affair",
       "id": "francois mitterand-Dreyfus Affair",
       "label": "1898"
-    },
-    {
-      "source": "francois mitterand",
-      "target": "Bombing of the Rainbow Warrior",
-      "id": "francois mitterand-Bombing of the Rainbow Warrior",
-      "label": "François Mitterrand was faced with a major controversy after ordering the bombing of the Rainbow Warrior in Auckland."
-    },
-    {
-      "source": "Bombing of the Rainbow Warrior",
-      "target": "emmanuel macron",
-      "id": "Bombing of the Rainbow Warrior-emmanuel macron",
-      "label": "The provided information for 'Emmanuel Macron' describes him as François Mitterrand, who was involved in the Bombing of the Rainbow Warrior."
     },
     {
       "source": "francois mitterand",
@@ -1401,6 +1386,24 @@
       "target": "Les Leçons du pouvoir",
       "id": "François Hollande-Les Leçons du pouvoir",
       "label": "2018"
+    },
+    {
+      "source": "francois mitterand",
+      "target": "French Socialist Party",
+      "id": "francois mitterand-French Socialist Party",
+      "label": "Mitterrand led the party from 1971 to 1981 and ran as its candidate."
+    },
+    {
+      "source": "French Socialist Party",
+      "target": "François Hollande",
+      "id": "French Socialist Party-François Hollande",
+      "label": "Hollande was First Secretary of the party (1997–2008)."
+    },
+    {
+      "source": "François Hollande",
+      "target": "emmanuel macron",
+      "id": "François Hollande-emmanuel macron",
+      "label": "Macron served under President Hollande as Deputy Secretary-General and Economy Minister."
     }
   ],
   "searchMode": "connect",
