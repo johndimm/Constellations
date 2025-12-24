@@ -56,7 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onE
       {/* Toggle Handle - Positioned independently to stay visible */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className={`fixed top-4 z-30 w-10 h-10 bg-slate-900/90 border border-slate-700 rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-all duration-300 shadow-xl pointer-events-auto ${isCollapsed ? 'right-4' : 'right-[calc(min(24rem,100vw-2rem)+1rem)]'
+        className={`fixed top-4 z-60 w-10 h-10 bg-slate-900/90 border border-slate-700 rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-all duration-300 shadow-xl pointer-events-auto ${isCollapsed ? 'right-4 max-[450px]:right-3' : 'right-[calc(min(24rem,100vw-2rem)+1rem)] max-[450px]:right-3'
           }`}
         title={isCollapsed ? "Expand Details" : "Collapse Details"}
       >
