@@ -87,6 +87,12 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         if (t.includes('portrait') || t.includes('photo') || t.includes('face') || t.includes('headshot')) s += 200;
         if (t.includes('crop') || t.includes('head')) s += 150;
         if (t.includes('film') || t.includes('movie') || t.includes('tv') || t.includes('series')) s += 80;
+
+        // Heuristic: prefer the painting over the film for Mona Lisa-like queries
+        if (cleanQuery.toLowerCase().includes('mona lisa')) {
+          if (t.includes('film') || t.includes('poster') || t.includes('cover')) s -= 600;
+          if (t.includes('painting') || t.includes('portrait') || t.includes('leonardo') || t.includes('vinci')) s += 500;
+        }
         
         // Reward solo portraits, penalize group shots
         if (t.includes('with') || t.includes(' and ') || t.includes(' family') || t.includes(' group')) s -= 250;

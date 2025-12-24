@@ -156,7 +156,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       {/* Toggle Handle - Positioned independently to stay visible */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className={`fixed top-4 z-50 w-10 h-10 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-all duration-300 shadow-xl pointer-events-auto ${isCollapsed ? 'left-4' : 'left-[calc(min(34rem,100vw-3rem)+1rem)]'
+        className={`fixed top-4 z-50 w-10 h-10 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-all duration-300 shadow-xl pointer-events-auto ${isCollapsed ? 'left-4 max-[450px]:left-3' : 'left-[calc(min(34rem,100vw-3rem)+1rem)] max-[450px]:left-3'
           }`}
         title={isCollapsed ? "Expand Search" : "Collapse Search"}
       >
@@ -165,18 +165,18 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
       <div
         className={`absolute top-4 left-4 z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%+1rem)]' : 'translate-x-0'
-          } w-[calc(100vw-3rem)] max-w-[34rem]`}
+          } w-[calc(100vw-3.5rem)] sm:w-[calc(100vw-3rem)] max-w-full sm:max-w-[34rem] max-[450px]:w-[calc(100vw-7rem)]`}
       >
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
 
-          <div className="flex items-center justify-between mb-4 gap-2 overflow-visible">
-            <a
-              href={window.location.origin + window.location.pathname}
-              className="text-xl font-bold text-red-500 whitespace-nowrap overflow-visible flex-shrink-0 hover:text-red-400 transition-colors"
-            >
-              Constellations
-            </a>
-            <div className="flex items-center gap-1.5 overflow-visible no-scrollbar pb-1">
+          <div className="flex items-center justify-between mb-4 gap-2 overflow-visible max-[450px]:flex-col max-[450px]:items-start">
+              <a
+                href={window.location.origin + window.location.pathname}
+                className="text-xl font-bold text-red-500 whitespace-nowrap overflow-visible flex-shrink-0 hover:text-red-400 transition-colors max-[450px]:text-lg"
+              >
+                Constellations
+              </a>
+            <div className="flex items-center gap-1.5 overflow-visible no-scrollbar pb-1 flex-wrap max-[450px]:w-full max-[450px]:gap-1 max-[450px]:justify-between">
               {/* File Operations Group */}
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
@@ -196,21 +196,21 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     setShowHelp(false);
                     onHelpHoverChange(null);
                   }}
-                  className={`text-slate-400 hover:text-amber-300 p-1.5 ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
+                  className={`text-slate-400 hover:text-amber-300 p-1.5 max-[450px]:px-1.5 max-[450px]:py-1 max-[450px]:text-[10px] ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
                   title="Save Graph"
                 >
                   <div className="flex items-center font-bold text-xs"><ArrowRight className="rotate-90 mr-1" size={12} /> SAVE</div>
                 </button>
                 <button
                   onClick={() => { setShowLoad(true); setShowSave(false); setShowShare(false); setShowHelp(false); }}
-                  className={`text-slate-400 hover:text-amber-300 p-1.5 ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
+                  className={`text-slate-400 hover:text-amber-300 p-1.5 max-[450px]:px-1.5 max-[450px]:py-1 max-[450px]:text-[10px] ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
                   title="Load Graph"
                 >
                   <div className="flex items-center font-bold text-xs"><ArrowRight className="rotate-270 mr-1" size={12} /> LOAD</div>
                 </button>
                 <button
                   onClick={() => { setShowShare(!showShare); setShowSave(false); setShowLoad(false); setShowHelp(false); onHelpHoverChange(null); }}
-                  className={`text-slate-400 hover:text-amber-300 p-1.5 ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
+                  className={`text-slate-400 hover:text-amber-300 p-1.5 max-[450px]:px-1.5 max-[450px]:py-1 max-[450px]:text-[10px] ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
                   title="Share Graph"
                 >
                   <div className="flex items-center font-bold text-xs"><Share2 size={12} className="mr-1" /> SHARE</div>
@@ -223,7 +223,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   onClick={onToggleTimeline}
-                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all border shrink-0 ${isTimelineMode
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all border shrink-0 max-[450px]:px-2 max-[450px]:py-1 ${isTimelineMode
                     ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
                     : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400 hover:text-amber-400'
                     } ${helpHover === 'timeline' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
