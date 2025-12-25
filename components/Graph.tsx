@@ -650,7 +650,7 @@ const Graph: React.FC<GraphProps> = ({
                 if (event.defaultPrevented) return;
                 event.stopPropagation();
                 onNodeClick(d);
-                setFocusedNode(d);
+                setFocusedNode(prev => (prev && prev.id === d.id) ? null : d);
             })
             .on("mouseover", (e, d) => setHoveredNode(d))
             .on("mouseout", () => setHoveredNode(null));

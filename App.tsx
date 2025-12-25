@@ -664,7 +664,8 @@ const App: React.FC = () => {
                         setIsProcessing(false);
                         return;
                     } else {
-                        nodeUpdates.set(node.id, { ...nodeUpdates.get(node.id), isLoading: false, expanded: true });
+                        const existing = nodeUpdates.get(node.id) || {};
+                        nodeUpdates.set(node.id, { ...existing, isLoading: false, expanded: true });
                     }
                 } else {
                     data.people.forEach((person) => {

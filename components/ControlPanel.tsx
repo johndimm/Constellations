@@ -271,7 +271,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
           {/* Help Dialog */}
           {showHelp && (
-            <div className="mb-4 bg-slate-800 p-4 rounded-lg border border-slate-600 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="mb-4 bg-slate-800 p-4 rounded-lg border border-slate-600 animate-in fade-in slide-in-from-top-2 duration-200 max-h-[60vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <HelpCircle size={14} /> Help & Info
