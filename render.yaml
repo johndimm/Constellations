@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: constellations-cache
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start:cache
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+    autoDeploy: true
