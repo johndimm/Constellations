@@ -27,7 +27,8 @@ const pool = new Pool({
 });
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
+app.options("*", cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
 app.use(bodyParser.json());
 
 // Helpers
@@ -48,11 +49,13 @@ create table if not exists edges (
   source_id text not null references nodes(id) on delete cascade,
   targets text[] not null,
   context_fingerprint text not null,
+  context_ids text[] not null default '{}',
   updated_at timestamptz default now(),
   primary key (source_id, context_fingerprint)
 );
 
 create index if not exists edges_targets_gin on edges using gin (targets);
+alter table edges add column if not exists context_ids text[] not null default '{}';
 `;
 
 // Upsert nodes batch
@@ -76,15 +79,15 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]) {
   await client.query(sql, params);
 }
 
-async function upsertEdge(client: pg.PoolClient, source_id: string, targets: string[], context_fingerprint: string) {
+async function upsertEdge(client: pg.PoolClient, source_id: string, targets: string[], context_fingerprint: string, context_ids: string[]) {
   await client.query(
     `
-      insert into edges (source_id, targets, context_fingerprint)
-      values ($1, $2, $3)
+      insert into edges (source_id, targets, context_fingerprint, context_ids)
+      values ($1, $2, $3, $4)
       on conflict (source_id, context_fingerprint) do update
-      set targets = excluded.targets, updated_at = now();
+      set targets = excluded.targets, context_ids = excluded.context_ids, updated_at = now();
     `,
-    [source_id, targets, context_fingerprint]
+    [source_id, targets, context_fingerprint, context_ids]
   );
 }
 
@@ -112,13 +115,15 @@ app.post("/init", async (_, res) => {
 
 // Fetch expansion: exact first, then optional partial
 app.get("/expansion", async (req, res) => {
-  const { sourceId, contextHash, minSimilarity } = req.query as { sourceId?: string; contextHash?: string; minSimilarity?: string };
+  const { sourceId, contextHash, minSimilarity, context } = req.query as { sourceId?: string; contextHash?: string; minSimilarity?: string; context?: string };
   if (!sourceId) return res.status(400).json({ error: "sourceId required" });
   const minSim = minSimilarity ? parseFloat(minSimilarity) : 0.5;
+  const contextList = context ? context.split(",").filter(Boolean) : [];
+  const requestedSet = new Set(contextList);
   const client = await pool.connect();
   try {
     const exact = await client.query(
-      `select targets, context_fingerprint from edges where source_id = $1 and context_fingerprint = $2`,
+      `select targets, context_fingerprint, context_ids from edges where source_id = $1 and context_fingerprint = $2`,
       [sourceId, contextHash || ""]
     );
     if (exact.rowCount) {
@@ -128,12 +133,11 @@ app.get("/expansion", async (req, res) => {
     }
 
     // Partial reuse: fetch all expansions for this source and pick the best overlap
-    const all = await client.query(`select targets, context_fingerprint from edges where source_id = $1`, [sourceId]);
-    const requestedSet = new Set((contextHash || "").split(",").filter(Boolean));
+    const all = await client.query(`select targets, context_fingerprint, context_ids from edges where source_id = $1`, [sourceId]);
     let best: any = null;
     for (const row of all.rows) {
-      const targetSet = new Set(row.targets as string[]);
-      const score = jaccard(requestedSet, targetSet);
+      const ctxIds = new Set((row.context_ids as string[]) || []);
+      const score = jaccard(requestedSet, ctxIds);
       if (!best || score > best.score) best = { row, score };
     }
     if (best && best.score >= minSim) {
@@ -165,7 +169,7 @@ app.post("/expansion", async (req, res) => {
   try {
     await client.query("begin");
     await upsertNodes(client, nodes || []);
-    await upsertEdge(client, sourceId, targets, contextFingerprint);
+    await upsertEdge(client, sourceId, targets, contextFingerprint, (context || []).slice().sort());
     await client.query("commit");
     res.json({ ok: true });
   } catch (e: any) {

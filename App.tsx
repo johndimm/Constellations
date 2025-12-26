@@ -34,6 +34,24 @@ const normalizeForDedup = (str: string) => {
 };
 
 const App: React.FC = () => {
+    const cacheBaseUrl = (import.meta as any).env?.VITE_CACHE_API_URL || "";
+
+    const computeContextFingerprint = async (context: string[]): Promise<string> => {
+        const sorted = [...context].sort();
+        const joined = sorted.join("|");
+        if (window.crypto?.subtle) {
+            const data = new TextEncoder().encode(joined);
+            const digest = await window.crypto.subtle.digest("SHA-1", data);
+            return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+        }
+        // Fallback non-crypto hash
+        let hash = 0;
+        for (let i = 0; i < joined.length; i++) {
+            hash = ((hash << 5) - hash + joined.charCodeAt(i)) | 0;
+        }
+        return `fallback-${Math.abs(hash)}`;
+    };
+
     const [nodes, setNodes] = useState<GraphNode[]>([]);
     const [links, setLinks] = useState<GraphLink[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -570,6 +588,76 @@ const App: React.FC = () => {
             let newNodes: GraphNode[] = [];
             let newLinks: GraphLink[] = [];
             const nodeUpdates = new Map<string, Partial<GraphNode>>();
+            const targetsCollected: string[] = [];
+
+            // Build context used in prompt (for cache key)
+            let contextForCache: string[] = [];
+            if (node.type === 'Person') {
+                const neighborLinks = links.filter(l =>
+                    (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
+                    (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
+                );
+                contextForCache = neighborLinks.map(l => {
+                    const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                    const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                    return s === node.id ? t : s;
+                });
+            } else {
+                const nodeNeighbors = links.filter(l =>
+                    (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
+                    (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
+                );
+                contextForCache = nodeNeighbors.map(l => {
+                    const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+                    const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+                    return s === node.id ? t : s;
+                });
+            }
+
+            // Cache lookup (exact, then partial) unless forceMore
+            if (cacheEnabled && !forceMore) {
+                const cacheHit = await fetchCacheExpansion(node.id, contextForCache);
+                if (cacheHit && cacheHit.hit && cacheHit.targets && cacheHit.nodes) {
+                    const targets: string[] = cacheHit.targets;
+                    const cachedNodes: any[] = cacheHit.nodes;
+                    setNodes(prev => {
+                        const map = new Map<string, GraphNode>(prev.map(n => [n.id, n]));
+                        cachedNodes.forEach(cn => {
+                            const meta = cn.meta || {};
+                            const existing = map.get(cn.id);
+                            const merged: GraphNode = {
+                                ...(existing || {}),
+                                id: cn.id,
+                                type: cn.type,
+                                description: cn.description || existing?.description || "",
+                                year: cn.year ?? existing?.year,
+                                imageUrl: meta.imageUrl ?? existing?.imageUrl,
+                                // @ts-ignore
+                                wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
+                                expanded: existing?.expanded || false,
+                                isLoading: false
+                            };
+                            map.set(cn.id, merged);
+                        });
+                        if (map.has(node.id)) {
+                            map.set(node.id, { ...map.get(node.id)!, expanded: true, isLoading: false });
+                        }
+                        return Array.from(map.values());
+                    });
+                    setLinks(prev => {
+                        const existingIds = new Set(prev.map(l => l.id));
+                        const cacheLinks: GraphLink[] = targets.map(tid => ({
+                            source: node.id,
+                            target: tid,
+                            id: `${node.id}-${tid}`
+                        }));
+                        const newOnes = cacheLinks.filter(l => !existingIds.has(l.id));
+                        return [...prev, ...newOnes];
+                    });
+                    setIsProcessing(false);
+                    return;
+                }
+            }
 
             if (node.type === 'Person') {
                 const neighborLinks = links.filter(l =>
@@ -611,6 +699,7 @@ const App: React.FC = () => {
                             nodeUpdates.set(existingNode.id, { year: work.year });
                         }
                     }
+                    if (!targetsCollected.includes(resolvedId)) targetsCollected.push(resolvedId);
 
                     const linkId = `${node.id}-${resolvedId}`;
                     const reverseLinkId = `${resolvedId}-${node.id}`;
@@ -683,6 +772,7 @@ const App: React.FC = () => {
                                 expanded: false
                             });
                         }
+                        if (!targetsCollected.includes(resolvedId)) targetsCollected.push(resolvedId);
 
                         const linkId = `${node.id}-${resolvedId}`;
                         const reverseLinkId = `${resolvedId}-${node.id}`;
@@ -736,6 +826,40 @@ const App: React.FC = () => {
                 const trulyNewLinks = newLinks.filter(l => !existingLinkIds.has(l.id));
                 return [...prev, ...trulyNewLinks];
             });
+
+            // Persist expansion to cache (overwrite for this context)
+            // Build cache payload including existing nodes touched
+            const targetSet = new Set<string>(targetsCollected);
+            const cacheNodesPayload: any[] = [];
+            const findNode = (id: string) => newNodes.find(n => n.id === id) || nodes.find(n => n.id === id);
+            targetSet.forEach(id => {
+                const found = findNode(id);
+                if (found) {
+                    cacheNodesPayload.push({
+                        id: found.id,
+                        type: found.type,
+                        description: found.description || "",
+                        year: found.year ?? null,
+                        meta: {
+                            imageUrl: found.imageUrl ?? null,
+                            // @ts-ignore
+                            wikiSummary: (found as any)?.wikiSummary ?? null
+                        }
+                    });
+                }
+            });
+            cacheNodesPayload.push({
+                id: node.id,
+                type: node.type,
+                description: nodeUpdates.get(node.id)?.description ?? node.description ?? "",
+                year: nodeUpdates.get(node.id)?.year ?? node.year,
+                meta: {
+                    imageUrl: node.imageUrl ?? null,
+                    // @ts-ignore
+                    wikiSummary: nodeUpdates.get(node.id)?.wikiSummary ?? (node as any)?.wikiSummary ?? null
+                }
+            });
+            saveCacheExpansion(node.id, contextForCache, Array.from(targetSet), cacheNodesPayload as any);
 
             newNodes.forEach((n, index) => {
                 setTimeout(() => {
@@ -876,6 +1000,52 @@ const App: React.FC = () => {
     // Notification & Confirm State
     const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
     const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean, message: string, onConfirm: () => void } | null>(null);
+    const cacheEnabled = !!cacheBaseUrl;
+
+    const fetchCacheExpansion = useCallback(async (sourceId: string, context: string[], minSimilarity = 0.5) => {
+        if (!cacheEnabled) return null;
+        const contextHash = await computeContextFingerprint(context);
+        const url = new URL("/expansion", cacheBaseUrl);
+        url.searchParams.set("sourceId", sourceId);
+        url.searchParams.set("contextHash", contextHash);
+        url.searchParams.set("context", [...context].sort().join(","));
+        url.searchParams.set("minSimilarity", String(minSimilarity));
+        try {
+            const res = await fetch(url.toString());
+            if (!res.ok) return null;
+            return res.json();
+        } catch (e) {
+            console.warn("Cache fetch failed", e);
+            return null;
+        }
+    }, [cacheEnabled, cacheBaseUrl, computeContextFingerprint]);
+
+    const saveCacheExpansion = useCallback(async (sourceId: string, context: string[], targets: string[], nodesToSave: any[]) => {
+        if (!cacheEnabled) return;
+        try {
+            await fetch(new URL("/expansion", cacheBaseUrl).toString(), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sourceId,
+                    context,
+                    targets,
+                    nodes: nodesToSave.map(n => ({
+                        id: n.id,
+                        type: n.type,
+                        description: n.description || "",
+                        year: n.year || null,
+                        meta: {
+                            imageUrl: n.imageUrl || null,
+                            wikiSummary: (n as any).wikiSummary || null
+                        }
+                    }))
+                })
+            });
+        } catch (e) {
+            console.warn("Cache save failed", e);
+        }
+    }, [cacheEnabled, cacheBaseUrl]);
 
     useEffect(() => {
         if (notification) {

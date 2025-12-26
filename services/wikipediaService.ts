@@ -75,6 +75,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       if (candidates.length === 0) return null;
 
       const cleanQuery = query.replace(/[()]/g, ' ').toLowerCase();
+      const normalized = cleanQuery.trim().toLowerCase();
       const queryWords = cleanQuery.split(/\s+/).filter(w => w.length > 1);
 
       const scoredCandidates = candidates.map(c => {
@@ -93,7 +94,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         if (t.includes('computer') || t.includes('scientist') || t.includes('software') || t.includes('engineer') || t.includes('research') || t.includes('mahout') || t.includes('hadoop') || t.includes('data')) s += 400;
 
         // Heuristic: prefer the painting over the film for Mona Lisa-like queries
-        if (cleanQuery.toLowerCase().includes('mona lisa')) {
+        if (normalized.includes('mona lisa')) {
           if (t.includes('film') || t.includes('poster') || t.includes('cover')) s -= 600;
           if (t.includes('painting') || t.includes('portrait') || t.includes('leonardo') || t.includes('vinci')) s += 500;
         }
