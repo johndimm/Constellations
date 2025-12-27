@@ -656,13 +656,14 @@ const App: React.FC = () => {
                         cachedNodes.forEach(cn => {
                             const meta = cn.meta || {};
                             const existing = map.get(cn.id);
+                            const imageUrl = meta.imageUrl ?? existing?.imageUrl;
                             const merged: GraphNode = {
                                 ...(existing || {}),
                                 id: cn.id,
                                 type: cn.type,
                                 description: cn.description || existing?.description || "",
                                 year: cn.year ?? existing?.year,
-                                imageUrl: meta.imageUrl ?? existing?.imageUrl,
+                                imageUrl,
                                 // @ts-ignore
                                 wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
                                 expanded: existing?.expanded || false,
