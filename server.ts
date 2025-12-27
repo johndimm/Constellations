@@ -19,11 +19,20 @@ envPaths.forEach(p => {
 
 const { Pool } = pg;
 
-if (!process.env.DATABASE_URL) {
+if (!process.env.DATABASE_URL && !process.env.PGHOST) {
   console.warn("Warning: DATABASE_URL is not set. Pool will try local defaults (likely to fail).");
 }
+// Explicitly allow self-signed certs when SSL is enabled (common on hosted Postgres).
+const useSsl = process.env.PGSSLMODE !== "disable";
+const sslConfig = useSsl ? { rejectUnauthorized: false } : undefined;
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
+  connectionString: process.env.DATABASE_URL,
+  host: process.env.PGHOST,
+  port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
+  user: process.env.PGUSER,
+  password: process.env.PGPASSWORD,
+  database: process.env.PGDATABASE,
+  ssl: sslConfig
 });
 
 const app = express();
