@@ -44,6 +44,9 @@ const Graph: React.FC<GraphProps> = ({
     // Track previous data sizes to optimize simulation restarts
     const prevNodesLen = useRef(nodes.length);
     const prevLinksLen = useRef(links.length);
+    const focusedId = focusedNode?.id;
+    const focusExists = focusedId ? nodes.some(n => n.id === focusedId) : false;
+    const effectiveFocused = focusExists ? focusedNode : null;
 
     // Helper functions for Drag
     function dragstarted(event: any, d: GraphNode) {
@@ -138,8 +141,9 @@ const Graph: React.FC<GraphProps> = ({
         svg.transition().duration(1000).call(zoom.transform, transform);
     }, [selectedNode?.id, width, height, isTimelineMode]);
 
-    // Reset zoom when searchId changes
+    // Reset zoom and focused state when searchId changes (new graph)
     useEffect(() => {
+        setFocusedNode(null);
         if (!svgRef.current) return;
 
         // Zoom Reset Logic
@@ -155,11 +159,6 @@ const Graph: React.FC<GraphProps> = ({
 
             svg.transition().duration(750).call(zoom.transform, zoomIdentity);
         }
-
-        // Only run this effect for searchId changes if we wanted separate reset logic,
-        // but here we are mixing it with simulation init.
-        // Actually, better to separate the zoom effect or handle it carefully.
-
     }, [searchId]);
 
     // Initialize simulation
@@ -449,7 +448,7 @@ const Graph: React.FC<GraphProps> = ({
             const g = d3.select(this);
             const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
             const isHovered = d.id === hoveredNode?.id;
-            const isFocused = d.id === focusedNode?.id;
+            const isFocused = d.id === effectiveFocused?.id;
             let color = getNodeColor(d.type);
             const isDrop = dropHighlight.has(d.id);
             const isKeep = keepHighlight.has(d.id);
@@ -460,11 +459,11 @@ const Graph: React.FC<GraphProps> = ({
                 baseOpacity = isKeep ? 1 : 0.3; // dim non-kept nodes when previewing
             }
             // If a focus node exists, dim unrelated nodes
-            if (focusedNode && !isFocused) {
+            if (effectiveFocused && !isFocused) {
                 const isNeighbor = links.some(l => {
                     const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
                     const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-                    return (s === focusedNode.id && t === d.id) || (t === focusedNode.id && s === d.id);
+                    return (s === effectiveFocused.id && t === d.id) || (t === effectiveFocused.id && s === d.id);
                 });
                 if (!isNeighbor) baseOpacity *= 0.25;
             }
@@ -693,8 +692,8 @@ const Graph: React.FC<GraphProps> = ({
             const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
             if (dropHighlight.has(sId) || dropHighlight.has(tId)) return 0.12;
             if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return 0.25;
-            if (focusedNode) {
-                const isNeighbor = sId === focusedNode.id || tId === focusedNode.id;
+            if (effectiveFocused) {
+                const isNeighbor = sId === effectiveFocused.id || tId === effectiveFocused.id;
                 return isNeighbor ? 0.9 : 0.1;
             }
             return 0.7;
@@ -707,8 +706,8 @@ const Graph: React.FC<GraphProps> = ({
                 const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
                 if (dropHighlight.has(sId) || dropHighlight.has(tId)) return "#f87171";
                 if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return "#94a3b8";
-                if (focusedNode) {
-                    const isNeighbor = sId === focusedNode.id || tId === focusedNode.id;
+                if (effectiveFocused) {
+                    const isNeighbor = sId === effectiveFocused.id || tId === effectiveFocused.id;
                     return isNeighbor ? "#f97316" : "#475569";
                 }
                 return "#dc2626";
