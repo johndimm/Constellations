@@ -101,7 +101,7 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]) {
     set type = excluded.type,
         description = coalesce(excluded.description, nodes.description),
         year = coalesce(excluded.year, nodes.year),
-        meta = nodes.meta || excluded.meta,
+        meta = coalesce(nodes.meta, '{}'::jsonb) || coalesce(excluded.meta, '{}'::jsonb),
         updated_at = now();
   `;
   await client.query(sql, params);
