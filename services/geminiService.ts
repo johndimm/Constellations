@@ -111,7 +111,7 @@ export const classifyEntity = async (term: string): Promise<{ type: string; desc
 
   try {
     const makeApiCall = () => ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: `Classify "${term}".
       Return JSON with a "type" field.
       If it is a specific Person (real, fictional, alias, criminal identity, e.g. "Zodiac Killer", "Jack the Ripper"), type = "Person".
@@ -168,7 +168,7 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
     }
     
     const makeApiCall = () => ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: `${contextualPrompt}${wikiPrompt}${excludePrompt}
       1. Identify the 'year' it occurred/started (integer) if applicable (e.g. release year, event date).
       2. Find 5-6 key people connected to it:
@@ -238,7 +238,7 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
     if (wikiContext) console.log(`📖 [Gemini] Using Wikipedia context (first 100 chars): "${wikiContext.substring(0, 100)}..."`);
 
     const makeApiCall = () => ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: `${wikiPrompt}${contextPrompt}
       Ensure each entry is a different entity. Do NOT duplicate entities.
       Include specific year. Sort by year.`,
@@ -297,7 +297,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
 
   try {
     const makeApiCall = () => ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: `${wikiPrompt}Find a valid connection path between "${start}" and "${end}".
             STRICT RULE: The path MUST follow an alternating sequence (Bipartite structure):
             - A "Person" MUST connect to a "Thing" (Movie, Paper, Event, Project, Book).

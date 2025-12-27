@@ -46,8 +46,9 @@ console.log(`Connecting to database: ${process.env.PGDATABASE || (process.env.DA
 // Ensure schema exists on startup (safe to run repeatedly).
 async function ensureSchema() {
   console.log("Checking schema...");
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     // Check for schema mismatch
     let needsRecreate = false;
     try {
@@ -72,7 +73,7 @@ async function ensureSchema() {
   } catch (e) {
     console.error("Schema init failed", e);
   } finally {
-    client.release();
+    if (client) client.release();
   }
 }
 ensureSchema();
