@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Queries Documentation - Constellations</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --text: #f8fafc;
+            --accent: #38bdf8;
+            --code-bg: #1e293b;
+            --border: #334155;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background: var(--bg);
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: var(--accent);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+
+        pre {
+            background: var(--code-bg);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+        }
+
+        code {
+            font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Mono", "Droid Sans Mono", "Source Code Pro", monospace;
+            font-size: 0.9rem;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid var(--border);
+            margin: 2rem 0;
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .container {
+            background: rgba(30, 41, 59, 0.5);
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>API Queries Documentation</h1>
+        <p>This document outlines the external API calls used by the <strong>Constellations</strong> application. These
+            include Google Gemini for entity processing and Wikipedia/Google Books for metadata and images.</p>
+
+        <hr>
+
+        <h2>1. Google Gemini (LLM)</h2>
+        <p>The application uses <code>gemini-2.5-flash</code> for all entity classification and graph expansion tasks
+            via the <code>@google/genai</code> SDK.</p>
+
+        <h3>Common Request Structure</h3>
+        <ul>
+            <li><strong>Endpoint</strong>:
+                <code>https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$API_KEY</code>
+            </li>
+            <li><strong>Method</strong>: <code>POST</code></li>
+            <li><strong>Headers</strong>: <code>Content-Type: application/json</code></li>
+        </ul>
+
+        <h3>Entity Classification</h3>
+        <p>Used to determine if a search term is a "Person" or an "Event/Thing".</p>
+        <p><strong>Example Curl</strong>:</p>
+        <pre><code>curl https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$API_KEY \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "contents": [{
+        "parts":[{"text": "Classify \"Samuel Beckett\". Return JSON with a \"type\" field (Person or Event) and a \"description\"."}]
+      }],
+      "generationConfig": {
+        "response_mime_type": "application/json"
+      }
+    }'</code></pre>
+
+        <h3>Graph Expansion (Connections)</h3>
+        <p>Used to find people connected to a work (e.g., cast of a play) or works connected to a person. Uses a long
+            system instruction to enforce graph rules (bipartite structure, specificity).</p>
+        <p><strong>Example Curl (Fetching Works for a Person)</strong>:</p>
+        <pre><code>curl https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$API_KEY \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "system_instruction": {
+        "parts": [{"text": "You are a collaboration graph generator. Nodes are \"Things\" and \"People\". Return strict JSON."}]
+      },
+      "contents": [{
+        "parts":[{"text": "List 6-8 DISTINCT significant movies, events, or books associated with \"Samuel Beckett\". Include specific years."}]
+      }],
+      "generationConfig": {
+        "response_mime_type": "application/json"
+      }
+    }'</code></pre>
+
+        <hr>
+
+        <h2>2. Wikipedia API</h2>
+        <p>Wikipedia is used for entity disambiguation, fetching multi-paragraph summaries, and finding high-quality
+            images.</p>
+
+        <h3>Search / Disambiguation</h3>
+        <p>Used to find the most relevant Wikipedia page title given a name and context.</p>
+        <p><strong>Example Curl</strong>:</p>
+        <pre><code>curl "https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=Samuel%20Beckett%20Happy%20Days&srlimit=5&origin=*"</code></pre>
+
+        <h3>Fetch Summary (Extracts)</h3>
+        <p>Fetches the introduction text for a specific page.</p>
+        <p><strong>Example Curl</strong>:</p>
+        <pre><code>curl "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=Waiting%20for%20Godot&redirects=1&origin=*"</code></pre>
+
+        <h3>Fetch Page Images</h3>
+        <p>Finds the official "page image" (thumbnail) and a list of all other images on the page for scoring.</p>
+        <p><strong>Example Curl</strong>:</p>
+        <pre><code>curl "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages|pageprops|images&titles=Samuel%20Beckett&pithumbsize=500&imlimit=50&redirects=1&origin=*"</code></pre>
+
+        <h3>Fetch Direct Image URL</h3>
+        <p>Maps a File title (e.g., <code>File:Samuel_Beckett.jpg</code>) to a direct CDN URL.</p>
+        <p><strong>Example Curl</strong>:</p>
+        <pre><code>curl "https://en.wikipedia.org/w/api.php?action=query&format=json&prop=imageinfo&titles=File:Samuel_Beckett_1.jpg&iiprop=url&iiurlwidth=500&origin=*"</code></pre>
+
+        <hr>
+
+        <h2>3. Google Books API</h2>
+        <p>Used as a fallback for finding book cover images when Wikipedia lacks a suitable image.</p>
+        <p><strong>Example Curl</strong>:</p>
+        <pre><code>curl "https://www.googleapis.com/books/v1/volumes?q=Waiting%20for%20Godot&maxResults=1"</code></pre>
+    </div>
+</body>
+
+</html>

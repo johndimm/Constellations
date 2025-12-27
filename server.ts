@@ -44,6 +44,14 @@ const pool = new Pool({
 async function ensureSchema() {
   const client = await pool.connect();
   try {
+    // Check for schema mismatch (missing context_id)
+    try {
+      await client.query("select context_id from edges limit 1");
+    } catch (e: any) {
+      console.log("Schema check failed (likely missing column or table). Recreating schema.");
+      await client.query("drop table if exists edges cascade");
+    }
+
     await client.query(initSql);
     console.log("Schema ready.");
   } catch (e) {
@@ -75,15 +83,17 @@ create table if not exists nodes (
 
 create table if not exists edges (
   source_id text not null references nodes(id) on delete cascade,
-  targets text[] not null,
+  target_id text not null references nodes(id) on delete cascade,
   context_fingerprint text not null,
   context_ids text[] not null default '{}',
+  context_id text references nodes(id) on delete set null,
   updated_at timestamptz default now(),
-  primary key (source_id, context_fingerprint)
+  primary key (source_id, target_id, context_fingerprint)
 );
 
-create index if not exists edges_targets_gin on edges using gin (targets);
-alter table edges add column if not exists context_ids text[] not null default '{}';
+create index if not exists edges_source_idx on edges (source_id);
+create index if not exists edges_target_idx on edges (target_id);
+create index if not exists edges_context_idx on edges (context_id);
 `;
 
 // Upsert nodes batch
@@ -108,14 +118,26 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]) {
 }
 
 async function upsertEdge(client: pg.PoolClient, source_id: string, targets: string[], context_fingerprint: string, context_ids: string[]) {
+  if (!targets.length) return;
+  // Upsert each edge individually
+  // We want to avoid creating a massive single query string if targets is large, but batching is better than loop.
+  // For standard expansion (size ~10), a single statement is fine.
+  const values = targets.map((_, i) => `($1, $${i + 5}, $2, $3, $4)`).join(",");
+
+  // Extract single context_id if available
+  const context_id = context_ids.length === 1 ? context_ids[0] : null;
+
+  // params: source_id, context_fingerprint, context_ids, context_id, t1, t2, t3...
+  const params = [source_id, context_fingerprint, context_ids, context_id, ...targets];
+
   await client.query(
     `
-      insert into edges (source_id, targets, context_fingerprint, context_ids)
-      values ($1, $2, $3, $4)
-      on conflict (source_id, context_fingerprint) do update
-      set targets = excluded.targets, context_ids = excluded.context_ids, updated_at = now();
+      insert into edges (source_id, target_id, context_fingerprint, context_ids, context_id)
+      values ${values}
+      on conflict (source_id, target_id, context_fingerprint) do update
+      set context_ids = excluded.context_ids, context_id = excluded.context_id, updated_at = now();
     `,
-    [source_id, targets, context_fingerprint, context_ids]
+    params
   );
 }
 
@@ -131,6 +153,20 @@ app.get("/health", (_, res) => res.json({ ok: true }));
 app.post("/init", async (_, res) => {
   const client = await pool.connect();
   try {
+    // Check for schema mismatch (missing context_id or old targets column) and drop if present
+    try {
+      const check = await client.query("select column_name from information_schema.columns where table_name='edges' and column_name='context_id'");
+      if (check.rowCount === 0) {
+        console.log("Old schema detected (missing context_id). Dropping 'edges' table.");
+        await client.query("drop table edges cascade");
+      } else {
+        // Redundant check for very old schema (targets array) just in case
+        await client.query("select targets from edges limit 1");
+        console.log("Old schema detected (targets column). Dropping 'edges' table.");
+        await client.query("drop table edges cascade");
+      }
+    } catch (ignore) { }
+
     await client.query(initSql);
     res.json({ ok: true });
   } catch (e: any) {
@@ -150,30 +186,49 @@ app.get("/expansion", async (req, res) => {
   const requestedSet = new Set(contextList);
   const client = await pool.connect();
   try {
-    const exact = await client.query(
-      `select targets, context_fingerprint, context_ids from edges where source_id = $1 and context_fingerprint = $2`,
-      [sourceId, contextHash || ""]
+    // Fetch all edges for this source
+    const result = await client.query(
+      `select target_id, context_fingerprint, context_ids from edges where source_id = $1`,
+      [sourceId]
     );
-    if (exact.rowCount) {
-      const targets: string[] = exact.rows[0].targets;
-      const nodes = await client.query(`select * from nodes where id = any($1)`, [targets]);
-      return res.json({ hit: "exact", targets, nodes: nodes.rows });
+
+    // Group by context_fingerprint to verify sets
+    const groups = new Map<string, { fingerprint: string, context_ids: string[], targets: string[] }>();
+    result.rows.forEach(row => {
+      if (!groups.has(row.context_fingerprint)) {
+        groups.set(row.context_fingerprint, {
+          fingerprint: row.context_fingerprint,
+          context_ids: row.context_ids || [],
+          targets: []
+        });
+      }
+      groups.get(row.context_fingerprint)!.targets.push(row.target_id);
+    });
+
+    const entries = Array.from(groups.values());
+
+    // 1. Exact match
+    const exact = entries.find(g => g.fingerprint === contextHash);
+    if (exact) {
+      const nodes = await client.query(`select * from nodes where id = any($1)`, [exact.targets]);
+      return res.json({ hit: "exact", targets: exact.targets, nodes: nodes.rows, matchedContext: exact.context_ids });
     }
 
-    // Partial reuse: fetch all expansions for this source and pick the best overlap
-    const all = await client.query(`select targets, context_fingerprint, context_ids from edges where source_id = $1`, [sourceId]);
+    // 2. Partial reuse
     let best: any = null;
-    for (const row of all.rows) {
-      const ctxIds = new Set((row.context_ids as string[]) || []);
+    for (const group of entries) {
+      const ctxIds = new Set(group.context_ids);
       const score = jaccard(requestedSet, ctxIds);
-      if (!best || score > best.score) best = { row, score };
+      if (!best || score > best.score) best = { group, score };
     }
     const requestedHasContext = requestedSet.size > 0;
-    const bestHasNoContext = best && (!best.row.context_ids || best.row.context_ids.length === 0);
+    // bestHasNoContext check: if matched context is empty, it's a generic expansion
+    const bestHasNoContext = best && (!best.group.context_ids || best.group.context_ids.length === 0);
+
     if (best && (best.score >= minSim || (!requestedHasContext && bestHasNoContext) || bestHasNoContext)) {
-      const targets: string[] = best.row.targets;
+      const targets: string[] = best.group.targets;
       const nodes = await client.query(`select * from nodes where id = any($1)`, [targets]);
-      return res.json({ hit: "partial", score: best.score, targets, nodes: nodes.rows });
+      return res.json({ hit: "partial", score: best.score, targets, nodes: nodes.rows, matchedContext: best.group.context_ids });
     }
 
     return res.json({ hit: "miss" });

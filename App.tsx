@@ -34,7 +34,10 @@ const normalizeForDedup = (str: string) => {
 };
 
 const App: React.FC = () => {
-    const cacheBaseUrl = (import.meta as any).env?.VITE_CACHE_API_URL || "";
+    // Use local cache server when running locally, regardless of env var
+    const cacheBaseUrl = window.location.hostname === 'localhost'
+        ? 'http://localhost:4000'
+        : ((import.meta as any).env?.VITE_CACHE_API_URL || "");
 
     const computeContextFingerprint = async (context: string[]): Promise<string> => {
         const sorted = [...context].sort();
@@ -257,7 +260,7 @@ const App: React.FC = () => {
             setSelectedNode(startNode);
             loadNodeImage(startNode.id);
 
-            await expandNode(startNode, true);
+            await expandNode(startNode, true, false, [startNode], []);
 
             if (recursiveDepth > 0) {
                 setNotification({ message: "Auto-expanding connections...", type: 'success' });
@@ -346,8 +349,8 @@ const App: React.FC = () => {
             try {
                 // Expanding endpoints should NOT clear the path nodes we just added
                 await Promise.all([
-                    expandNode(startNode, true).catch(e => console.warn("Start expansion failed", e)),
-                    expandNode(endNode, true).catch(e => console.warn("End expansion failed", e))
+                    expandNode(startNode, true, false, [startNode, endNode], []).catch(e => console.warn("Start expansion failed", e)),
+                    expandNode(endNode, true, false, [startNode, endNode], []).catch(e => console.warn("End expansion failed", e))
                 ]);
             } catch (e) {
                 console.warn("Endpoints expansion partially failed", e);
@@ -624,7 +627,10 @@ const App: React.FC = () => {
         };
     }, [nodes, links]);
 
-    const expandNode = useCallback(async (node: GraphNode, isInitial = false, forceMore = false) => {
+    const expandNode = useCallback(async (node: GraphNode, isInitial = false, forceMore = false, nodesOverride?: GraphNode[], linksOverride?: GraphLink[]) => {
+        const currentNodes = nodesOverride || nodes;
+        const currentLinks = linksOverride || links;
+
         if (!forceMore && (node.expanded || node.isLoading)) return;
 
         setGraphData(prev => ({
@@ -639,11 +645,13 @@ const App: React.FC = () => {
             let newLinks: GraphLink[] = [];
             const nodeUpdates = new Map<string, Partial<GraphNode>>();
             const targetsCollected: string[] = [];
+            let existingCacheTargets: string[] = [];
+            let matchedCacheContext: string[] | null = null;
 
             // Build context used in prompt (for cache key)
             let contextForCache: string[] = [];
             if (node.type === 'Person') {
-                const neighborLinks = links.filter(l =>
+                const neighborLinks = currentLinks.filter(l =>
                     (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
                     (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
                 );
@@ -653,7 +661,7 @@ const App: React.FC = () => {
                     return s === node.id ? t : s;
                 });
             } else {
-                const nodeNeighbors = links.filter(l =>
+                const nodeNeighbors = currentLinks.filter(l =>
                     (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
                     (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
                 );
@@ -665,68 +673,69 @@ const App: React.FC = () => {
             }
 
             // Cache lookup (exact, then partial) unless forceMore
-            if (cacheEnabled && !forceMore) {
+            if (cacheEnabled) {
                 const cacheHit = await fetchCacheExpansion(node.id, contextForCache);
                 if (cacheHit && cacheHit.hit && cacheHit.targets && cacheHit.nodes) {
-                    const targets: string[] = cacheHit.targets;
-                    const cachedNodes: any[] = cacheHit.nodes;
-                    setGraphData(prev => {
-                        const nodeMap = new Map<string, GraphNode>(prev.nodes.map(n => [n.id, n]));
-                        cachedNodes.forEach(cn => {
-                            const meta = cn.meta || {};
-                            const existing = nodeMap.get(cn.id);
-                            const imageUrl = meta.imageUrl ?? existing?.imageUrl;
+                    existingCacheTargets = cacheHit.targets;
+                    if (cacheHit.matchedContext) matchedCacheContext = cacheHit.matchedContext;
+                    if (!forceMore) {
+                        const targets: string[] = cacheHit.targets;
+                        const cachedNodes: any[] = cacheHit.nodes;
+                        setGraphData(prev => {
+                            const nodeMap = new Map<string, GraphNode>(prev.nodes.map(n => [n.id, n]));
+                            cachedNodes.forEach(cn => {
+                                const meta = cn.meta || {};
+                                const existing = nodeMap.get(cn.id);
+                                const imageUrl = meta.imageUrl ?? existing?.imageUrl;
 
-                            // Initialize new nodes near the parent to avoid flying in from (0,0)
-                            const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
-                            const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
+                                const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
+                                const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
 
-                            const merged: GraphNode = {
-                                x: initialX,
-                                y: initialY,
-                                ...(existing || {}),
-                                id: cn.id,
-                                type: cn.type,
-                                description: cn.description || existing?.description || "",
-                                year: cn.year ?? existing?.year,
-                                imageUrl,
-                                // @ts-ignore
-                                wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
-                                expanded: existing?.expanded || false,
-                                isLoading: false
-                            };
-                            nodeMap.set(cn.id, merged);
+                                const merged: GraphNode = {
+                                    x: initialX,
+                                    y: initialY,
+                                    ...(existing || {}),
+                                    id: cn.id,
+                                    type: cn.type,
+                                    description: cn.description || existing?.description || "",
+                                    year: cn.year ?? existing?.year,
+                                    imageUrl,
+                                    // @ts-ignore
+                                    wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
+                                    expanded: existing?.expanded || false,
+                                    isLoading: false
+                                };
+                                nodeMap.set(cn.id, merged);
+                            });
+                            if (nodeMap.has(node.id)) {
+                                nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false });
+                            }
+                            const updatedNodes = Array.from(nodeMap.values());
+
+                            const existingLinkIds = new Set(prev.links.map(l => l.id));
+                            const cacheLinks: GraphLink[] = targets.map(tid => ({
+                                source: node.id,
+                                target: tid,
+                                id: `${node.id}-${tid}`
+                            }));
+                            const newLinksToAdd = cacheLinks.filter(l => !existingLinkIds.has(l.id));
+                            const updatedLinks = [...prev.links, ...newLinksToAdd];
+
+                            return { nodes: updatedNodes, links: updatedLinks };
                         });
-                        if (nodeMap.has(node.id)) {
-                            nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false });
-                        }
-                        const updatedNodes = Array.from(nodeMap.values());
 
-                        const existingLinkIds = new Set(prev.links.map(l => l.id));
-                        const cacheLinks: GraphLink[] = targets.map(tid => ({
-                            source: node.id,
-                            target: tid,
-                            id: `${node.id}-${tid}`
-                        }));
-                        const newLinksToAdd = cacheLinks.filter(l => !existingLinkIds.has(l.id));
-                        const updatedLinks = [...prev.links, ...newLinksToAdd];
-
-                        return { nodes: updatedNodes, links: updatedLinks };
-                    });
-
-                    // Proactively fetch images for cached nodes that don't have one yet.
-                    const nodesNeedingImages = cachedNodes
-                        .filter(cn => !(cn.meta && cn.meta.imageUrl));
-                    nodesNeedingImages.forEach((cn, idx) => {
-                        setTimeout(() => loadNodeImage(cn.id, undefined, { id: cn.id, type: cn.type, description: cn.description, year: cn.year, imageUrl: cn.meta?.imageUrl }), 200 * idx);
-                    });
-                    setIsProcessing(false);
-                    return;
+                        const nodesNeedingImages = cachedNodes.filter(cn => !(cn.meta && cn.meta.imageUrl));
+                        nodesNeedingImages.forEach((cn, idx) => {
+                            setTimeout(() => loadNodeImage(cn.id, undefined, { id: cn.id, type: cn.type, description: cn.description, year: cn.year, imageUrl: cn.meta?.imageUrl }), 200 * idx);
+                        });
+                        setIsProcessing(false);
+                        return;
+                    }
                 }
             }
 
             if (node.type === 'Person') {
-                const neighborLinks = links.filter(l =>
+                const neighborLinks = currentLinks.filter(l =>
                     (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
                     (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
                 );
@@ -736,7 +745,6 @@ const App: React.FC = () => {
                     return s === node.id ? t : s;
                 });
 
-                // Fetch Wikipedia summary to improve Gemini's accuracy
                 const wikiSummary = await fetchWikipediaSummary(node.id, neighborNames.join(' '));
                 if (wikiSummary) {
                     nodeUpdates.set(node.id, { wikiSummary });
@@ -745,8 +753,8 @@ const App: React.FC = () => {
                 const data = await fetchPersonWorks(node.id, neighborNames, wikiSummary || undefined);
 
                 data.works.forEach(work => {
-                    const resolvedId = resolveNodeId(work.entity, nodes, newNodes);
-                    const existingNode = nodes.find(n => n.id === resolvedId);
+                    const resolvedId = resolveNodeId(work.entity, currentNodes, newNodes);
+                    const existingNode = currentNodes.find(n => n.id === resolvedId);
                     const pendingNode = newNodes.find(n => n.id === resolvedId);
 
                     if (!existingNode && !pendingNode) {
@@ -769,7 +777,7 @@ const App: React.FC = () => {
 
                     const linkId = `${node.id}-${resolvedId}`;
                     const reverseLinkId = `${resolvedId}-${node.id}`;
-                    const linkExists = links.some(l => l.id === linkId || l.id === reverseLinkId) ||
+                    const linkExists = currentLinks.some(l => l.id === linkId || l.id === reverseLinkId) ||
                         newLinks.some(l => l.id === linkId || l.id === reverseLinkId);
 
                     if (!linkExists) {
@@ -783,8 +791,7 @@ const App: React.FC = () => {
                 });
 
             } else {
-                // Find context for Event/Thing node expansion
-                const nodeNeighbors = links.filter(l =>
+                const nodeNeighbors = currentLinks.filter(l =>
                     (typeof l.source === 'string' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
                     (typeof l.target === 'string' ? l.target === node.id : (l.target as GraphNode).id === node.id)
                 );
@@ -795,11 +802,9 @@ const App: React.FC = () => {
                     return s === node.id ? t : s;
                 });
 
-                // Find a neighbor that is a Person to use as context
-                const contextPerson = nodes.find(n => neighborIds.includes(n.id) && n.type === 'Person');
+                const contextPerson = currentNodes.find(n => neighborIds.includes(n.id) && n.type === 'Person');
                 const context = contextPerson ? contextPerson.id : undefined;
 
-                // Fetch Wikipedia summary to improve Gemini's accuracy for new shows/events
                 const wikiSummary = await fetchWikipediaSummary(node.id, context);
                 if (wikiSummary) {
                     nodeUpdates.set(node.id, { wikiSummary });
@@ -824,8 +829,8 @@ const App: React.FC = () => {
                     }
                 } else {
                     data.people.forEach((person) => {
-                        const resolvedId = resolveNodeId(person.name, nodes, newNodes);
-                        const existingNode = nodes.find(n => n.id === resolvedId);
+                        const resolvedId = resolveNodeId(person.name, currentNodes, newNodes);
+                        const existingNode = currentNodes.find(n => n.id === resolvedId);
                         const pendingNode = newNodes.find(n => n.id === resolvedId);
 
                         if (!existingNode && !pendingNode) {
@@ -842,7 +847,7 @@ const App: React.FC = () => {
 
                         const linkId = `${node.id}-${resolvedId}`;
                         const reverseLinkId = `${resolvedId}-${node.id}`;
-                        const linkExists = links.some(l => l.id === linkId || l.id === reverseLinkId) ||
+                        const linkExists = currentLinks.some(l => l.id === linkId || l.id === reverseLinkId) ||
                             newLinks.some(l => l.id === linkId || l.id === reverseLinkId);
 
                         if (!linkExists) {
@@ -893,11 +898,9 @@ const App: React.FC = () => {
                 return { nodes: finalNodes, links: finalLinks };
             });
 
-            // Persist expansion to cache (overwrite for this context)
-            // Build cache payload including existing nodes touched
             const targetSet = new Set<string>(targetsCollected);
             const cacheNodesPayload: any[] = [];
-            const findNode = (id: string) => newNodes.find(n => n.id === id) || nodes.find(n => n.id === id);
+            const findNode = (id: string) => newNodes.find(n => n.id === id) || currentNodes.find(n => n.id === id);
             targetSet.forEach(id => {
                 const found = findNode(id);
                 if (found) {
@@ -915,9 +918,6 @@ const App: React.FC = () => {
                 }
             });
             const sourceMeta: any = {};
-            if (nodeUpdates.get(node.id)?.year ?? node.year) {
-                // year handled above; no need in meta
-            }
             if (node.imageUrl) sourceMeta.imageUrl = node.imageUrl;
             // @ts-ignore
             const sourceWiki = nodeUpdates.get(node.id)?.wikiSummary ?? (node as any)?.wikiSummary;
@@ -929,7 +929,11 @@ const App: React.FC = () => {
                 year: nodeUpdates.get(node.id)?.year ?? node.year,
                 meta: sourceMeta
             });
-            saveCacheExpansion(node.id, contextForCache, Array.from(targetSet), cacheNodesPayload as any);
+
+            const mergedTargets = Array.from(new Set([...existingCacheTargets, ...targetsCollected]));
+            // Use the matched context from the cache hit if available to update the specific record we loaded from
+            const contextToSave = matchedCacheContext || contextForCache;
+            saveCacheExpansion(node.id, contextToSave, mergedTargets, cacheNodesPayload as any);
 
             newNodes.forEach((n, index) => {
                 setTimeout(() => {
@@ -947,6 +951,7 @@ const App: React.FC = () => {
         } finally {
             setIsProcessing(false);
         }
+
     }, [nodes, links, loadNodeImage, resolveNodeId]);
 
     const handleExpandMore = (node: GraphNode) => {
@@ -1115,10 +1120,7 @@ const App: React.FC = () => {
                         type: n.type,
                         description: n.description || "",
                         year: n.year || null,
-                        meta: {
-                            imageUrl: n.imageUrl || null,
-                            wikiSummary: (n as any).wikiSummary || null
-                        }
+                        meta: n.meta || {}
                     }))
                 })
             });

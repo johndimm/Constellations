@@ -312,7 +312,7 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
         // 1. Title matching (exact or with parenthetical disambiguation)
         // e.g. "Happy Days" matches "Happy Days (play)"
         if (title === normalized) {
-          s += 500;
+          s += 1000; // Increased from 500 to ensure it beats context bias
         } else if (title.startsWith(normalized + " (")) {
           s += 450;
         }
@@ -334,8 +334,8 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
           else s -= 400; // Standard penalty to favor "Thing" (e.g. the play) over the adaptation
         }
 
-        // 4. Term scoring with whole-word matching to avoid substring accidents (e.g. "ai" in "international")
-        const sportsTerms = ['football', 'soccer', 'rugby', 'cricket', 'goalkeeper', 'striker', 'club', 'fc', 'afc'];
+        // 4. Term scoring with whole-word matching
+        const sportsTerms = ['football', 'soccer', 'rugby', 'cricket', 'goalkeeper', 'striker', 'club', 'fc', 'afc', 'baseball', 'mlb', 'pcl', 'outfield', 'pitcher'];
         sportsTerms.forEach(t => {
           const regex = new RegExp(`\\b${t}\\b`, 'i');
           if (regex.test(title) || regex.test(snippet)) s -= 400;
