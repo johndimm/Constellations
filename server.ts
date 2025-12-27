@@ -58,6 +58,14 @@ async function ensureSchema() {
       console.log("Column 'person_id' missing or table 'edges' missing. Recreating schema.");
       needsRecreate = true;
     }
+    if (!needsRecreate) {
+      try {
+        await client.query("select image_url from nodes limit 1");
+      } catch (e: any) {
+        console.log("Column 'image_url' missing. Recreating schema.");
+        needsRecreate = true;
+      }
+    }
 
     if (needsRecreate) {
       console.log("Dropping old tables...");
@@ -92,6 +100,8 @@ create table if not exists nodes (
   wikipedia_id text,
   description text,
   year int,
+  image_url text,
+  wiki_summary text,
   meta jsonb default '{}'::jsonb,
   updated_at timestamptz default now(),
   unique(title, type, wikipedia_id)
@@ -117,13 +127,18 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
   const idMap = new Map<string, number>();
   
   for (const n of nodes) {
+    const meta = n.meta || {};
+    const imageUrl = meta.imageUrl || n.imageUrl || n.image_url || null;
+    const wikiSummary = meta.wikiSummary || n.wikiSummary || n.wiki_summary || null;
     const sql = `
-      insert into nodes (title, type, description, year, meta, wikipedia_id)
-      values ($1, $2, $3, $4, $5, $6)
+      insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary)
+      values ($1, $2, $3, $4, $5, $6, $7, $8)
       on conflict (title, type, wikipedia_id) do update
       set description = coalesce(excluded.description, nodes.description),
           year = coalesce(excluded.year, nodes.year),
           meta = coalesce(nodes.meta, '{}'::jsonb) || coalesce(excluded.meta, '{}'::jsonb),
+          image_url = coalesce(excluded.image_url, nodes.image_url),
+          wiki_summary = coalesce(excluded.wiki_summary, nodes.wiki_summary),
           updated_at = now()
       returning id;
     `;
@@ -132,8 +147,10 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
       n.type,
       n.description ?? null,
       n.year ?? null,
-      n.meta ?? {},
-      n.wikipedia_id ?? null
+      meta,
+      n.wikipedia_id ?? null,
+      imageUrl,
+      wikiSummary
     ]);
     const key = `${n.title || n.id}|${n.type}|${n.wikipedia_id || ''}`;
     idMap.set(key, res.rows[0].id);
@@ -196,7 +213,13 @@ app.get("/expansion", async (req, res) => {
       return res.json({ 
         hit: "exact", 
         targets: result.rows.map(r => r.id), 
-        nodes: result.rows 
+        nodes: result.rows.map(r => {
+          const m = r.meta || {};
+          const mergedMeta = { ...m };
+          if (!mergedMeta.imageUrl && r.image_url) mergedMeta.imageUrl = r.image_url;
+          if (!mergedMeta.wikiSummary && r.wiki_summary) mergedMeta.wikiSummary = r.wiki_summary;
+          return { ...r, meta: mergedMeta, imageUrl: r.image_url, wikiSummary: r.wiki_summary };
+        })
       });
     }
 
