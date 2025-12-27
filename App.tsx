@@ -152,11 +152,20 @@ const App: React.FC = () => {
         nodesRef.current = nodes;
     }, [nodes]);
 
-    const saveCacheNodeMeta = useCallback(async (nodeId: string, meta: { imageUrl?: string | null, wikiSummary?: string | null }) => {
+    const saveCacheNodeMeta = useCallback(async (
+        nodeId: string,
+        meta: { imageUrl?: string | null, wikiSummary?: string | null },
+        fallbackNode?: Partial<GraphNode> & { id: string; type?: string }
+    ) => {
         if (!cacheEnabled) return;
-        const node = nodesRef.current.find(n => n.id === nodeId);
-        if (!node) return;
+        const node = nodesRef.current.find(n => n.id === nodeId) || fallbackNode;
+        if (!node || !node.type) return;
         try {
+            const metaToSend: any = {};
+            const img = meta.imageUrl ?? (node as any).imageUrl;
+            const wiki = meta.wikiSummary ?? (node as any).wikiSummary;
+            if (img) metaToSend.imageUrl = img;
+            if (wiki) metaToSend.wikiSummary = wiki;
             await fetch(new URL("/node", cacheBaseUrl).toString(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -165,10 +174,7 @@ const App: React.FC = () => {
                     type: node.type,
                     description: node.description || "",
                     year: node.year ?? null,
-                    meta: {
-                        imageUrl: meta.imageUrl ?? node.imageUrl ?? null,
-                        wikiSummary: meta.wikiSummary ?? (node as any).wikiSummary ?? null
-                    }
+                    meta: metaToSend
                 })
             });
         } catch (e) {
@@ -176,14 +182,14 @@ const App: React.FC = () => {
         }
     }, [cacheEnabled, cacheBaseUrl]);
 
-    const loadNodeImage = useCallback(async (nodeId: string, context?: string) => {
+    const loadNodeImage = useCallback(async (nodeId: string, context?: string, fallbackNode?: Partial<GraphNode> & { id: string; type?: string }) => {
         if (isTextOnly) return;
 
         setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n));
         const url = await fetchWikipediaImage(nodeId, context);
         if (url) {
             setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n));
-            saveCacheNodeMeta(nodeId, { imageUrl: url });
+            saveCacheNodeMeta(nodeId, { imageUrl: url }, fallbackNode);
         } else {
             setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: false, imageChecked: true } : n));
         }
@@ -686,6 +692,12 @@ const App: React.FC = () => {
                         const newOnes = cacheLinks.filter(l => !existingIds.has(l.id));
                         return [...prev, ...newOnes];
                     });
+                    // Proactively fetch images for cached nodes that don't have one yet.
+                    const nodesNeedingImages = cachedNodes
+                        .filter(cn => !(cn.meta && cn.meta.imageUrl));
+                    nodesNeedingImages.forEach((cn, idx) => {
+                        setTimeout(() => loadNodeImage(cn.id, undefined, { id: cn.id, type: cn.type, description: cn.description, year: cn.year, imageUrl: cn.meta?.imageUrl }), 200 * idx);
+                    });
                     setIsProcessing(false);
                     return;
                 }
@@ -867,29 +879,33 @@ const App: React.FC = () => {
             targetSet.forEach(id => {
                 const found = findNode(id);
                 if (found) {
+                    const meta: any = {};
+                    if (found.imageUrl) meta.imageUrl = found.imageUrl;
+                    // @ts-ignore
+                    if ((found as any)?.wikiSummary) meta.wikiSummary = (found as any).wikiSummary;
                     cacheNodesPayload.push({
                         id: found.id,
                         type: found.type,
                         description: found.description || "",
                         year: found.year ?? null,
-                        meta: {
-                            imageUrl: found.imageUrl ?? null,
-                            // @ts-ignore
-                            wikiSummary: (found as any)?.wikiSummary ?? null
-                        }
+                        meta
                     });
                 }
             });
+            const sourceMeta: any = {};
+            if (nodeUpdates.get(node.id)?.year ?? node.year) {
+                // year handled above; no need in meta
+            }
+            if (node.imageUrl) sourceMeta.imageUrl = node.imageUrl;
+            // @ts-ignore
+            const sourceWiki = nodeUpdates.get(node.id)?.wikiSummary ?? (node as any)?.wikiSummary;
+            if (sourceWiki) sourceMeta.wikiSummary = sourceWiki;
             cacheNodesPayload.push({
                 id: node.id,
                 type: node.type,
                 description: nodeUpdates.get(node.id)?.description ?? node.description ?? "",
                 year: nodeUpdates.get(node.id)?.year ?? node.year,
-                meta: {
-                    imageUrl: node.imageUrl ?? null,
-                    // @ts-ignore
-                    wikiSummary: nodeUpdates.get(node.id)?.wikiSummary ?? (node as any)?.wikiSummary ?? null
-                }
+                meta: sourceMeta
             });
             saveCacheExpansion(node.id, contextForCache, Array.from(targetSet), cacheNodesPayload as any);
 
