@@ -49,53 +49,17 @@ async function ensureSchema() {
   let client;
   try {
     client = await pool.connect();
-    // Check for schema mismatch
-    let needsRecreate = false;
-    try {
-      await client.query("select person_id from edges limit 1");
-      console.log("Column 'person_id' exists.");
-    } catch (e: any) {
-      console.log("Column 'person_id' missing or table 'edges' missing. Recreating schema.");
-      needsRecreate = true;
-    }
-    if (!needsRecreate) {
-      try {
-        await client.query("select image_url from nodes limit 1");
-      } catch (e: any) {
-        console.log("Column 'image_url' missing. Recreating schema.");
-        needsRecreate = true;
-      }
-    }
-    if (!needsRecreate) {
-      try {
-        const res = await client.query(`
-          select is_nullable, coalesce(column_default,'') as column_default
-          from information_schema.columns
-          where table_name = 'nodes' and column_name = 'wikipedia_id'
-          limit 1
-        `);
-        const row = res.rows[0];
-        if (!row || row.is_nullable === 'YES') {
-          console.log("Column 'wikipedia_id' is nullable or missing default. Recreating schema.");
-          needsRecreate = true;
-        }
-      } catch (e: any) {
-        console.log("Column 'wikipedia_id' check failed. Recreating schema.");
-        needsRecreate = true;
-      }
-    }
+    // Always ensure tables exist
+    await client.query(initSql);
 
-    if (needsRecreate) {
-      console.log("Dropping old tables...");
-      await client.query("drop table if exists edges cascade");
-      await client.query("drop table if exists nodes cascade");
-      await client.query(initSql);
-      console.log("Schema recreated successfully.");
-    } else {
-      // Even if person_id exists, ensure other tables/indexes are there
-      await client.query(initSql);
-      console.log("Schema is up to date.");
-    }
+    // Apply lightweight migrations in place (no data loss)
+    await client.query("alter table if exists nodes add column if not exists image_url text");
+    await client.query("alter table if exists nodes add column if not exists wiki_summary text");
+    await client.query("alter table if exists nodes alter column wikipedia_id set default ''");
+    await client.query("update nodes set wikipedia_id = '' where wikipedia_id is null");
+    await client.query("alter table if exists nodes alter column wikipedia_id set not null");
+    await client.query("create unique index if not exists nodes_title_type_wiki_idx on nodes (lower(title), type, wikipedia_id)");
+    console.log("Schema migrations applied (image_url, wiki_summary, wikipedia_id defaults, unique index).");
   } catch (e) {
     console.error("Schema init failed", e);
   } finally {

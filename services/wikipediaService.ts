@@ -307,9 +307,10 @@ export const fetchWikipediaSummary = async (
   query: string,
   context?: string,
   visited: Set<string> = new Set(),
-  depth: number = 0
+  depth: number = 0,
+  triedNoContext = false
 ): Promise<{ extract: string | null; pageid: number | null; title: string | null }> => {
-  const normKey = query.trim().toLowerCase();
+  const normKey = `${query.trim().toLowerCase()}|${context || ''}`;
   if (visited.has(normKey) || depth > 2) {
     return { extract: null, pageid: null, title: null };
   }
@@ -472,7 +473,7 @@ export const fetchWikipediaSummary = async (
 
         if ((!finalExtract || finalExtract.length < 50) && cleanQuery !== query) {
           console.log(`⚠️ [Wiki] Summary too short, trying search with clean query: "${cleanQuery}"`);
-          return await fetchWikipediaSummary(cleanQuery, context, visited, depth + 1);
+          return await fetchWikipediaSummary(cleanQuery, context, visited, depth + 1, triedNoContext);
         }
         return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null };
       }
@@ -481,6 +482,11 @@ export const fetchWikipediaSummary = async (
     console.log(`❌ [Wiki] No summary found for "${bestTitle}"`);
   } catch (e) {
     console.error(`❌ [Wiki] Error fetching summary for "${query}":`, e);
+  }
+  // Final fallback: if context was provided and failed, retry once with no context
+  if (context && !triedNoContext) {
+    console.log(`⚠️ [Wiki] Retrying "${query}" without context (previous attempt returned empty).`);
+    return await fetchWikipediaSummary(query, undefined, visited, depth + 1, true);
   }
   return { extract: null, pageid: null, title: null };
 };

@@ -235,7 +235,7 @@ const App: React.FC = () => {
 
     const saveCacheNodeMeta = useCallback(async (
         nodeId: number,
-        meta: { imageUrl?: string | null, wikiSummary?: string | null },
+        meta: { imageUrl?: string | null, wikiSummary?: string | null, wikipedia_id?: string | null },
         fallbackNode?: Partial<GraphNode> & { id: number; type?: string; title: string }
     ) => {
         if (!cacheEnabled) return;
@@ -245,8 +245,10 @@ const App: React.FC = () => {
             const metaToSend: any = {};
             const img = meta.imageUrl ?? (node as any).imageUrl;
             const wiki = meta.wikiSummary ?? (node as any).wikiSummary;
+            const wikiId = meta.wikipedia_id ?? (node as any).wikipedia_id;
             if (img) metaToSend.imageUrl = img;
             if (wiki) metaToSend.wikiSummary = wiki;
+            if (wikiId) metaToSend.wikipedia_id = wikiId;
             await fetch(new URL("/node", cacheBaseUrl).toString(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -257,7 +259,7 @@ const App: React.FC = () => {
                     description: node.description || "",
                     year: node.year ?? null,
                     meta: metaToSend,
-                    wikipedia_id: node.wikipedia_id
+                    wikipedia_id: wikiId || node.wikipedia_id
                 })
             });
         } catch (e) {
@@ -368,6 +370,37 @@ const App: React.FC = () => {
         try {
             const nodeUpdates = new Map<number, Partial<GraphNode>>();
 
+        const fixMissingWiki = (targets: any[]) => {
+            targets.forEach((cn, idx) => {
+                const hasWikiId = !!(cn.wikipedia_id && String(cn.wikipedia_id).trim());
+                if (hasWikiId) return;
+                setTimeout(async () => {
+                    try {
+                        const wiki = await fetchWikipediaSummary(cn.title);
+                        if (!wiki.extract && !wiki.pageid) return;
+                        setGraphData(prev => ({
+                            ...prev,
+                            nodes: prev.nodes.map(n => {
+                                if (n.id !== cn.id) return n;
+                                return {
+                                    ...n,
+                                    wikiSummary: wiki.extract || n.wikiSummary,
+                                    wikipedia_id: wiki.pageid ? wiki.pageid.toString() : n.wikipedia_id
+                                };
+                            })
+                        }));
+                        saveCacheNodeMeta(
+                            cn.id,
+                            { wikiSummary: wiki.extract || null, wikipedia_id: wiki.pageid ? wiki.pageid.toString() : null },
+                            { id: cn.id, title: cn.title, type: cn.type }
+                        );
+                    } catch (e) {
+                        console.warn("Wiki fixup failed for", cn.title, e);
+                    }
+                }, 50 * idx);
+            });
+        };
+
         // Cache lookup (exact) unless forceMore
         if (cacheEnabled && !forceMore) {
             const cacheHit = await fetchCacheExpansion(node.id);
@@ -391,23 +424,23 @@ const App: React.FC = () => {
                         const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
                         const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
 
-                            const merged: GraphNode = {
-                                x: initialX,
-                                y: initialY,
-                                ...(existing || {}),
-                                id: cn.id,
-                                title: cn.title,
-                                type: cn.type,
-                                wikipedia_id: cn.wikipedia_id,
-                                description: cn.description || existing?.description || "",
-                                year: cn.year ?? existing?.year,
-                                imageUrl,
-                                imageChecked: !!imageUrl || existing?.imageChecked,
-                                wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
-                                expanded: existing?.expanded || false,
-                                isLoading: false
-                            };
-                            if (!existingNodeIds.has(cn.id)) cacheNewNodes += 1;
+                        const merged: GraphNode = {
+                            x: initialX,
+                            y: initialY,
+                            ...(existing || {}),
+                            id: cn.id,
+                            title: cn.title,
+                            type: cn.type,
+                            wikipedia_id: cn.wikipedia_id,
+                            description: cn.description || existing?.description || "",
+                            year: cn.year ?? existing?.year,
+                            imageUrl,
+                            imageChecked: !!imageUrl || existing?.imageChecked,
+                            wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
+                            expanded: existing?.expanded || false,
+                            isLoading: false
+                        };
+                        if (!existingNodeIds.has(cn.id)) cacheNewNodes += 1;
                         nodeMap.set(cn.id, merged);
                     });
                     if (nodeMap.has(node.id)) {
@@ -428,13 +461,8 @@ const App: React.FC = () => {
                 });
 
                 if (cacheNewNodes === 0 && cacheNewLinks === 0) {
-                    console.log(`💾 [Cache] hit contained no new nodes/links, marking expanded without LLM for ${node.title}`);
-                    setGraphData(prev => ({
-                        ...prev,
-                        nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false, imageChecked: n.imageChecked || !!n.imageUrl } : n)
-                    }));
-                    setIsProcessing(false);
-                    return;
+                    console.log(`💾 [Cache] hit contained no new nodes/links, falling back to LLM for ${node.title}`);
+                    // Allow LLM fetch to proceed (no early return)
                 } else {
                     console.log(`💾 [Cache] applied ${cacheNewNodes} nodes and ${cacheNewLinks} links for ${node.title}`);
                     validCached.forEach((cn, idx) => {
@@ -453,6 +481,7 @@ const App: React.FC = () => {
                             nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false } : n)
                         }));
                     }, 400);
+                    fixMissingWiki([node, ...validCached]);
                     setIsProcessing(false);
                     return;
                 }
@@ -617,7 +646,7 @@ const App: React.FC = () => {
             clearTimeout(loadingGuard);
             setIsProcessing(false);
         }
-    }, [nodes, links, loadNodeImage, cacheEnabled, fetchCacheExpansion, saveCacheExpansion, cacheBaseUrl]);
+    }, [nodes, links, loadNodeImage, cacheEnabled, fetchCacheExpansion, saveCacheExpansion, cacheBaseUrl, saveCacheNodeMeta]);
 
     const handleStartSearch = async (term: string, recursiveDepth = 0) => {
         setIsProcessing(true);
