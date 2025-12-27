@@ -168,7 +168,9 @@ app.get("/expansion", async (req, res) => {
       const score = jaccard(requestedSet, ctxIds);
       if (!best || score > best.score) best = { row, score };
     }
-    if (best && best.score >= minSim) {
+    const requestedHasContext = requestedSet.size > 0;
+    const bestHasNoContext = best && (!best.row.context_ids || best.row.context_ids.length === 0);
+    if (best && (best.score >= minSim || (!requestedHasContext && bestHasNoContext) || bestHasNoContext)) {
       const targets: string[] = best.row.targets;
       const nodes = await client.query(`select * from nodes where id = any($1)`, [targets]);
       return res.json({ hit: "partial", score: best.score, targets, nodes: nodes.rows });
