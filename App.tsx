@@ -33,11 +33,33 @@ const normalizeForDedup = (str: string) => {
         .replace(/\s+/g, ' ');   // Collapse spaces
 };
 
+const getEnvCacheUrl = () => {
+    let url = "";
+    try {
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env) {
+            // @ts-ignore
+            url = import.meta.env.VITE_CACHE_API_URL || "";
+        }
+    } catch (e) { }
+    if (url) return url;
+    try {
+        if (typeof process !== 'undefined' && process.env) {
+            url = process.env.VITE_CACHE_API_URL || "";
+        }
+    } catch (e) { }
+    return url;
+};
+
 const App: React.FC = () => {
     // Use local cache server when running locally, regardless of env var
-    const cacheBaseUrl = window.location.hostname === 'localhost'
-        ? 'http://localhost:4000'
-        : ((import.meta as any).env?.VITE_CACHE_API_URL || "");
+    const envCacheUrl = getEnvCacheUrl();
+    const cacheBaseUrl = envCacheUrl || 
+        (window.location.hostname === 'localhost' ? 'http://localhost:4000' : "");
+
+    useEffect(() => {
+        console.log(`🌐 Cache Base URL: "${cacheBaseUrl}" (Source: ${envCacheUrl ? 'env' : 'default'})`);
+    }, [cacheBaseUrl, envCacheUrl]);
 
     const [graphData, setGraphData] = useState<{ nodes: GraphNode[], links: GraphLink[] }>({ nodes: [], links: [] });
     const { nodes, links } = graphData;
@@ -211,33 +233,281 @@ const App: React.FC = () => {
         setError(null);
     };
 
+    const fetchCacheExpansion = useCallback(async (sourceId: number) => {
+        if (!cacheEnabled) return null;
+        const url = new URL("/expansion", cacheBaseUrl);
+        url.searchParams.set("sourceId", sourceId.toString());
+        try {
+            const res = await fetch(url.toString());
+            if (!res.ok) return null;
+            return res.json();
+        } catch (e) {
+            console.warn("Cache fetch failed", e);
+            return null;
+        }
+    }, [cacheEnabled, cacheBaseUrl]);
+
+    const saveCacheExpansion = useCallback(async (sourceId: number, nodesToSave: any[]) => {
+        if (!cacheEnabled) return;
+        try {
+            await fetch(new URL("/expansion", cacheBaseUrl).toString(), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sourceId,
+                    nodes: nodesToSave.map(n => ({
+                        title: n.title || n.id,
+                        type: n.type,
+                        description: n.description || "",
+                        year: n.year || null,
+                        meta: n.meta || {},
+                        wikipedia_id: n.wikipedia_id
+                    }))
+                })
+            });
+        } catch (e) {
+            console.warn("Cache save failed", e);
+        }
+    }, [cacheEnabled, cacheBaseUrl]);
+
+    const fetchAndExpandNode = useCallback(async (node: GraphNode, isInitial = false, forceMore = false, nodesOverride?: GraphNode[], linksOverride?: GraphLink[]) => {
+        const currentNodes = nodesOverride || nodes;
+        const currentLinks = linksOverride || links;
+
+        if (!forceMore && (node.expanded || node.isLoading)) return;
+
+        setGraphData(prev => ({
+            ...prev,
+            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
+        }));
+        setIsProcessing(true);
+        setError(null);
+
+        try {
+            const nodeUpdates = new Map<number, Partial<GraphNode>>();
+
+            // Cache lookup (exact) unless forceMore
+            if (cacheEnabled && !forceMore) {
+                const cacheHit = await fetchCacheExpansion(node.id);
+                if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
+                    const cachedNodes: any[] = cacheHit.nodes;
+                    setGraphData(prev => {
+                        const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
+                        cachedNodes.forEach(cn => {
+                            const meta = cn.meta || {};
+                            const existing = nodeMap.get(cn.id);
+                            const imageUrl = meta.imageUrl ?? existing?.imageUrl;
+
+                            const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
+                            const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
+
+                            const merged: GraphNode = {
+                                x: initialX,
+                                y: initialY,
+                                ...(existing || {}),
+                                id: cn.id,
+                                title: cn.title,
+                                type: cn.type,
+                                wikipedia_id: cn.wikipedia_id,
+                                description: cn.description || existing?.description || "",
+                                year: cn.year ?? existing?.year,
+                                imageUrl,
+                                wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
+                                expanded: existing?.expanded || false,
+                                isLoading: false
+                            };
+                            nodeMap.set(cn.id, merged);
+                        });
+                        if (nodeMap.has(node.id)) {
+                            nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false });
+                        }
+                        const updatedNodes = Array.from(nodeMap.values());
+
+                        const existingLinkIds = new Set(prev.links.map(l => l.id));
+                        const newLinksToAdd: GraphLink[] = cachedNodes.map(cn => ({
+                            source: node.id,
+                            target: cn.id,
+                            id: `${node.id}-${cn.id}`
+                        })).filter(l => !existingLinkIds.has(l.id));
+                        const updatedLinks = [...prev.links, ...newLinksToAdd];
+
+                        return { nodes: updatedNodes, links: updatedLinks };
+                    });
+
+                    cachedNodes.forEach((cn, idx) => {
+                        setTimeout(() => loadNodeImage(cn.id, cn.title), 200 * idx);
+                    });
+                    setIsProcessing(false);
+                    return;
+                }
+            }
+
+            // LLM fetch
+            const neighborLinks = currentLinks.filter(l =>
+                (typeof l.source === 'number' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
+                (typeof l.target === 'number' ? l.target === node.id : (l.target as GraphNode).id === node.id)
+            );
+            const neighborNames = neighborLinks.map(l => {
+                const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+                const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+                const nid = s === node.id ? t : s;
+                return currentNodes.find(n => n.id === nid)?.title || '';
+            }).filter(Boolean);
+
+            const wiki = await fetchWikipediaSummary(node.title, neighborNames.join(' '));
+            if (wiki.extract) {
+                nodeUpdates.set(node.id, { wikiSummary: wiki.extract, wikipedia_id: wiki.pageid?.toString() });
+            }
+
+            let results: any[] = [];
+            if (node.type === 'Person') {
+                const data = await fetchPersonWorks(node.title, neighborNames, wiki.extract || undefined);
+                results = data.works.map(w => ({ title: w.entity, type: w.type, description: w.description, year: w.year, role: w.role }));
+            } else {
+                const data = await fetchConnections(node.title, undefined, neighborNames, wiki.extract || undefined);
+                if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
+                results = data.people.map(p => ({ title: p.name, type: 'Person', description: p.description, role: p.role }));
+            }
+
+            if (results.length === 0) {
+                if (isInitial) {
+                    setError(`No connections found for "${node.title}".`);
+                    setGraphData({ nodes: [], links: [] });
+                    setSelectedNode(null);
+                } else {
+                    setGraphData(prev => ({
+                        ...prev,
+                        nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false } : n)
+                    }));
+                }
+            } else {
+                // Get Wikipedia info for all results to help disambiguate
+                const resultsWithWiki = await Promise.all(results.map(async r => {
+                    const rWiki = await fetchWikipediaSummary(r.title, node.title);
+                    return { ...r, wikipedia_id: rWiki.pageid?.toString(), description: rWiki.extract || r.description };
+                }));
+
+                let nodesToUse = resultsWithWiki;
+                let isCacheHit = false;
+
+                if (cacheEnabled) {
+                    await saveCacheExpansion(node.id, resultsWithWiki);
+                    // Re-fetch from cache to get serial IDs
+                    const cacheHit = await fetchCacheExpansion(node.id);
+                    if (cacheHit && cacheHit.nodes) {
+                        nodesToUse = cacheHit.nodes;
+                        isCacheHit = true;
+                    }
+                }
+
+                // Ensure all nodes have IDs. If not from cache, assign random ones.
+                const processedNodes = nodesToUse.map(cn => ({
+                    ...cn,
+                    id: cn.id ?? Math.floor(Math.random() * 1000000)
+                }));
+
+                setGraphData(prev => {
+                    const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
+                    processedNodes.forEach(cn => {
+                        const meta = cn.meta || {};
+                        const existing = nodeMap.get(cn.id);
+                        const merged: GraphNode = {
+                            id: cn.id,
+                            title: cn.title,
+                            type: cn.type,
+                            wikipedia_id: cn.wikipedia_id,
+                            description: cn.description || existing?.description || "",
+                            year: cn.year ?? existing?.year,
+                            imageUrl: meta.imageUrl ?? existing?.imageUrl,
+                            wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
+                            x: existing?.x ?? (node.x ? node.x + (Math.random() - 0.5) * 100 : undefined),
+                            y: existing?.y ?? (node.y ? node.y + (Math.random() - 0.5) * 100 : undefined),
+                            expanded: existing?.expanded || false,
+                            isLoading: false
+                        };
+                        nodeMap.set(cn.id, merged);
+                    });
+
+                    if (nodeMap.has(node.id)) {
+                        nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false, ...nodeUpdates.get(node.id) });
+                    }
+
+                    const updatedNodes = Array.from(nodeMap.values());
+                    const existingLinkIds = new Set(prev.links.map(l => l.id));
+                    const newLinksToAdd: GraphLink[] = processedNodes.map(cn => ({
+                        source: node.id,
+                        target: cn.id,
+                        id: `${node.id}-${cn.id}`
+                    })).filter(l => !existingLinkIds.has(l.id));
+
+                    return { nodes: updatedNodes, links: [...prev.links, ...newLinksToAdd] };
+                });
+
+                processedNodes.forEach((cn, idx) => {
+                    setTimeout(() => loadNodeImage(cn.id, cn.title), 300 * (idx + 1));
+                });
+            }
+        } catch (error) {
+            console.error("Failed to expand node", error);
+            setError("Failed to fetch connections. The AI might be busy.");
+            setGraphData(prev => ({
+                ...prev,
+                nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: false } : n)
+            }));
+        } finally {
+            setIsProcessing(false);
+        }
+    }, [nodes, links, loadNodeImage, cacheEnabled, fetchCacheExpansion, saveCacheExpansion, cacheBaseUrl]);
+
     const handleStartSearch = async (term: string, recursiveDepth = 0) => {
         setIsProcessing(true);
         setError(null);
         setSearchId(prev => prev + 1);
 
+        const apiKey = getEnvApiKey();
+        if (!apiKey) {
+            setError("No API key found. Please select an API key first.");
+            setIsProcessing(false);
+            return;
+        }
+
         try {
+            console.log(`🔎 Starting search for: "${term}"`);
+            
             // 1. Classify
             const { type, description: geminiDescription } = await classifyEntity(term);
+            console.log(`Type: ${type}`);
             
             // 2. Get Wikipedia metadata
             const wiki = await fetchWikipediaSummary(term);
+            console.log(`Wiki summary found: ${!!wiki.extract}`);
             
             // 3. Upsert to DB to get serial ID
             let nodeId: number = -1;
             if (cacheEnabled) {
-                const res = await fetch(new URL("/node", cacheBaseUrl).toString(), {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        title: term.trim(),
-                        type,
-                        description: wiki.extract || geminiDescription || '',
-                        wikipedia_id: wiki.pageid?.toString()
-                    })
-                });
-                const data = await res.json();
-                nodeId = data.id;
+                try {
+                    const res = await fetch(new URL("/node", cacheBaseUrl).toString(), {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            title: term.trim(),
+                            type,
+                            description: wiki.extract || geminiDescription || '',
+                            wikipedia_id: wiki.pageid?.toString()
+                        })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        nodeId = data.id;
+                    }
+                } catch (e) {
+                    console.warn("Cache server unreachable", e);
+                }
+            }
+
+            if (nodeId === -1) {
+                // Fallback: use Wikipedia pageid or a random number
+                nodeId = wiki.pageid || Math.floor(Math.random() * 1000000);
             }
 
             const startNode: GraphNode = {
@@ -259,12 +529,23 @@ const App: React.FC = () => {
             setSelectedNode(startNode);
             loadNodeImage(startNode.id, startNode.title);
 
-            await expandNode(startNode, true, false, [startNode], []);
+            console.log("Expanding initial node...");
+            await fetchAndExpandNode(startNode, true, false, [startNode], []);
 
             if (recursiveDepth > 0) {
                 setNotification({ message: "Auto-expanding connections...", type: 'success' });
                 await new Promise(resolve => setTimeout(resolve, 800));
 
+                // Get current state from ref to find neighbors
+                const neighborIds = new Set<number>();
+                nodesRef.current.forEach(n => {
+                    // This is a bit indirect, better to check links
+                });
+                
+                // Let's use the links from graphData (which should be updated by now)
+                // but since setGraphData is async, we might need a small delay or a more robust way.
+                // For now, let's just find neighbors of startNode in the current links
+                // We'll use a functional update to get the latest links
                 setGraphData(current => {
                     const neighbors = new Set<number>();
                     current.links.forEach(l => {
@@ -274,19 +555,24 @@ const App: React.FC = () => {
                         else if (t === startNode.id) neighbors.add(s);
                     });
 
-                    neighbors.forEach(neighborId => {
-                        const nodeToExpand = current.nodes.find(n => n.id === neighborId);
-                        if (nodeToExpand && !nodeToExpand.expanded) {
-                            expandNode(nodeToExpand);
-                        }
-                    });
+                    // Trigger expansion for each neighbor
+                    // Note: We're calling async functions from inside a sync state updater.
+                    // This is generally bad, but we'll move it out.
+                    setTimeout(() => {
+                        neighbors.forEach(neighborId => {
+                            const nodeToExpand = current.nodes.find(n => n.id === neighborId);
+                            if (nodeToExpand && !nodeToExpand.expanded) {
+                                fetchAndExpandNode(nodeToExpand);
+                            }
+                        });
+                    }, 0);
 
                     return current;
                 });
             }
         } catch (e) {
-            console.error("Search error", e);
-            setError("Search failed.");
+            console.error("Search error details:", e);
+            setError("Search failed. Please check your API key and network connection.");
         } finally {
             setIsProcessing(false);
         }
@@ -301,7 +587,16 @@ const App: React.FC = () => {
         setGraphData({ nodes: [], links: [] });
         setSelectedNode(null);
 
+        const apiKey = getEnvApiKey();
+        if (!apiKey) {
+            setError("No API key found. Please select an API key first.");
+            setIsProcessing(false);
+            return;
+        }
+
         try {
+            console.log(`🛤️ Finding path from "${start}" to "${end}"`);
+            
             // 1. Classify and Upsert endpoints
             const [startC, endC] = await Promise.all([
                 classifyEntity(start),
@@ -313,24 +608,35 @@ const App: React.FC = () => {
                 fetchWikipediaSummary(end)
             ]);
 
-            const upsertNode = async (title: string, type: string, description: string, wiki: any) => {
-                if (!cacheEnabled) return { id: Math.random() };
-                const res = await fetch(new URL("/node", cacheBaseUrl).toString(), {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        title: title.trim(),
-                        type,
-                        description: wiki.extract || description,
-                        wikipedia_id: wiki.pageid?.toString()
-                    })
-                });
-                return await res.json();
+            const upsertNodeLocal = async (title: string, type: string, description: string, wiki: any) => {
+                let id = -1;
+                if (cacheEnabled) {
+                    try {
+                        const res = await fetch(new URL("/node", cacheBaseUrl).toString(), {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                title: title.trim(),
+                                type,
+                                description: wiki.extract || description,
+                                wikipedia_id: wiki.pageid?.toString()
+                            })
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            id = data.id;
+                        }
+                    } catch (e) {
+                        console.warn("Cache server unreachable", e);
+                    }
+                }
+                if (id === -1) id = wiki.pageid || Math.floor(Math.random() * 1000000);
+                return { id };
             };
 
             const [startNodeData, endNodeData] = await Promise.all([
-                upsertNode(start, startC.type, startC.description || '', startWiki),
-                upsertNode(end, endC.type, endC.description || '', endWiki)
+                upsertNodeLocal(start, startC.type, startC.description || '', startWiki),
+                upsertNodeLocal(end, endC.type, endC.description || '', endWiki)
             ]);
 
             const startNode: GraphNode = {
@@ -369,8 +675,8 @@ const App: React.FC = () => {
 
             try {
                 await Promise.all([
-                    expandNode(startNode, true, false, [startNode, endNode], []).catch(e => console.warn("Start expansion failed", e)),
-                    expandNode(endNode, true, false, [startNode, endNode], []).catch(e => console.warn("End expansion failed", e))
+                    fetchAndExpandNode(startNode, true, false, [startNode, endNode], []).catch(e => console.warn("Start expansion failed", e)),
+                    fetchAndExpandNode(endNode, true, false, [startNode, endNode], []).catch(e => console.warn("End expansion failed", e))
                 ]);
             } catch (e) {
                 console.warn("Endpoints expansion partially failed", e);
@@ -399,6 +705,7 @@ const App: React.FC = () => {
                     endWiki: endWiki.extract || undefined
                 });
             } catch (err: any) {
+                console.error("Pathfinding error:", err);
                 if (err.message?.includes("timed out")) {
                     setError("Pathfinding timed out. The connection might be too complex or obscure.");
                 } else {
@@ -432,7 +739,7 @@ const App: React.FC = () => {
                 
                 // Get Wikipedia info for disambiguation and serial ID
                 const stepWiki = await fetchWikipediaSummary(currentStep.id);
-                const stepNodeData = await upsertNode(currentStep.id, currentStep.type, currentStep.description, stepWiki);
+                const stepNodeData = await upsertNodeLocal(currentStep.id, currentStep.type, currentStep.description, stepWiki);
                 const resolvedId = stepNodeData.id;
 
                 setGraphData(current => {
@@ -473,14 +780,17 @@ const App: React.FC = () => {
                         }];
 
                     loadNodeImage(resolvedId, newNode.title);
+                    
+                    // Trigger expansion outside state update
+                    setTimeout(() => {
+                        const nodeToExpand = updatedNodes.find(n => n.id === resolvedId);
+                        if (nodeToExpand && !nodeToExpand.expanded) {
+                            fetchAndExpandNode(nodeToExpand).catch(e => console.warn("Intermediate expansion failed", e));
+                        }
+                    }, 0);
+
                     return { nodes: updatedNodes, links: updatedLinks };
                 });
-
-                // Trigger expansion on the intermediate node
-                const nodeToExpand = nodesRef.current.find(n => n.id === resolvedId);
-                if (nodeToExpand && !nodeToExpand.expanded) {
-                    expandNode(nodeToExpand).catch(e => console.warn("Intermediate expansion failed", e));
-                }
 
                 currentTailId = resolvedId;
             }
@@ -638,182 +948,8 @@ const App: React.FC = () => {
         };
     }, [nodes, links]);
 
-    const expandNode = useCallback(async (node: GraphNode, isInitial = false, forceMore = false, nodesOverride?: GraphNode[], linksOverride?: GraphLink[]) => {
-        const currentNodes = nodesOverride || nodes;
-        const currentLinks = linksOverride || links;
-
-        if (!forceMore && (node.expanded || node.isLoading)) return;
-
-        setGraphData(prev => ({
-            ...prev,
-            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
-        }));
-        setIsProcessing(true);
-        setError(null);
-
-        try {
-            const nodeUpdates = new Map<number, Partial<GraphNode>>();
-
-            // Cache lookup (exact) unless forceMore
-            if (cacheEnabled && !forceMore) {
-                const cacheHit = await fetchCacheExpansion(node.id);
-                if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
-                    const cachedNodes: any[] = cacheHit.nodes;
-                    setGraphData(prev => {
-                        const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
-                        cachedNodes.forEach(cn => {
-                            const meta = cn.meta || {};
-                            const existing = nodeMap.get(cn.id);
-                            const imageUrl = meta.imageUrl ?? existing?.imageUrl;
-
-                            const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
-                            const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
-
-                            const merged: GraphNode = {
-                                x: initialX,
-                                y: initialY,
-                                ...(existing || {}),
-                                id: cn.id,
-                                title: cn.title,
-                                type: cn.type,
-                                wikipedia_id: cn.wikipedia_id,
-                                description: cn.description || existing?.description || "",
-                                year: cn.year ?? existing?.year,
-                                imageUrl,
-                                wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
-                                expanded: existing?.expanded || false,
-                                isLoading: false
-                            };
-                            nodeMap.set(cn.id, merged);
-                        });
-                        if (nodeMap.has(node.id)) {
-                            nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false });
-                        }
-                        const updatedNodes = Array.from(nodeMap.values());
-
-                        const existingLinkIds = new Set(prev.links.map(l => l.id));
-                        const newLinksToAdd: GraphLink[] = cachedNodes.map(cn => ({
-                            source: node.id,
-                            target: cn.id,
-                            id: `${node.id}-${cn.id}`
-                        })).filter(l => !existingLinkIds.has(l.id));
-                        const updatedLinks = [...prev.links, ...newLinksToAdd];
-
-                        return { nodes: updatedNodes, links: updatedLinks };
-                    });
-
-                    cachedNodes.forEach((cn, idx) => {
-                        setTimeout(() => loadNodeImage(cn.id, cn.title), 200 * idx);
-                    });
-                    setIsProcessing(false);
-                    return;
-                }
-            }
-
-            // LLM fetch
-            const neighborLinks = currentLinks.filter(l =>
-                (typeof l.source === 'number' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
-                (typeof l.target === 'number' ? l.target === node.id : (l.target as GraphNode).id === node.id)
-            );
-            const neighborNames = neighborLinks.map(l => {
-                const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
-                const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
-                const nid = s === node.id ? t : s;
-                return currentNodes.find(n => n.id === nid)?.title || '';
-            }).filter(Boolean);
-
-            const wiki = await fetchWikipediaSummary(node.title, neighborNames.join(' '));
-            if (wiki.extract) {
-                nodeUpdates.set(node.id, { wikiSummary: wiki.extract, wikipedia_id: wiki.pageid?.toString() });
-            }
-
-            let results: any[] = [];
-            if (node.type === 'Person') {
-                const data = await fetchPersonWorks(node.title, neighborNames, wiki.extract || undefined);
-                results = data.works.map(w => ({ title: w.entity, type: w.type, description: w.description, year: w.year, role: w.role }));
-            } else {
-                const data = await fetchConnections(node.title, undefined, neighborNames, wiki.extract || undefined);
-                if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
-                results = data.people.map(p => ({ title: p.name, type: 'Person', description: p.description, role: p.role }));
-            }
-
-            if (results.length === 0) {
-                if (isInitial) {
-                    setError(`No connections found for "${node.title}".`);
-                    setGraphData({ nodes: [], links: [] });
-                    setSelectedNode(null);
-                } else {
-                    setGraphData(prev => ({
-                        ...prev,
-                        nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false } : n)
-                    }));
-                }
-            } else {
-                // Get Wikipedia info for all results to help disambiguate
-                const resultsWithWiki = await Promise.all(results.map(async r => {
-                    const rWiki = await fetchWikipediaSummary(r.title, node.title);
-                    return { ...r, wikipedia_id: rWiki.pageid?.toString(), description: rWiki.extract || r.description };
-                }));
-
-                if (cacheEnabled) {
-                    await saveCacheExpansion(node.id, resultsWithWiki);
-                    // Re-fetch from cache to get serial IDs
-                    const cacheHit = await fetchCacheExpansion(node.id);
-                    if (cacheHit && cacheHit.nodes) {
-                        const cachedNodes: any[] = cacheHit.nodes;
-                        setGraphData(prev => {
-                            const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
-                            cachedNodes.forEach(cn => {
-                                const meta = cn.meta || {};
-                                const existing = nodeMap.get(cn.id);
-                                const merged: GraphNode = {
-                                    id: cn.id,
-                                    title: cn.title,
-                                    type: cn.type,
-                                    wikipedia_id: cn.wikipedia_id,
-                                    description: cn.description || existing?.description || "",
-                                    year: cn.year ?? existing?.year,
-                                    imageUrl: meta.imageUrl ?? existing?.imageUrl,
-                                    wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
-                                    x: existing?.x ?? (node.x ? node.x + (Math.random() - 0.5) * 100 : undefined),
-                                    y: existing?.y ?? (node.y ? node.y + (Math.random() - 0.5) * 100 : undefined),
-                                    expanded: existing?.expanded || false,
-                                    isLoading: false
-                                };
-                                nodeMap.set(cn.id, merged);
-                            });
-                            if (nodeMap.has(node.id)) {
-                                nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false, ...nodeUpdates.get(node.id) });
-                            }
-                            const updatedNodes = Array.from(nodeMap.values());
-                            const existingLinkIds = new Set(prev.links.map(l => l.id));
-                            const newLinksToAdd: GraphLink[] = cachedNodes.map(cn => ({
-                                source: node.id,
-                                target: cn.id,
-                                id: `${node.id}-${cn.id}`
-                            })).filter(l => !existingLinkIds.has(l.id));
-                            return { nodes: updatedNodes, links: [...prev.links, ...newLinksToAdd] };
-                        });
-                        cachedNodes.forEach((cn, idx) => {
-                            setTimeout(() => loadNodeImage(cn.id, cn.title), 300 * (idx + 1));
-                        });
-                    }
-                }
-            }
-        } catch (error) {
-            console.error("Failed to expand node", error);
-            setError("Failed to fetch connections. The AI might be busy.");
-            setGraphData(prev => ({
-                ...prev,
-                nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: false } : n)
-            }));
-        } finally {
-            setIsProcessing(false);
-        }
-    }, [nodes, links, loadNodeImage, cacheEnabled, fetchCacheExpansion, saveCacheExpansion, cacheBaseUrl]);
-
     const handleExpandMore = (node: GraphNode) => {
-        expandNode(node, false, true);
+        fetchAndExpandNode(node, false, true);
     };
 
     const handleSmartDelete = (rootId: number) => {
@@ -868,14 +1004,14 @@ const App: React.FC = () => {
         for (const targetNode of neighbors) {
             try {
                 setSelectedNode(targetNode);
-                await expandNode(targetNode);
+                await fetchAndExpandNode(targetNode);
                 // Delay to allow physics and state to settle
                 await new Promise(resolve => setTimeout(resolve, 300));
             } catch (e) {
                 console.warn(`Failed to expand node ${targetNode.id}`, e);
             }
         }
-    }, [nodes, links, expandNode]);
+    }, [nodes, links, fetchAndExpandNode]);
 
     const handleNodeClick = (node: GraphNode | null) => {
         if (!node) {
@@ -900,7 +1036,7 @@ const App: React.FC = () => {
         setSelectedNode(prev => (prev?.id === node.id ? null : node));
 
         if (node && !node.expanded) {
-            expandNode(node);
+            fetchAndExpandNode(node);
         }
     };
 
@@ -949,43 +1085,6 @@ const App: React.FC = () => {
     // Notification & Confirm State
     const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
     const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean, message: string, onConfirm: () => void } | null>(null);
-    const fetchCacheExpansion = useCallback(async (sourceId: number) => {
-        if (!cacheEnabled) return null;
-        const url = new URL("/expansion", cacheBaseUrl);
-        url.searchParams.set("sourceId", sourceId.toString());
-        try {
-            const res = await fetch(url.toString());
-            if (!res.ok) return null;
-            return res.json();
-        } catch (e) {
-            console.warn("Cache fetch failed", e);
-            return null;
-        }
-    }, [cacheEnabled, cacheBaseUrl]);
-
-    const saveCacheExpansion = useCallback(async (sourceId: number, nodesToSave: any[]) => {
-        if (!cacheEnabled) return;
-        try {
-            await fetch(new URL("/expansion", cacheBaseUrl).toString(), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    sourceId,
-                    nodes: nodesToSave.map(n => ({
-                        title: n.title || n.id,
-                        type: n.type,
-                        description: n.description || "",
-                        year: n.year || null,
-                        meta: n.meta || {},
-                        wikipedia_id: n.wikipedia_id
-                    }))
-                })
-            });
-        } catch (e) {
-            console.warn("Cache save failed", e);
-        }
-    }, [cacheEnabled, cacheBaseUrl]);
-
     useEffect(() => {
         if (notification) {
             const timer = setTimeout(() => setNotification(null), 3000);
