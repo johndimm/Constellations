@@ -4,7 +4,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
   const timeoutId = setTimeout(() => controller.abort(), 8000);
 
   const excludePatterns = [
-    'flag', 'logo', 'seal', 'emblem', 'map', 'icon', 'folder', 'ambox', 'edit-clear', 
+    'flag', 'logo', 'seal', 'emblem', 'map', 'icon', 'folder', 'ambox', 'edit-clear',
     'cartoon', 'caricature', 'drawing', 'sketch', 'illustration', 'scientist', 'person', 'outline',
     'pen', 'writing', 'stationery', 'ballpoint', 'refill', 'ink', 'graffiti', 'scribble',
     'building', 'house', 'facade', 'monument', 'statue', 'sculpture', 'medallion', 'coin',
@@ -31,7 +31,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
             if (info?.thumburl || info?.url) return info.thumburl || info.url;
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     return null;
   };
@@ -42,10 +42,10 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages|pageprops|images&titles=${encodeURIComponent(title)}&pithumbsize=500&imlimit=50&redirects=1&origin=*`;
       const res = await fetch(url, { signal });
       const data = await res.json();
-      
+
       const pages = data.query?.pages;
       if (!pages) return null;
-      
+
       const page = Object.values(pages)[0] as any;
       if (page?.pageprops && page.pageprops.disambiguation !== undefined) return null;
 
@@ -56,10 +56,10 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         const src = page.thumbnail.source.toLowerCase();
         const filename = src.split('/').pop() || '';
         if (!excludePatterns.some(p => filename.includes(p)) && !filename.includes('.svg')) {
-          candidates.push({ 
-            title: page.pageimage || filename, 
+          candidates.push({
+            title: page.pageimage || filename,
             score: 100, // Bonus for being the official thumbnail
-            url: page.thumbnail.source 
+            url: page.thumbnail.source
           });
         }
       }
@@ -104,19 +104,19 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
           if (t.includes('football') || t.includes('soccer')) s -= 800;
           if (t.includes('computer') || t.includes('scientist') || t.includes('mahout') || t.includes('hadoop') || t.includes('mapreduce')) s += 500;
         }
-        
+
         // Reward solo portraits, penalize group shots
         if (t.includes('with') || t.includes(' and ') || t.includes(' family') || t.includes(' group')) s -= 250;
-        
+
         // Bonus for matching the query words exactly in the filename
         const matches = queryWords.filter(w => t.includes(w)).length;
         s += (matches / Math.max(1, queryWords.length)) * 400;
-        
+
         // Penalty for non-JPEG/PNG (like SVG or WebM)
         if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
         if (t.includes('.jpg') || t.includes('.jpeg')) s += 100; // Increased bonus for JPEG
         if (t.includes('.png')) s -= 50; // Penalize PNGs for people (often low-res video stills)
-        
+
         // Prefer solo filenames
         const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
         s -= (wordCount * 15); // Stronger penalty for long, descriptive filenames
@@ -145,7 +145,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         const img = data.items?.[0]?.volumeInfo?.imageLinks?.thumbnail;
         return img ? img.replace('http://', 'https://') : null;
       }
-    } catch (e) {}
+    } catch (e) { }
     return null;
   };
 
@@ -158,15 +158,51 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     const initialSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;
     const initialSearchRes = await fetch(initialSearchUrl, { signal: controller.signal });
     const initialSearchData = await initialSearchRes.json();
-    
+
     let bestTitle = query;
     if (initialSearchData.query?.search?.length) {
       const results = initialSearchData.query.search;
-      const suffixes = ["(TV series)", "(film)", "(miniseries)", "(series)", "(book)", "(TV program)"];
-      const mediaResult = results.find((r: any) => 
-        suffixes.some(s => r.title.toLowerCase().includes(s.toLowerCase()))
-      );
-      bestTitle = mediaResult ? mediaResult.title : results[0].title;
+      const normalized = baseTitle.toLowerCase();
+      const avoidMedia = false; // For images, we generally allow media if it's the right title
+
+      const isMediaTitleInner = (title: string) => /\b(film|tv series|miniseries|series|movie|documentary|episode)\b/i.test(title);
+
+      const scoreResult = (r: any) => {
+        const title = r.title.toLowerCase();
+        const snippet = (r.snippet || '').toLowerCase();
+        let s = 0;
+
+        // 1. Title matching
+        if (title === normalized) {
+          s += 500;
+        } else if (title.startsWith(normalized + " (")) {
+          // Play and stage play are high-priority for these searches
+          if (title.includes("(play)") || title.includes("(stage play)")) s += 480;
+          else s += 450;
+        }
+
+        // 2. Context matching
+        if (context) {
+          const words = context.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+          words.forEach(word => {
+            if (title.includes(word)) s += 100;
+            if (snippet.includes(word)) s += 50;
+          });
+        }
+
+        // 3. Media penalties (slightly different for images)
+        const suffixesInner = ["(TV series)", "(film)", "(miniseries)", "(series)", "(movie)", "(documentary)", "(episode)"];
+        const isMedia = suffixesInner.some(suf => title.includes(suf.toLowerCase())) || isMediaTitleInner(title);
+        if (isMedia) {
+          s -= 300; // Lower penalty for images, but still favor original/play
+        }
+
+        return s;
+      };
+
+      const scored = results.map((r: any) => ({ r, score: scoreResult(r) })).sort((a, b) => b.score - a.score);
+      bestTitle = scored[0]?.r?.title || query;
+      console.log(`✅ [ImageSearch] Chosen result "${bestTitle}" with score ${scored[0]?.score ?? 'n/a'}`);
     }
 
     const directImg = await fetchPageImage(bestTitle, controller.signal);
@@ -177,7 +213,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     for (const suffix of suffixes) {
       const titleToTry = baseTitle + suffix;
       if (titleToTry === query) continue;
-      
+
       console.log(`🔍 [ImageSearch] Attempt 2 (Suffix): "${titleToTry}"`);
       const img = await fetchPageImage(titleToTry, controller.signal);
       if (img) return img;
@@ -198,20 +234,20 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         if (t.includes('poster') || t.includes('cover')) s += 300;
         if (t.includes('crop') || t.includes('head')) s += 150;
         if (t.includes('film') || t.includes('movie') || t.includes('tv') || t.includes('series')) s += 80;
-        
+
         if (t.includes('with') || t.includes(' and ') || t.includes(' family') || t.includes(' group')) s -= 250;
-        
+
         const matches = baseWords.filter(w => t.includes(w));
         if (matches.length < Math.min(2, baseWords.length)) return { res, score: -500 };
         s += (matches.length / baseWords.length) * 500;
-        
+
         if (t.includes('.jpg') || t.includes('.jpeg')) s += 100;
         if (t.includes('.png')) s -= 50;
         if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
-        
+
         const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
         s -= (wordCount * 15);
-        
+
         return { res, score: s };
       }).sort((a: any, b: any) => b.score - a.score);
 
@@ -249,7 +285,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
 export const fetchWikipediaSummary = async (query: string, context?: string): Promise<string | null> => {
   try {
     console.log(`📡 [Wiki] Fetching summary for "${query}"${context ? ` with context "${context}"` : ''}`);
-    
+
     const cleanQuery = query.replace(/\s*\(.*\)\s*/g, '').trim();
     const normalized = cleanQuery.toLowerCase();
     const summaryOverrides: Record<string, string> = {
@@ -263,7 +299,7 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl);
     const searchData = await searchRes.json();
-    
+
     let bestTitle = query;
     if (searchData.query?.search?.length) {
       const results = searchData.query.search;
@@ -272,15 +308,47 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
         const title = r.title.toLowerCase();
         const snippet = (r.snippet || '').toLowerCase();
         let s = 0;
-        if (title === normalized) s += 200;
-        if (title.includes('(film') || title.includes('(movie') || suffixes.some(suf => title.includes(suf.replace('(', '').replace(')', '').toLowerCase()))) s -= 500;
-        if (isMediaTitle(title)) s -= 400;
-        if (avoidMedia && isMediaTitle(title)) s -= 400;
+
+        // 1. Title matching (exact or with parenthetical disambiguation)
+        // e.g. "Happy Days" matches "Happy Days (play)"
+        if (title === normalized) {
+          s += 500;
+        } else if (title.startsWith(normalized + " (")) {
+          s += 450;
+        }
+
+        // 2. Context matching (e.g. "Samuel Beckett" in snippet or title)
+        if (context) {
+          const words = context.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+          words.forEach(word => {
+            if (title.includes(word)) s += 100;
+            if (snippet.includes(word)) s += 50;
+          });
+        }
+
+        // 3. Media penalties
+        const suffixes = ["(TV series)", "(film)", "(miniseries)", "(series)", "(movie)", "(documentary)", "(episode)"];
+        const isMedia = suffixes.some(suf => title.includes(suf.toLowerCase())) || isMediaTitle(title);
+        if (isMedia) {
+          if (avoidMedia) s -= 800; // Stronger penalty if we specifically want to avoid media
+          else s -= 400; // Standard penalty to favor "Thing" (e.g. the play) over the adaptation
+        }
+
+        // 4. Term scoring with whole-word matching to avoid substring accidents (e.g. "ai" in "international")
         const sportsTerms = ['football', 'soccer', 'rugby', 'cricket', 'goalkeeper', 'striker', 'club', 'fc', 'afc'];
-        if (sportsTerms.some(t => title.includes(t) || snippet.includes(t))) s -= 400;
+        sportsTerms.forEach(t => {
+          const regex = new RegExp(`\\b${t}\\b`, 'i');
+          if (regex.test(title) || regex.test(snippet)) s -= 400;
+        });
+
         const scienceTerms = ['computer', 'software', 'engineer', 'engineering', 'scientist', 'researcher', 'data', 'ai', 'machine learning', 'analytics', 'algorithm'];
-        if (scienceTerms.some(t => title.includes(t) || snippet.includes(t))) s += 250;
+        scienceTerms.forEach(t => {
+          const regex = new RegExp(`\\b${t}\\b`, 'i');
+          if (regex.test(title) || regex.test(snippet)) s += 250;
+        });
+
         if (/born\s\d{4}/.test(snippet)) s += 80;
+
         return s;
       };
 
@@ -293,7 +361,7 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
     const summaryRes = await fetch(summaryUrl);
     const summaryData = await summaryRes.json();
     const pages = summaryData.query?.pages;
-    
+
     if (pages) {
       const page = Object.values(pages)[0] as any;
       if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
@@ -306,28 +374,28 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
           const retry = await fetchWikipediaSummary(retryQuery, context);
           if (retry) return retry;
         }
-        
+
         const isGeneric = page.title.toLowerCase() === cleanQuery.toLowerCase();
         if (isGeneric && (!page.extract || page.extract.length < 150)) {
-             console.log(`⚠️ [Wiki] Summary for "${page.title}" is generic/short, searching for media-specific versions.`);
-             if (!avoidMedia) {
-                 const mediaSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(cleanQuery + " film")}&srlimit=1&origin=*`;
-                 const mediaSearchRes = await fetch(mediaSearchUrl);
-                 const mediaSearchData = await mediaSearchRes.json();
-                 if (mediaSearchData.query?.search?.[0]) {
-                     return await fetchWikipediaSummary(mediaSearchData.query.search[0].title);
-                 }
-             }
+          console.log(`⚠️ [Wiki] Summary for "${page.title}" is generic/short, searching for media-specific versions.`);
+          if (!avoidMedia) {
+            const mediaSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(cleanQuery + " film")}&srlimit=1&origin=*`;
+            const mediaSearchRes = await fetch(mediaSearchUrl);
+            const mediaSearchData = await mediaSearchRes.json();
+            if (mediaSearchData.query?.search?.[0]) {
+              return await fetchWikipediaSummary(mediaSearchData.query.search[0].title);
+            }
+          }
         }
-        
+
         if ((!page.extract || page.extract.length < 50) && cleanQuery !== query) {
-            console.log(`⚠️ [Wiki] Summary too short, trying search with clean query: "${cleanQuery}"`);
-            return await fetchWikipediaSummary(cleanQuery);
+          console.log(`⚠️ [Wiki] Summary too short, trying search with clean query: "${cleanQuery}"`);
+          return await fetchWikipediaSummary(cleanQuery);
         }
         return page.extract || null;
       }
     }
-    
+
     console.log(`❌ [Wiki] No summary found for "${bestTitle}"`);
   } catch (e) {
     console.error(`❌ [Wiki] Error fetching summary for "${query}":`, e);
