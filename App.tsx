@@ -16,6 +16,81 @@ const normalizeForDedup = (str: string) => {
         .replace(/\s+/g, ' ');   // Collapse spaces
 };
 
+const normalizeType = (t?: string) => (t || '').trim().toLowerCase();
+
+// Merge duplicate nodes (same normalized title/type) and remap links accordingly.
+const dedupeGraph = (
+    nodes: GraphNode[],
+    links: GraphLink[]
+): { nodes: GraphNode[]; links: GraphLink[] } => {
+    const dedupMap = new Map<string, GraphNode>();
+    const idRemap = new Map<number, number>();
+
+    const mergeType = (a?: string, b?: string) => {
+        const na = normalizeType(a);
+        const nb = normalizeType(b);
+        if (na === 'person') return a;
+        if (nb === 'person') return b;
+        return a || b;
+    };
+
+    const mergeNode = (existing: GraphNode, incoming: GraphNode): GraphNode => {
+        return {
+            ...existing,
+            type: mergeType(existing.type, incoming.type),
+            imageUrl: existing.imageUrl || incoming.imageUrl || undefined,
+            imageChecked: existing.imageChecked || incoming.imageChecked || !!existing.imageUrl || !!incoming.imageUrl,
+            wikiSummary: existing.wikiSummary || incoming.wikiSummary || undefined,
+            description: (existing.description && existing.description.length >= (incoming.description || '').length)
+                ? existing.description
+                : incoming.description,
+            year: existing.year ?? incoming.year,
+            expanded: existing.expanded || incoming.expanded,
+            isLoading: existing.isLoading || incoming.isLoading
+        };
+    };
+
+    nodes.forEach(n => {
+        const key = `${normalizeForDedup(n.title)}|${normalizeType(n.type)}`;
+        const existing = dedupMap.get(key);
+        if (!existing) {
+            dedupMap.set(key, n);
+            idRemap.set(n.id, n.id);
+        } else {
+            const merged = mergeNode(existing, n);
+            dedupMap.set(key, merged);
+            idRemap.set(n.id, merged.id);
+            idRemap.set(existing.id, merged.id);
+        }
+    });
+
+    const nodesOut = Array.from(dedupMap.values());
+
+    const remapId = (value: number | GraphNode) => {
+        const id = typeof value === 'number' ? value : value.id;
+        return idRemap.get(id) ?? id;
+    };
+
+    const linkSeen = new Set<string>();
+    const linksOut: GraphLink[] = [];
+    links.forEach(l => {
+        const s = remapId(l.source);
+        const t = remapId(l.target);
+        if (s === t) return; // drop self-links after remap
+        const lid = `${s}-${t}`;
+        if (linkSeen.has(lid)) return;
+        linkSeen.add(lid);
+        linksOut.push({
+            ...l,
+            source: s,
+            target: t,
+            id: lid
+        });
+    });
+
+    return { nodes: nodesOut, links: linksOut };
+};
+
 const getEnvCacheUrl = () => {
     let url = "";
     try {
@@ -268,6 +343,13 @@ const App: React.FC = () => {
             ...prev,
             nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
         }));
+        // Prevent repeated requests for the same node while a fetch is in flight
+        // by marking its image as checked during this operation.
+        const markChecked = () => setGraphData(prev => ({
+            ...prev,
+            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, imageChecked: true } : n)
+        }));
+        markChecked();
         const loadingGuard = setTimeout(() => {
             setGraphData(prev => ({
                 ...prev,
@@ -303,22 +385,23 @@ const App: React.FC = () => {
                         const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
                         const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
 
-                        const merged: GraphNode = {
-                            x: initialX,
-                            y: initialY,
-                            ...(existing || {}),
-                            id: cn.id,
-                            title: cn.title,
-                            type: cn.type,
-                            wikipedia_id: cn.wikipedia_id,
-                            description: cn.description || existing?.description || "",
-                            year: cn.year ?? existing?.year,
-                            imageUrl,
-                            wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
-                            expanded: existing?.expanded || false,
-                            isLoading: false
-                        };
-                        if (!existingNodeIds.has(cn.id)) cacheNewNodes += 1;
+                            const merged: GraphNode = {
+                                x: initialX,
+                                y: initialY,
+                                ...(existing || {}),
+                                id: cn.id,
+                                title: cn.title,
+                                type: cn.type,
+                                wikipedia_id: cn.wikipedia_id,
+                                description: cn.description || existing?.description || "",
+                                year: cn.year ?? existing?.year,
+                                imageUrl,
+                                imageChecked: !!imageUrl || existing?.imageChecked,
+                                wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
+                                expanded: existing?.expanded || false,
+                                isLoading: false
+                            };
+                            if (!existingNodeIds.has(cn.id)) cacheNewNodes += 1;
                         nodeMap.set(cn.id, merged);
                     });
                     if (nodeMap.has(node.id)) {
@@ -332,10 +415,10 @@ const App: React.FC = () => {
                         id: `${node.id}-${cn.id}`
                     })).filter(l => !existingLinkIds.has(l.id));
                     cacheNewLinks = newLinksToAdd.length;
-                    const updatedLinks = [...prev.links, ...newLinksToAdd];
+                    const combinedLinks = [...prev.links, ...newLinksToAdd];
 
                     if (cacheNewNodes === 0 && cacheNewLinks === 0) return prev;
-                    return { nodes: updatedNodes, links: updatedLinks };
+                    return dedupeGraph(updatedNodes, combinedLinks);
                 });
 
                 if (cacheNewNodes === 0 && cacheNewLinks === 0) {
@@ -343,7 +426,13 @@ const App: React.FC = () => {
                 } else {
                     console.log(`💾 [Cache] applied ${cacheNewNodes} nodes and ${cacheNewLinks} links for ${node.title}`);
                     validCached.forEach((cn, idx) => {
-                        setTimeout(() => loadNodeImage(cn.id, cn.title), 200 * idx);
+                        if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
+                            setGraphData(prev => ({
+                                ...prev,
+                                nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, imageChecked: true } : n)
+                            }));
+                            setTimeout(() => loadNodeImage(cn.id, cn.title), 200 * idx);
+                        }
                     });
                     // Allow the spinner to stay visible briefly until nodes render
                     setTimeout(() => {
@@ -424,11 +513,24 @@ const App: React.FC = () => {
                     }
                 }
 
-                // Ensure all nodes have IDs. If not from cache, assign random ones.
-                const processedNodes = nodesToUse.map(cn => ({
-                    ...cn,
-                    id: cn.id ?? Math.floor(Math.random() * 1000000)
-                }));
+                // Ensure all nodes have IDs and dedupe by normalized title to prevent duplicates (e.g., multiple Marlon Brando nodes).
+                const existingByNorm = new Map<string, GraphNode>(
+                    (nodesOverride || nodes).map(n => [normalizeForDedup(n.title), n])
+                );
+                const processedNodes = nodesToUse.map(cn => {
+                    const norm = normalizeForDedup(cn.title);
+                    const existing = existingByNorm.get(norm);
+                    const idToUse = existing ? existing.id : (cn.id ?? Math.floor(Math.random() * 1000000));
+                    if (!existing) {
+                        // Track this norm so subsequent items map to the same ID if repeated
+                        existingByNorm.set(norm, {
+                            id: idToUse,
+                            title: cn.title,
+                            type: cn.type
+                        } as GraphNode);
+                    }
+                    return { ...cn, id: idToUse };
+                });
 
                 setGraphData(prev => {
                     const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
@@ -443,6 +545,7 @@ const App: React.FC = () => {
                             description: cn.description || existing?.description || "",
                             year: cn.year ?? existing?.year,
                             imageUrl: meta.imageUrl ?? existing?.imageUrl,
+                            imageChecked: !!(meta.imageUrl ?? existing?.imageUrl) || existing?.imageChecked,
                             wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
                             x: existing?.x ?? (node.x ? node.x + (Math.random() - 0.5) * 100 : undefined),
                             y: existing?.y ?? (node.y ? node.y + (Math.random() - 0.5) * 100 : undefined),
@@ -464,11 +567,18 @@ const App: React.FC = () => {
                         id: `${node.id}-${cn.id}`
                     })).filter(l => !existingLinkIds.has(l.id));
 
-                    return { nodes: updatedNodes, links: [...prev.links, ...newLinksToAdd] };
+                    return dedupeGraph(updatedNodes, [...prev.links, ...newLinksToAdd]);
                 });
 
                 processedNodes.forEach((cn, idx) => {
-                    setTimeout(() => loadNodeImage(cn.id, cn.title), 300 * (idx + 1));
+                    if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
+                        // mark as checked to avoid duplicate requests while queued
+                        setGraphData(prev => ({
+                            ...prev,
+                            nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, imageChecked: true } : n)
+                        }));
+                        setTimeout(() => loadNodeImage(cn.id, cn.title), 300 * (idx + 1));
+                    }
                 });
                 console.log(`🔗 [Expand] Added ${processedNodes.length} nodes and ${processedNodes.length} links from expansion of ${node.title}`);
 

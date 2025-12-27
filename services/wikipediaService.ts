@@ -1,5 +1,18 @@
 
 export const fetchWikipediaImage = async (query: string, context?: string): Promise<string | null> => {
+  // Global cache to avoid repeated fetches for the same query during a session.
+  // We ignore context in the key to prevent duplicate fetches when context changes.
+  const cacheKey = query.trim().toLowerCase();
+  if (!(window as any).__wikiImageCache) (window as any).__wikiImageCache = new Map<string, string | null>();
+  const imgCache: Map<string, string | null> = (window as any).__wikiImageCache;
+  if (imgCache.has(cacheKey)) {
+    const cached = imgCache.get(cacheKey);
+    if (cached) return cached;
+    // If cached null, skip re-fetching
+    return null;
+  }
+  const setCache = (val: string | null) => imgCache.set(cacheKey, val);
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -125,10 +138,18 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       }).sort((a, b) => b.score - a.score);
 
       const best = scoredCandidates[0];
-      if (!best || best.score < -100) return null;
+      if (!best || best.score < -100) {
+        setCache(null);
+        return null;
+      }
 
-      if (best.url) return best.url;
-      return await fetchImageInfo(best.title, signal);
+      if (best.url) {
+        setCache(best.url);
+        return best.url;
+      }
+      const fetched = await fetchImageInfo(best.title, signal);
+      setCache(fetched);
+      return fetched;
 
     } catch (e) {
       console.error(`Error in fetchPageImage for ${title}:`, e);
