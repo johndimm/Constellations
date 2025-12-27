@@ -1,5 +1,8 @@
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
+import { getApiKey, getResponseText, cleanJson, withTimeout, withRetry } from "./aiUtils";
+
+export { getApiKey, getResponseText, cleanJson, withTimeout, withRetry } from "./aiUtils";
 
 const SYSTEM_INSTRUCTION = `
 You are a collaboration graph generator.
@@ -30,71 +33,9 @@ Rules:
 Return strict JSON.
 `;
 
-// Helper to safely retrieve key from various environment variable standards
-const getEnvApiKey = () => {
-  let key = "";
-  try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
-      // @ts-ignore
-      key = import.meta.env.VITE_API_KEY ||
-        // @ts-ignore
-        import.meta.env.NEXT_PUBLIC_API_KEY ||
-        // @ts-ignore
-        import.meta.env.API_KEY ||
-        "";
-    }
-  } catch (e) { }
-  if (key) return key;
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      key = process.env.VITE_API_KEY ||
-        process.env.NEXT_PUBLIC_API_KEY ||
-        process.env.REACT_APP_API_KEY ||
-        process.env.API_KEY ||
-        "";
-    }
-  } catch (e) { }
-  return key;
-};
-
-// Helper to wrap promise with timeout
-const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> => {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(errorMsg));
-    }, ms);
-
-    promise
-      .then(value => {
-        clearTimeout(timer);
-        resolve(value);
-      })
-      .catch(reason => {
-        clearTimeout(timer);
-        reject(reason);
-      });
-  });
-};
-
-const withRetry = async <T>(fn: () => Promise<T>, attempts = 2, backoffMs = 300): Promise<T> => {
-  let lastError: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      if (i < attempts - 1) {
-        const delay = backoffMs * (i + 1);
-        await new Promise(res => setTimeout(res, delay));
-      }
-    }
-  }
-  throw lastError;
-};
-
-const GEMINI_TIMEOUT_MS = 30000; // 30 seconds for heavier graph expansions
-const CLASSIFY_TIMEOUT_MS = 8000;
+// Loosened timeouts to tolerate slower responses without failing immediately.
+const GEMINI_TIMEOUT_MS = 60000; // 60 seconds for heavier graph expansions
+const CLASSIFY_TIMEOUT_MS = 15000; // 15 seconds for classification
 
 export const classifyEntity = async (term: string): Promise<{ type: string; description: string }> => {
   const normalized = term.trim().toLowerCase();
@@ -106,23 +47,32 @@ export const classifyEntity = async (term: string): Promise<{ type: string; desc
     };
   }
 
-  const apiKey = getEnvApiKey();
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    console.error("❌ [Gemini] classifyEntity: No API key found");
+    return { type: 'Event', description: '' };
+  }
+  console.log(`🧪 [Gemini] classify start`, { term, timeoutMs: CLASSIFY_TIMEOUT_MS });
   const ai = new GoogleGenAI({ apiKey });
 
   try {
-    const makeApiCall = () => ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: `Classify "${term}".
+    const prompt = `Classify "${term}".
       Return JSON with a "type" field.
       If it is a specific Person (real, fictional, alias, criminal identity, e.g. "Zodiac Killer", "Jack the Ripper"), type = "Person".
-      If it is a Movie, Event, Book, Academic Paper, Project, Place, Organization, or generic Concept, type = "Event".`,
+      If it is a Movie, Event, Book, Academic Paper, Project, Place, Organization, or generic Concept, type = "Event".`;
+    
+    console.log("🤖 [Gemini] Classify Prompt:", prompt);
+
+    const makeApiCall = () => ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
             type: { type: Type.STRING, enum: ["Person", "Event"] },
-            description: { type: Type.STRING }
+            description: { type: Type.STRING, description: "Short 1-sentence description" }
           },
           required: ["type", "description"]
         }
@@ -130,11 +80,15 @@ export const classifyEntity = async (term: string): Promise<{ type: string; desc
     });
 
     const response = await withRetry(
-      () => withTimeout<GenerateContentResponse>(makeApiCall(), CLASSIFY_TIMEOUT_MS, "Classification timed out"),
+      () => withTimeout(makeApiCall(), CLASSIFY_TIMEOUT_MS, "Classification timed out"),
       2,
       400
     );
-    const text = response.text;
+    
+    const rawText = getResponseText(response);
+    const text = cleanJson(rawText);
+    const truncatedText = text.length > 200 ? text.substring(0, 200) + "..." : text;
+    console.log("Classify response text:", truncatedText);
     if (!text) return { type: 'Event', description: '' };
     const json = JSON.parse(text);
     return { type: json.type, description: json.description || '' };
@@ -144,13 +98,24 @@ export const classifyEntity = async (term: string): Promise<{ type: string; desc
   }
 };
 
-export const fetchConnections = async (nodeName: string, context?: string, excludeNodes: string[] = [], wikiContext?: string): Promise<GeminiResponse> => {
-  const apiKey = getEnvApiKey();
+export const fetchConnections = async (nodeName: string, context?: string, excludeNodes: string[] = [], wikiContext?: string, wikipediaId?: string): Promise<GeminiResponse> => {
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    console.error("❌ [Gemini] fetchConnections: No API key found");
+    throw new Error("No API key found");
+  }
+  console.log(`🧪 [Gemini] fetchConnections start`, {
+    nodeName,
+    wikiContextPreview: wikiContext ? `${wikiContext.substring(0, 80)}…` : "none",
+    hasExclude: excludeNodes.length > 0,
+    timeoutMs: GEMINI_TIMEOUT_MS
+  });
   const ai = new GoogleGenAI({ apiKey });
 
+  const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
   const contextualPrompt = context
-    ? `Analyze: "${nodeName}" specifically in the context of "${context}".`
-    : `Analyze: "${nodeName}".`;
+    ? `Analyze: "${nodeName}"${wikiIdStr} specifically in the context of "${context}".`
+    : `Analyze: "${nodeName}"${wikiIdStr}.`;
 
   const wikiPrompt = wikiContext
     ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
@@ -161,20 +126,18 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
     : "";
 
   try {
-    console.log(`🤖 [Gemini] fetchConnections for "${nodeName}"`);
-    if (wikiContext) {
-      console.log(`📖 [Gemini] FULL Wikipedia context passed to AI:`);
-      console.log(wikiContext);
-    }
-    
-    const makeApiCall = () => ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: `${contextualPrompt}${wikiPrompt}${excludePrompt}
+    const prompt = `${contextualPrompt}${wikiPrompt}${excludePrompt}
       1. Identify the 'year' it occurred/started (integer) if applicable (e.g. release year, event date).
       2. Find 5-6 key people connected to it:
          - For TV Shows/Movies: Return the LEAD ACTORS/STARS and director/creator (prioritize main cast).
          - For Academic Papers/Books: Return the primary Authors (Co-authorship).
-         - For Events: Return key participants.`,
+         - For Events: Return key participants.`;
+    
+    console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
+    
+    const makeApiCall = () => ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -201,16 +164,19 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
     });
 
     const response = await withRetry(
-      () => withTimeout<GenerateContentResponse>(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
+      () => withTimeout(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
       2,
       600
     );
 
-    const text = response.text;
+    const rawText = getResponseText(response);
+    const text = cleanJson(rawText);
+    const truncatedText = text.length > 200 ? text.substring(0, 200) + "..." : text;
+    console.log("fetchConnections response text:", truncatedText);
     if (!text) return { people: [] };
 
     const parsed = JSON.parse(text) as GeminiResponse;
-    console.log(`✅ [Gemini] Found ${parsed.people.length} people for "${nodeName}":`, parsed.people.map(p => `${p.name} (${p.role})`));
+    console.log(`✅ [Gemini] Found ${parsed.people ? parsed.people.length : 0} people for "${nodeName}":`, (parsed.people || []).map(p => `${p.name} (${p.role})`));
     return parsed;
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -218,30 +184,42 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
   }
 };
 
-export const fetchPersonWorks = async (personName: string, excludeNodes: string[] = [], wikiContext?: string): Promise<PersonWorksResponse> => {
-  const apiKey = getEnvApiKey();
+export const fetchPersonWorks = async (personName: string, excludeNodes: string[] = [], wikiContext?: string, wikipediaId?: string): Promise<PersonWorksResponse> => {
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    console.error("❌ [Gemini] fetchPersonWorks: No API key found");
+    throw new Error("No API key found");
+  }
+  console.log(`🧪 [Gemini] fetchPersonWorks start`, {
+    personName,
+    wikiContextPreview: wikiContext ? `${wikiContext.substring(0, 80)}…` : "none",
+    hasExclude: excludeNodes.length > 0,
+    timeoutMs: GEMINI_TIMEOUT_MS
+  });
   const ai = new GoogleGenAI({ apiKey });
 
+  const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
   const wikiPrompt = wikiContext
     ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
     : "";
 
   const contextPrompt = excludeNodes.length > 0
-    ? `The user graph already contains these nodes connected to ${personName}: ${JSON.stringify(excludeNodes)}. 
+    ? `The user graph already contains these nodes connected to ${personName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}. 
        Return 6-8 significant movies, historical events, academic papers, books, or projects that are NOT the ones listed above.
        Focus on fresh, distinct connections.`
-    : `List 6-8 DISTINCT, significant movies, historical events, academic papers, books, or projects associated with "${personName}".
+    : `List 6-8 DISTINCT, significant movies, historical events, academic papers, books, or projects associated with "${personName}"${wikiIdStr}.
        If the person is an academic, list their most cited papers and books. If the person is a criminal or historical figure known for specific acts, list those acts as events.`;
 
   try {
-    console.log(`🤖 [Gemini] fetchPersonWorks for "${personName}"`);
-    if (wikiContext) console.log(`📖 [Gemini] Using Wikipedia context (first 100 chars): "${wikiContext.substring(0, 100)}..."`);
+    const prompt = `${wikiPrompt}${contextPrompt}
+      Ensure each entry is a different entity. Do NOT duplicate entities.
+      Include specific year. Sort by year.`;
+    
+    console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${personName}":`, prompt);
 
     const makeApiCall = () => ai.models.generateContent({
       model: "gemini-2.0-flash",
-      contents: `${wikiPrompt}${contextPrompt}
-      Ensure each entry is a different entity. Do NOT duplicate entities.
-      Include specific year. Sort by year.`,
+      contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -255,7 +233,7 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
                 properties: {
                   entity: { type: Type.STRING },
                   type: { type: Type.STRING },
-                  description: { type: Type.STRING },
+                  description: { type: Type.STRING, description: "Short 1-sentence description" },
                   role: { type: Type.STRING },
                   year: { type: Type.INTEGER }
                 },
@@ -269,15 +247,18 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
     });
 
     const response = await withRetry(
-      () => withTimeout<GenerateContentResponse>(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
+      () => withTimeout(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
       2,
       600
     );
 
-    const text = response.text;
+    const rawText = getResponseText(response);
+    const text = cleanJson(rawText);
+    const truncatedText = text.length > 200 ? text.substring(0, 200) + "..." : text;
+    console.log("fetchPersonWorks response text:", truncatedText);
     if (!text) return { works: [] };
     const parsed = JSON.parse(text) as PersonWorksResponse;
-    console.log(`✅ [Gemini] Found ${parsed.works.length} works for "${personName}":`, parsed.works.map(w => `${w.entity} (${w.year})`));
+    console.log(`✅ [Gemini] Found ${parsed.works ? parsed.works.length : 0} works for "${personName}":`, (parsed.works || []).map(w => `${w.entity} (${w.year})`));
     return parsed;
   } catch (error) {
     console.error("Gemini API Error (Person Works):", error);
@@ -286,7 +267,15 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
 };
 
 export const fetchConnectionPath = async (start: string, end: string, context?: { startWiki?: string; endWiki?: string }): Promise<PathResponse> => {
-  const apiKey = getEnvApiKey();
+  const apiKey = await getApiKey();
+  if (!apiKey) throw new Error("No API key found");
+  console.log(`🧪 [Gemini] fetchConnectionPath start`, {
+    start,
+    end,
+    startWikiPreview: context?.startWiki ? `${context.startWiki.substring(0, 80)}…` : "none",
+    endWikiPreview: context?.endWiki ? `${context.endWiki.substring(0, 80)}…` : "none",
+    timeoutMs: 60000
+  });
   const ai = new GoogleGenAI({ apiKey });
 
   const wikiPrompt = context
@@ -296,9 +285,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     : "";
 
   try {
-    const makeApiCall = () => ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: `${wikiPrompt}Find a valid connection path between "${start}" and "${end}".
+    const prompt = `${wikiPrompt}Find a valid connection path between "${start}" and "${end}".
             STRICT RULE: The path MUST follow an alternating sequence (Bipartite structure):
             - A "Person" MUST connect to a "Thing" (Movie, Paper, Event, Project, Book).
             - A "Thing" MUST connect to a "Person".
@@ -311,7 +298,13 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
             Prioritize "niche" or "exclusive" connections. For example, if two people both worked on a specific obscure research paper, that is a much stronger path link than if they both "participated" in a massive event like "World War II" or "The 2024 Olympics". Prefer the most direct and exclusive links possible.
             
             Return the full sequence as an ordered list, starting with "${start}" and ending with "${end}".
-            For 'justification', explain the link to the PREVIOUS node in the chain.`,
+            For 'justification', explain the link to the PREVIOUS node in the chain.`;
+    
+    console.log(`🤖 [Gemini] fetchConnectionPath Prompt:`, prompt);
+
+    const makeApiCall = () => ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -325,7 +318,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
                 properties: {
                   id: { type: Type.STRING },
                   type: { type: Type.STRING },
-                  description: { type: Type.STRING },
+                  description: { type: Type.STRING, description: "Short 1-sentence description" },
                   year: { type: Type.INTEGER },
                   justification: { type: Type.STRING, description: "Connection to the previous node" }
                 },
@@ -339,11 +332,14 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     });
 
     const response = await withRetry(
-      () => withTimeout<GenerateContentResponse>(makeApiCall(), 60000, "Pathfinding timed out"),
+      () => withTimeout(makeApiCall(), 60000, "Pathfinding timed out"),
       2,
       800
     );
-    const text = response.text;
+    
+    const rawText = getResponseText(response);
+    const text = cleanJson(rawText);
+    console.log("fetchConnectionPath response text:", text);
     if (!text) return { path: [] };
     return JSON.parse(text) as PathResponse;
 

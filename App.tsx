@@ -4,26 +4,9 @@ import ControlPanel from './components/ControlPanel';
 import Sidebar from './components/Sidebar';
 import { GraphNode, GraphLink } from './types';
 import { fetchConnections, fetchPersonWorks, classifyEntity, fetchConnectionPath } from './services/geminiService';
+import { getApiKey } from './services/aiUtils';
 import { fetchWikipediaImage, fetchWikipediaSummary } from './services/wikipediaService';
 import { Key } from 'lucide-react';
-
-const getEnvApiKey = () => {
-    let key = "";
-    try {
-        // @ts-ignore
-        if (typeof import.meta !== 'undefined' && import.meta.env) {
-            // @ts-ignore
-            key = import.meta.env.VITE_API_KEY || import.meta.env.NEXT_PUBLIC_API_KEY || import.meta.env.API_KEY || "";
-        }
-    } catch (e) { }
-    if (key) return key;
-    try {
-        if (typeof process !== 'undefined' && process.env) {
-            key = process.env.VITE_API_KEY || process.env.NEXT_PUBLIC_API_KEY || process.env.REACT_APP_API_KEY || process.env.API_KEY || "";
-        }
-    } catch (e) { }
-    return key;
-};
 
 // Normalize string for deduplication: lower case, remove 'the ', remove punctuation
 const normalizeForDedup = (str: string) => {
@@ -141,7 +124,7 @@ const App: React.FC = () => {
 
     useEffect(() => {
         const checkKey = async () => {
-            const envKey = getEnvApiKey();
+            const envKey = await getApiKey();
             if ((window as any).aistudio) {
                 const hasKey = await (window as any).aistudio.hasSelectedApiKey();
                 setIsKeyReady(hasKey || !!envKey);
@@ -276,71 +259,104 @@ const App: React.FC = () => {
 
         if (!forceMore && (node.expanded || node.isLoading)) return;
 
+        console.log(
+            `🚀 [UI] expand request`,
+            { id: node.id, title: node.title, type: node.type, forceMore, isInitial }
+        );
+
         setGraphData(prev => ({
             ...prev,
             nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
         }));
+        const loadingGuard = setTimeout(() => {
+            setGraphData(prev => ({
+                ...prev,
+                nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
+            }));
+        }, 0);
         setIsProcessing(true);
         setError(null);
 
         try {
             const nodeUpdates = new Map<number, Partial<GraphNode>>();
 
-            // Cache lookup (exact) unless forceMore
-            if (cacheEnabled && !forceMore) {
-                const cacheHit = await fetchCacheExpansion(node.id);
-                if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
-                    const cachedNodes: any[] = cacheHit.nodes;
-                    setGraphData(prev => {
-                        const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
-                        cachedNodes.forEach(cn => {
-                            const meta = cn.meta || {};
-                            const existing = nodeMap.get(cn.id);
-                            const imageUrl = meta.imageUrl ?? existing?.imageUrl;
+        // Cache lookup (exact) unless forceMore
+        if (cacheEnabled && !forceMore) {
+            const cacheHit = await fetchCacheExpansion(node.id);
+            if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
+                console.log(`💾 [Cache] exact expansion hit for node ${node.id} (${node.title}), targets=${cacheHit.nodes.length}`);
+                const cachedNodes: any[] = cacheHit.nodes;
+                const validCached = cachedNodes.filter(cn => cn.id !== node.id); // ignore self
+                let cacheNewNodes = 0;
+                let cacheNewLinks = 0;
 
-                            const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
-                            const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
+                setGraphData(prev => {
+                    const existingNodeIds = new Set(prev.nodes.map(n => n.id));
+                    const existingLinkIds = new Set(prev.links.map(l => l.id));
+                    const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
 
-                            const merged: GraphNode = {
-                                x: initialX,
-                                y: initialY,
-                                ...(existing || {}),
-                                id: cn.id,
-                                title: cn.title,
-                                type: cn.type,
-                                wikipedia_id: cn.wikipedia_id,
-                                description: cn.description || existing?.description || "",
-                                year: cn.year ?? existing?.year,
-                                imageUrl,
-                                wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
-                                expanded: existing?.expanded || false,
-                                isLoading: false
-                            };
-                            nodeMap.set(cn.id, merged);
-                        });
-                        if (nodeMap.has(node.id)) {
-                            nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false });
-                        }
-                        const updatedNodes = Array.from(nodeMap.values());
+                    validCached.forEach(cn => {
+                        const meta = cn.meta || {};
+                        const existing = nodeMap.get(cn.id);
+                        const imageUrl = meta.imageUrl ?? existing?.imageUrl;
 
-                        const existingLinkIds = new Set(prev.links.map(l => l.id));
-                        const newLinksToAdd: GraphLink[] = cachedNodes.map(cn => ({
-                            source: node.id,
-                            target: cn.id,
-                            id: `${node.id}-${cn.id}`
-                        })).filter(l => !existingLinkIds.has(l.id));
-                        const updatedLinks = [...prev.links, ...newLinksToAdd];
+                        const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
+                        const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
 
-                        return { nodes: updatedNodes, links: updatedLinks };
+                        const merged: GraphNode = {
+                            x: initialX,
+                            y: initialY,
+                            ...(existing || {}),
+                            id: cn.id,
+                            title: cn.title,
+                            type: cn.type,
+                            wikipedia_id: cn.wikipedia_id,
+                            description: cn.description || existing?.description || "",
+                            year: cn.year ?? existing?.year,
+                            imageUrl,
+                            wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
+                            expanded: existing?.expanded || false,
+                            isLoading: false
+                        };
+                        if (!existingNodeIds.has(cn.id)) cacheNewNodes += 1;
+                        nodeMap.set(cn.id, merged);
                     });
+                    if (nodeMap.has(node.id)) {
+                        nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: true });
+                    }
+                    const updatedNodes = Array.from(nodeMap.values());
 
-                    cachedNodes.forEach((cn, idx) => {
+                    const newLinksToAdd: GraphLink[] = validCached.map(cn => ({
+                        source: node.id,
+                        target: cn.id,
+                        id: `${node.id}-${cn.id}`
+                    })).filter(l => !existingLinkIds.has(l.id));
+                    cacheNewLinks = newLinksToAdd.length;
+                    const updatedLinks = [...prev.links, ...newLinksToAdd];
+
+                    if (cacheNewNodes === 0 && cacheNewLinks === 0) return prev;
+                    return { nodes: updatedNodes, links: updatedLinks };
+                });
+
+                if (cacheNewNodes === 0 && cacheNewLinks === 0) {
+                    console.log(`💾 [Cache] hit contained no new nodes/links, falling back to LLM for ${node.title}`);
+                } else {
+                    console.log(`💾 [Cache] applied ${cacheNewNodes} nodes and ${cacheNewLinks} links for ${node.title}`);
+                    validCached.forEach((cn, idx) => {
                         setTimeout(() => loadNodeImage(cn.id, cn.title), 200 * idx);
                     });
+                    // Allow the spinner to stay visible briefly until nodes render
+                    setTimeout(() => {
+                        setGraphData(prev => ({
+                            ...prev,
+                            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false } : n)
+                        }));
+                    }, 400);
                     setIsProcessing(false);
                     return;
                 }
             }
+        }
 
             // LLM fetch
             const neighborLinks = currentLinks.filter(l =>
@@ -358,15 +374,23 @@ const App: React.FC = () => {
             if (wiki.extract) {
                 nodeUpdates.set(node.id, { wikiSummary: wiki.extract, wikipedia_id: wiki.pageid?.toString() });
             }
+            console.log(`📄 [Expand] wiki summary for "${node.title}": ${wiki.extract ? wiki.extract.substring(0, 120) + '…' : 'none'} (pageid=${wiki.pageid || 'n/a'})`);
 
             let results: any[] = [];
-            if (node.type === 'Person') {
-                const data = await fetchPersonWorks(node.title, neighborNames, wiki.extract || undefined);
-                results = data.works.map(w => ({ title: w.entity, type: w.type, description: w.description, year: w.year, role: w.role }));
+            const nonPersonTypes = ['Movie', 'Event', 'Battle', 'Project', 'Company', 'Organization', 'Album', 'Song', 'Book', 'War', 'Treaty', 'Administration'];
+            const isPerson = node.type === 'Person' || !nonPersonTypes.includes(node.type);
+
+            console.log(`📡 [Expand] Expanding ${node.type}: "${node.title}" (ID: ${node.id}, WikiID: ${node.wikipedia_id || 'none'})`);
+
+            if (isPerson) {
+                const data = await fetchPersonWorks(node.title, neighborNames, wiki.extract || undefined, node.wikipedia_id);
+                results = (data.works || []).map(w => ({ title: w.entity, type: w.type, description: w.description, year: w.year, role: w.role }));
+                console.log(`✅ [Expand] Found ${results.length} works for person "${node.title}"`);
             } else {
-                const data = await fetchConnections(node.title, undefined, neighborNames, wiki.extract || undefined);
+                const data = await fetchConnections(node.title, undefined, neighborNames, wiki.extract || undefined, node.wikipedia_id);
                 if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
-                results = data.people.map(p => ({ title: p.name, type: 'Person', description: p.description, role: p.role }));
+                results = (data.people || []).map(p => ({ title: p.name, type: 'Person', description: p.description, role: p.role }));
+                console.log(`✅ [Expand] Found ${results.length} people for event "${node.title}"`);
             }
 
             if (results.length === 0) {
@@ -429,7 +453,7 @@ const App: React.FC = () => {
                     });
 
                     if (nodeMap.has(node.id)) {
-                        nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false, ...nodeUpdates.get(node.id) });
+                        nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: true, ...nodeUpdates.get(node.id) });
                     }
 
                     const updatedNodes = Array.from(nodeMap.values());
@@ -446,15 +470,26 @@ const App: React.FC = () => {
                 processedNodes.forEach((cn, idx) => {
                     setTimeout(() => loadNodeImage(cn.id, cn.title), 300 * (idx + 1));
                 });
+                console.log(`🔗 [Expand] Added ${processedNodes.length} nodes and ${processedNodes.length} links from expansion of ${node.title}`);
+
+                // Keep spinner visible until nodes have rendered
+                setTimeout(() => {
+                    setGraphData(prev => ({
+                        ...prev,
+                        nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false, ...nodeUpdates.get(node.id) } : n)
+                    }));
+                }, 500);
             }
         } catch (error) {
-            console.error("Failed to expand node", error);
-            setError("Failed to fetch connections. The AI might be busy.");
+            console.error("Failed to expand node", { nodeId: node.id, title: node.title, error });
+            const msg = (error as any)?.message || 'unknown error';
+            setError(`Failed to fetch connections: ${msg}`);
             setGraphData(prev => ({
                 ...prev,
                 nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: false } : n)
             }));
         } finally {
+            clearTimeout(loadingGuard);
             setIsProcessing(false);
         }
     }, [nodes, links, loadNodeImage, cacheEnabled, fetchCacheExpansion, saveCacheExpansion, cacheBaseUrl]);
@@ -463,13 +498,6 @@ const App: React.FC = () => {
         setIsProcessing(true);
         setError(null);
         setSearchId(prev => prev + 1);
-
-        const apiKey = getEnvApiKey();
-        if (!apiKey) {
-            setError("No API key found. Please select an API key first.");
-            setIsProcessing(false);
-            return;
-        }
 
         try {
             console.log(`🔎 Starting search for: "${term}"`);
@@ -480,7 +508,8 @@ const App: React.FC = () => {
             
             // 2. Get Wikipedia metadata
             const wiki = await fetchWikipediaSummary(term);
-            console.log(`Wiki summary found: ${!!wiki.extract}`);
+            const truncatedWiki = wiki.extract ? (wiki.extract.length > 100 ? wiki.extract.substring(0, 100) + "..." : wiki.extract) : "none";
+            console.log(`Wiki summary: "${truncatedWiki}"`);
             
             // 3. Upsert to DB to get serial ID
             let nodeId: number = -1;
@@ -586,13 +615,6 @@ const App: React.FC = () => {
         // Clear screen first as requested
         setGraphData({ nodes: [], links: [] });
         setSelectedNode(null);
-
-        const apiKey = getEnvApiKey();
-        if (!apiKey) {
-            setError("No API key found. Please select an API key first.");
-            setIsProcessing(false);
-            return;
-        }
 
         try {
             console.log(`🛤️ Finding path from "${start}" to "${end}"`);
@@ -1036,6 +1058,7 @@ const App: React.FC = () => {
         setSelectedNode(prev => (prev?.id === node.id ? null : node));
 
         if (node && !node.expanded) {
+            console.log(`🖱️ [UI] node clicked -> expand`, { id: node.id, title: node.title, type: node.type });
             fetchAndExpandNode(node);
         }
     };
