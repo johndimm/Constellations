@@ -468,11 +468,11 @@ const Graph: React.FC<GraphProps> = ({
         const hasHighlight = keepHighlight.size > 0 || dropHighlight.size > 0;
 
         // Pre-calculate neighbor set for the focused node to make the loop more efficient and robust
-        const neighborIds = new Set<number>();
+        const neighborIds = new Set<string | number>();
         if (effectiveFocused) {
             links.forEach(l => {
-                const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source as number;
-                const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target as number;
+                const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
+                const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
                 if (sId === effectiveFocused.id) neighborIds.add(tId);
                 else if (tId === effectiveFocused.id) neighborIds.add(sId);
             });
