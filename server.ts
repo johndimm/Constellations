@@ -66,6 +66,24 @@ async function ensureSchema() {
         needsRecreate = true;
       }
     }
+    if (!needsRecreate) {
+      try {
+        const res = await client.query(`
+          select is_nullable, coalesce(column_default,'') as column_default
+          from information_schema.columns
+          where table_name = 'nodes' and column_name = 'wikipedia_id'
+          limit 1
+        `);
+        const row = res.rows[0];
+        if (!row || row.is_nullable === 'YES') {
+          console.log("Column 'wikipedia_id' is nullable or missing default. Recreating schema.");
+          needsRecreate = true;
+        }
+      } catch (e: any) {
+        console.log("Column 'wikipedia_id' check failed. Recreating schema.");
+        needsRecreate = true;
+      }
+    }
 
     if (needsRecreate) {
       console.log("Dropping old tables...");
@@ -97,7 +115,7 @@ create table if not exists nodes (
   id serial primary key,
   title text not null,
   type text not null,
-  wikipedia_id text,
+  wikipedia_id text not null default '',
   description text,
   year int,
   image_url text,
@@ -118,6 +136,7 @@ create table if not exists edges (
 
 create index if not exists edges_person_idx on edges (person_id);
 create index if not exists edges_event_idx on edges (event_id);
+create unique index if not exists nodes_title_type_wiki_idx on nodes (lower(title), type, wikipedia_id);
 `;
 
 // Upsert nodes batch and return mapping of (title, type, wikipedia_id) -> id
@@ -128,6 +147,8 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
   
   for (const n of nodes) {
     const meta = n.meta || {};
+    const wikiId = (n.wikipedia_id || n.wikipediaId || "").toString().trim();
+    const normalizedWikiId = wikiId || "";
     const imageUrl = meta.imageUrl || n.imageUrl || n.image_url || null;
     const wikiSummary = meta.wikiSummary || n.wikiSummary || n.wiki_summary || null;
     const sql = `
@@ -148,7 +169,7 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
       n.description ?? null,
       n.year ?? null,
       meta,
-      n.wikipedia_id ?? null,
+      normalizedWikiId,
       imageUrl,
       wikiSummary
     ]);

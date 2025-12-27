@@ -303,7 +303,17 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
   return null;
 };
 
-export const fetchWikipediaSummary = async (query: string, context?: string): Promise<{ extract: string | null; pageid: number | null; title: string | null }> => {
+export const fetchWikipediaSummary = async (
+  query: string,
+  context?: string,
+  visited: Set<string> = new Set(),
+  depth: number = 0
+): Promise<{ extract: string | null; pageid: number | null; title: string | null }> => {
+  const normKey = query.trim().toLowerCase();
+  if (visited.has(normKey) || depth > 2) {
+    return { extract: null, pageid: null, title: null };
+  }
+  visited.add(normKey);
   try {
     console.log(`📡 [Wiki] Fetching summary for "${query}"${context ? ` with context "${context}"` : ''}`);
 
@@ -443,7 +453,7 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
         if (avoidMedia && isMediaTitle(page.title)) {
           const retryQuery = `${cleanQuery} ${context || 'person'}`;
           console.log(`⚠️ [Wiki] Media page returned for "${cleanQuery}". Retrying with "${retryQuery}".`);
-          const retry = await fetchWikipediaSummary(retryQuery, context);
+          const retry = await fetchWikipediaSummary(retryQuery, context, visited, depth + 1);
           if (retry.extract) return retry;
         }
 
@@ -455,14 +465,14 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
             const mediaSearchRes = await fetch(mediaSearchUrl);
             const mediaSearchData = await mediaSearchRes.json();
             if (mediaSearchData.query?.search?.[0]) {
-              return await fetchWikipediaSummary(mediaSearchData.query.search[0].title);
+              return await fetchWikipediaSummary(mediaSearchData.query.search[0].title, context, visited, depth + 1);
             }
           }
         }
 
         if ((!finalExtract || finalExtract.length < 50) && cleanQuery !== query) {
           console.log(`⚠️ [Wiki] Summary too short, trying search with clean query: "${cleanQuery}"`);
-          return await fetchWikipediaSummary(cleanQuery);
+          return await fetchWikipediaSummary(cleanQuery, context, visited, depth + 1);
         }
         return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null };
       }
