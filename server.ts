@@ -40,6 +40,20 @@ const pool = new Pool({
   ssl: sslConfig
 });
 
+// Ensure schema exists on startup (safe to run repeatedly).
+async function ensureSchema() {
+  const client = await pool.connect();
+  try {
+    await client.query(initSql);
+    console.log("Schema ready.");
+  } catch (e) {
+    console.error("Schema init failed", e);
+  } finally {
+    client.release();
+  }
+}
+ensureSchema();
+
 const app = express();
 app.use(cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
 app.options("*", cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
