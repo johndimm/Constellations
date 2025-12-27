@@ -341,11 +341,33 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
           if (regex.test(title) || regex.test(snippet)) s -= 400;
         });
 
-        const scienceTerms = ['computer', 'software', 'engineer', 'engineering', 'scientist', 'researcher', 'data', 'ai', 'machine learning', 'analytics', 'algorithm'];
+        const scienceTerms = ['computer', 'software', 'engineer', 'engineering', 'scientist', 'researcher', 'data', 'ai', 'machine learning', 'analytics', 'algorithm', 'ircam', 'cnmat', 'music', 'acoustics', 'composer', 'composition'];
+        let hasScienceContext = false;
+        if (context) {
+          const lowerContext = context.toLowerCase();
+          hasScienceContext = scienceTerms.some(t => lowerContext.includes(t));
+        }
+
         scienceTerms.forEach(t => {
           const regex = new RegExp(`\\b${t}\\b`, 'i');
           if (regex.test(title) || regex.test(snippet)) s += 250;
         });
+
+        const journalismTerms = ['journalist', 'reporter', 'correspondent', 'columnist', 'newspaper', 'wsj', 'economics', 'political', 'brookings'];
+        let isJournalism = false;
+        journalismTerms.forEach(t => {
+          const regex = new RegExp(`\\b${t}\\b`, 'i');
+          if (regex.test(title) || regex.test(snippet)) {
+            s -= 100; // Small general penalty
+            isJournalism = true;
+          }
+        });
+
+        // Strong penalty for Journalism vs Science/Music context collision
+        // (Fixes David Wessel the journalist vs David Wessel the IRCAM researcher)
+        if (hasScienceContext && isJournalism) {
+          s -= 2000;
+        }
 
         if (/born\s\d{4}/.test(snippet)) s += 80;
 
@@ -354,6 +376,18 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
 
       const scored = results.map((r: any) => ({ r, score: scoreResult(r) })).sort((a, b) => b.score - a.score);
       bestTitle = scored[0]?.r?.title || query;
+
+      // Safety Check: Ensure the chosen title is actually similar to the query name
+      // This prevents "Roger Reynolds" from replacing "David Wessel" just because of context score
+      const queryNameParts = cleanQuery.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const titleNameParts = bestTitle.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const hasOverlap = queryNameParts.some(q => titleNameParts.some(t => t.includes(q) || q.includes(t)));
+
+      if (!hasOverlap && scored[0]?.score < 2000) { // Allow extremely high confidence matches (rare) to bypass
+        console.log(`⚠️ [Wiki] Rejected "${bestTitle}" due to name mismatch with "${cleanQuery}" (Score: ${scored[0]?.score})`);
+        return null;
+      }
+
       console.log(`✅ [Wiki] Chosen result "${bestTitle}" with score ${scored[0]?.score ?? 'n/a'}`);
     }
 
