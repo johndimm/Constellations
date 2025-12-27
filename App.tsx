@@ -18,6 +18,12 @@ const normalizeForDedup = (str: string) => {
 
 const normalizeType = (t?: string) => (t || '').trim().toLowerCase();
 
+const dedupeKey = (title: string, type?: string, wikipediaId?: string | null) => {
+    const normType = normalizeType(type);
+    if (wikipediaId) return `wiki|${wikipediaId}|${normType}`;
+    return `${normalizeForDedup(title)}|${normType}`;
+};
+
 // Merge duplicate nodes (same normalized title/type) and remap links accordingly.
 const dedupeGraph = (
     nodes: GraphNode[],
@@ -51,7 +57,7 @@ const dedupeGraph = (
     };
 
     nodes.forEach(n => {
-        const key = `${normalizeForDedup(n.title)}|${normalizeType(n.type)}`;
+        const key = dedupeKey(n.title, n.type, n.wikipedia_id);
         const existing = dedupMap.get(key);
         if (!existing) {
             dedupMap.set(key, n);
@@ -515,10 +521,10 @@ const App: React.FC = () => {
 
                 // Ensure all nodes have IDs and dedupe by normalized title to prevent duplicates (e.g., multiple Marlon Brando nodes).
                 const existingByNorm = new Map<string, GraphNode>(
-                    (nodesOverride || nodes).map(n => [normalizeForDedup(n.title), n])
+                    (nodesOverride || nodes).map(n => [dedupeKey(n.title, n.type, n.wikipedia_id), n])
                 );
                 const processedNodes = nodesToUse.map(cn => {
-                    const norm = normalizeForDedup(cn.title);
+                    const norm = dedupeKey(cn.title, cn.type, cn.wikipedia_id);
                     const existing = existingByNorm.get(norm);
                     const idToUse = existing ? existing.id : (cn.id ?? Math.floor(Math.random() * 1000000));
                     if (!existing) {
