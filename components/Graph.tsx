@@ -15,8 +15,8 @@ interface GraphProps {
     isTextOnly?: boolean;
     searchId?: number;
     selectedNode?: GraphNode | null;
-    highlightKeepIds?: string[];
-    highlightDropIds?: string[];
+    highlightKeepIds?: number[];
+    highlightDropIds?: number[];
 }
 
 const Graph: React.FC<GraphProps> = ({
@@ -255,10 +255,10 @@ const Graph: React.FC<GraphProps> = ({
         if (isTimelineMode) {
             const timelineNodes = nodes
                 .filter(n => n.year !== undefined)
-                .sort((a, b) => (Number(a.year ?? 0) - Number(b.year ?? 0)) || a.id.localeCompare(b.id));
+                .sort((a, b) => (Number(a.year ?? 0) - Number(b.year ?? 0)) || (a.id - b.id));
 
-            const nodeIndexMap = new Map<string, number>(
-                timelineNodes.map((n, i) => [n.id, i] as [string, number])
+            const nodeIndexMap = new Map<number, number>(
+                timelineNodes.map((n, i) => [n.id, i] as [number, number])
             );
             const itemSpacing = 240;
             const totalWidth = timelineNodes.length * itemSpacing;
@@ -325,8 +325,8 @@ const Graph: React.FC<GraphProps> = ({
             })
             .map(link => ({
                 ...link,
-                source: typeof link.source === 'object' ? (link.source as GraphNode).id : (link.source as string),
-                target: typeof link.target === 'object' ? (link.target as GraphNode).id : (link.target as string)
+                source: typeof link.source === 'object' ? (link.source as GraphNode).id : link.source,
+                target: typeof link.target === 'object' ? (link.target as GraphNode).id : link.target
             }));
 
         const linkSel = container.selectAll<SVGPathElement, GraphLink>(".link").data(validLinks, d => d.id);
@@ -361,11 +361,11 @@ const Graph: React.FC<GraphProps> = ({
 
         const defs = nodeEnter.append("defs");
         defs.append("clipPath")
-            .attr("id", d => `clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`)
+            .attr("id", d => `clip-circle-${String(d.id)}`)
             .append("circle").attr("cx", 0).attr("cy", 0);
 
         defs.append("clipPath")
-            .attr("id", d => `clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`)
+            .attr("id", d => `clip-rect-${String(d.id)}`)
             .append("rect").attr("x", 0).attr("y", 0);
 
         nodeEnter.append("image").style("pointer-events", "none").attr("preserveAspectRatio", "xMidYMid slice");
@@ -468,13 +468,13 @@ const Graph: React.FC<GraphProps> = ({
         const hasHighlight = keepHighlight.size > 0 || dropHighlight.size > 0;
 
         // Pre-calculate neighbor set for the focused node to make the loop more efficient and robust
-        const neighborIds = new Set<string>();
+        const neighborIds = new Set<number>();
         if (effectiveFocused) {
             links.forEach(l => {
-                const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
-                const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
-                if (sId === effectiveFocused.id) neighborIds.add(tId as string);
-                else if (tId === effectiveFocused.id) neighborIds.add(sId as string);
+                const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source as number;
+                const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target as number;
+                if (sId === effectiveFocused.id) neighborIds.add(tId);
+                else if (tId === effectiveFocused.id) neighborIds.add(sId);
             });
         }
 
@@ -516,11 +516,11 @@ const Graph: React.FC<GraphProps> = ({
                 const r = dims.w / 2;
                 g.select(".node-circle").style("display", "block").attr("r", r).attr("fill", color).attr("stroke", strokeColor).attr("stroke-width", strokeWidth);
                 g.select("image").style("display", (d.imageUrl && !isTextOnly) ? "block" : "none").attr("href", d.imageUrl || "").attr("x", -r).attr("y", -r).attr("width", r * 2).attr("height", r * 2)
-                    .attr("clip-path", `url(#clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`);
-                g.select(`#clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("circle").attr("r", r);
+                    .attr("clip-path", `url(#clip-circle-${String(d.id)})`);
+                g.select(`#clip-circle-${String(d.id)}`).select("circle").attr("r", r);
 
                 const labelText = g.select(".node-label").text(null).attr("y", r + 15);
-                wrapText(d.id, 90).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", "10px").text(line));
+                wrapText(d.title, 90).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", "10px").text(line));
                 g.select(".year-label").text(d.year || "").attr("y", -r - 10).style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
 
             } else {
@@ -528,8 +528,8 @@ const Graph: React.FC<GraphProps> = ({
                 g.select(".node-rect").style("display", "block").attr("width", w).attr("height", h).attr("x", -w / 2).attr("y", -h / 2).attr("fill", color).attr("stroke", strokeColor).attr("stroke-width", strokeWidth);
 
                 if (dims.type === 'box' && d.imageUrl && !isTextOnly) {
-                    g.select("image").style("display", "block").attr("href", d.imageUrl).attr("x", -w / 2).attr("y", -h / 2).attr("width", w).attr("height", h).attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`);
-                    g.select(`#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("rect").attr("x", -w / 2).attr("y", -h / 2).attr("width", w).attr("height", h);
+                    g.select("image").style("display", "block").attr("href", d.imageUrl).attr("x", -w / 2).attr("y", -h / 2).attr("width", w).attr("height", h).attr("clip-path", `url(#clip-rect-${String(d.id)})`);
+                    g.select(`#clip-rect-${String(d.id)}`).select("rect").attr("x", -w / 2).attr("y", -h / 2).attr("width", w).attr("height", h);
                 } else {
                     g.select("image").style("display", "none");
                 }
@@ -540,8 +540,8 @@ const Graph: React.FC<GraphProps> = ({
                     const imgY = -h / 2;
                     textY = imgY + imgH + 15;
                     if (imgH > 0) {
-                        g.select("image").style("display", "block").attr("href", d.imageUrl || "").attr("x", -w / 2).attr("y", imgY).attr("width", w).attr("height", imgH).attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`);
-                        g.select(`#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("rect").attr("x", -w / 2).attr("y", imgY).attr("width", w).attr("height", imgH);
+                        g.select("image").style("display", "block").attr("href", d.imageUrl || "").attr("x", -w / 2).attr("y", imgY).attr("width", w).attr("height", imgH).attr("clip-path", `url(#clip-rect-${String(d.id)})`);
+                        g.select(`#clip-rect-${String(d.id)}`).select("rect").attr("x", -w / 2).attr("y", imgY).attr("width", w).attr("height", imgH);
                     }
                     const descText = g.select(".node-desc").style("display", "block").attr("y", textY + 40);
                     descText.selectAll("tspan").remove();
@@ -549,7 +549,7 @@ const Graph: React.FC<GraphProps> = ({
                 }
 
                 const labelText = g.select(".node-label").text(null).attr("y", textY);
-                wrapText(d.id, dims.type === 'card' ? 200 : 100).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", dims.type === 'card' ? "13px" : "10px").style("font-weight", dims.type === 'card' ? "bold" : "normal").text(line));
+                wrapText(d.title, dims.type === 'card' ? 200 : 100).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", dims.type === 'card' ? "13px" : "10px").style("font-weight", dims.type === 'card' ? "bold" : "normal").text(line));
                 g.select(".year-label").text(d.year || "").attr("y", -h / 2 - 10).style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
             }
             g.select(".spinner-group").style("display", d.isLoading ? "block" : "none")

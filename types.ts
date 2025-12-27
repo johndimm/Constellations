@@ -1,8 +1,10 @@
 import { SimulationNodeDatum, SimulationLinkDatum } from 'd3';
 
 export interface GraphNode extends SimulationNodeDatum {
-  id: string; // The unique name of the event/project/thing/person
+  id: number; // Sequential serial ID
+  title: string; // The name of the event/project/thing/person
   type: string; // 'Person', 'Movie', 'Battle', etc.
+  wikipedia_id?: string;
   description?: string;
   imageUrl?: string | null; // URL for the node image
   year?: number; // Year of occurrence (for timeline view)
@@ -22,8 +24,8 @@ export interface GraphNode extends SimulationNodeDatum {
 }
 
 export interface GraphLink extends SimulationLinkDatum<GraphNode> {
-  source: string | GraphNode;
-  target: string | GraphNode;
+  source: number | GraphNode;
+  target: number | GraphNode;
   id: string; // Unique link ID
   label?: string; // Role or connection description
 }
