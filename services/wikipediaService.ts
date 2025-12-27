@@ -282,7 +282,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
   return null;
 };
 
-export const fetchWikipediaSummary = async (query: string, context?: string): Promise<string | null> => {
+export const fetchWikipediaSummary = async (query: string, context?: string): Promise<{ extract: string | null; pageid: number | null; title: string | null }> => {
   try {
     console.log(`📡 [Wiki] Fetching summary for "${query}"${context ? ` with context "${context}"` : ''}`);
 
@@ -291,7 +291,7 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
     const summaryOverrides: Record<string, string> = {
       "ted dunning": "Ted Dunning is a computer scientist, software architect, and machine learning expert known for his work on streaming algorithms, Mahout, and real-time analytics."
     };
-    if (summaryOverrides[normalized]) return summaryOverrides[normalized];
+    if (summaryOverrides[normalized]) return { extract: summaryOverrides[normalized], pageid: null, title: query };
     const searchQuery = context ? `${cleanQuery} ${context}` : query;
     const avoidMedia = /\b(project|program|programme|operation|war|battle|campaign|treaty|scandal|scientist)\b/i.test(cleanQuery);
     const isMediaTitle = (title: string) => /\b(film|tv series|miniseries|series|movie|documentary|episode)\b/i.test(title);
@@ -303,21 +303,19 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
     let bestTitle = query;
     if (searchData.query?.search?.length) {
       const results = searchData.query.search;
-      const suffixes = ["(TV series)", "(film)", "(miniseries)", "(series)", "(book)", "(TV program)"];
       const scoreResult = (r: any) => {
         const title = r.title.toLowerCase();
         const snippet = (r.snippet || '').toLowerCase();
         let s = 0;
 
         // 1. Title matching (exact or with parenthetical disambiguation)
-        // e.g. "Happy Days" matches "Happy Days (play)"
         if (title === normalized) {
-          s += 1000; // Increased from 500 to ensure it beats context bias
+          s += 1000;
         } else if (title.startsWith(normalized + " (")) {
           s += 450;
         }
 
-        // 2. Context matching (e.g. "Samuel Beckett" in snippet or title)
+        // 2. Context matching
         if (context) {
           const words = context.toLowerCase().split(/\s+/).filter(w => w.length > 2);
           words.forEach(word => {
@@ -330,11 +328,11 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
         const suffixes = ["(TV series)", "(film)", "(miniseries)", "(series)", "(movie)", "(documentary)", "(episode)"];
         const isMedia = suffixes.some(suf => title.includes(suf.toLowerCase())) || isMediaTitle(title);
         if (isMedia) {
-          if (avoidMedia) s -= 800; // Stronger penalty if we specifically want to avoid media
-          else s -= 400; // Standard penalty to favor "Thing" (e.g. the play) over the adaptation
+          if (avoidMedia) s -= 800;
+          else s -= 400;
         }
 
-        // 4. Term scoring with whole-word matching
+        // 4. Term scoring
         const sportsTerms = ['football', 'soccer', 'rugby', 'cricket', 'goalkeeper', 'striker', 'club', 'fc', 'afc', 'baseball', 'mlb', 'pcl', 'outfield', 'pitcher'];
         sportsTerms.forEach(t => {
           const regex = new RegExp(`\\b${t}\\b`, 'i');
@@ -358,13 +356,11 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
         journalismTerms.forEach(t => {
           const regex = new RegExp(`\\b${t}\\b`, 'i');
           if (regex.test(title) || regex.test(snippet)) {
-            s -= 100; // Small general penalty
+            s -= 100;
             isJournalism = true;
           }
         });
 
-        // Strong penalty for Journalism vs Science/Music context collision
-        // (Fixes David Wessel the journalist vs David Wessel the IRCAM researcher)
         if (hasScienceContext && isJournalism) {
           s -= 2000;
         }
@@ -377,15 +373,13 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
       const scored = results.map((r: any) => ({ r, score: scoreResult(r) })).sort((a, b) => b.score - a.score);
       bestTitle = scored[0]?.r?.title || query;
 
-      // Safety Check: Ensure the chosen title is actually similar to the query name
-      // This prevents "Roger Reynolds" from replacing "David Wessel" just because of context score
       const queryNameParts = cleanQuery.toLowerCase().split(/\s+/).filter(w => w.length > 2);
       const titleNameParts = bestTitle.toLowerCase().split(/\s+/).filter(w => w.length > 2);
       const hasOverlap = queryNameParts.some(q => titleNameParts.some(t => t.includes(q) || q.includes(t)));
 
-      if (!hasOverlap && scored[0]?.score < 2000) { // Allow extremely high confidence matches (rare) to bypass
+      if (!hasOverlap && (scored[0]?.score || 0) < 2000) {
         console.log(`⚠️ [Wiki] Rejected "${bestTitle}" due to name mismatch with "${cleanQuery}" (Score: ${scored[0]?.score})`);
-        return null;
+        return { extract: null, pageid: null, title: null };
       }
 
       console.log(`✅ [Wiki] Chosen result "${bestTitle}" with score ${scored[0]?.score ?? 'n/a'}`);
@@ -401,12 +395,11 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
       if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
         console.log(`✅ [Wiki] Found summary for "${page.title}" (${page.extract?.length || 0} chars)`);
 
-        // If we wanted a non-media entity but got a film/series, retry with a stronger query
         if (avoidMedia && isMediaTitle(page.title)) {
           const retryQuery = `${cleanQuery} ${context || 'person'}`;
           console.log(`⚠️ [Wiki] Media page returned for "${cleanQuery}". Retrying with "${retryQuery}".`);
           const retry = await fetchWikipediaSummary(retryQuery, context);
-          if (retry) return retry;
+          if (retry.extract) return retry;
         }
 
         const isGeneric = page.title.toLowerCase() === cleanQuery.toLowerCase();
@@ -426,7 +419,7 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
           console.log(`⚠️ [Wiki] Summary too short, trying search with clean query: "${cleanQuery}"`);
           return await fetchWikipediaSummary(cleanQuery);
         }
-        return page.extract || null;
+        return { extract: page.extract || null, pageid: page.pageid || null, title: page.title || null };
       }
     }
 
@@ -434,5 +427,5 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
   } catch (e) {
     console.error(`❌ [Wiki] Error fetching summary for "${query}":`, e);
   }
-  return null;
+  return { extract: null, pageid: null, title: null };
 };

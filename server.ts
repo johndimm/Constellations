@@ -13,6 +13,7 @@ const envPaths = [path.join(__dirname, ".env.local"), path.join(__dirname, ".env
 const dotenv = await import("dotenv");
 envPaths.forEach(p => {
   if (fs.existsSync(p)) {
+    console.log(`Loading env from: ${p}`);
     dotenv.config({ path: p });
   }
 });
@@ -40,20 +41,34 @@ const pool = new Pool({
   ssl: sslConfig
 });
 
+console.log(`Connecting to database: ${process.env.PGDATABASE || (process.env.DATABASE_URL ? "URL provided" : "default")}`);
+
 // Ensure schema exists on startup (safe to run repeatedly).
 async function ensureSchema() {
+  console.log("Checking schema...");
   const client = await pool.connect();
   try {
-    // Check for schema mismatch (missing context_id)
+    // Check for schema mismatch
+    let needsRecreate = false;
     try {
-      await client.query("select context_id from edges limit 1");
+      await client.query("select person_id from edges limit 1");
+      console.log("Column 'person_id' exists.");
     } catch (e: any) {
-      console.log("Schema check failed (likely missing column or table). Recreating schema.");
-      await client.query("drop table if exists edges cascade");
+      console.log("Column 'person_id' missing or table 'edges' missing. Recreating schema.");
+      needsRecreate = true;
     }
 
-    await client.query(initSql);
-    console.log("Schema ready.");
+    if (needsRecreate) {
+      console.log("Dropping old tables...");
+      await client.query("drop table if exists edges cascade");
+      await client.query("drop table if exists nodes cascade");
+      await client.query(initSql);
+      console.log("Schema recreated successfully.");
+    } else {
+      // Even if person_id exists, ensure other tables/indexes are there
+      await client.query(initSql);
+      console.log("Schema is up to date.");
+    }
   } catch (e) {
     console.error("Schema init failed", e);
   } finally {
@@ -67,84 +82,75 @@ app.use(cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"], allowedHeaders:
 app.options("*", cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
 app.use(bodyParser.json());
 
-// Helpers
-const sha1 = (val: string) => crypto.createHash("sha1").update(val).digest("hex");
-
-// Schema initializer (run once manually or call this endpoint once)
+// Schema initializer
 const initSql = `
 create table if not exists nodes (
-  id text primary key,
+  id serial primary key,
+  title text not null,
   type text not null,
+  wikipedia_id text,
   description text,
   year int,
   meta jsonb default '{}'::jsonb,
-  updated_at timestamptz default now()
+  updated_at timestamptz default now(),
+  unique(title, type, wikipedia_id)
 );
 
 create table if not exists edges (
-  source_id text not null references nodes(id) on delete cascade,
-  target_id text not null references nodes(id) on delete cascade,
-  context_fingerprint text not null,
-  context_ids text[] not null default '{}',
-  context_id text references nodes(id) on delete set null,
+  id serial primary key,
+  person_id int not null references nodes(id) on delete cascade,
+  event_id int not null references nodes(id) on delete cascade,
+  label text,
   updated_at timestamptz default now(),
-  primary key (source_id, target_id, context_fingerprint)
+  unique(person_id, event_id)
 );
 
-create index if not exists edges_source_idx on edges (source_id);
-create index if not exists edges_target_idx on edges (target_id);
-create index if not exists edges_context_idx on edges (context_id);
+create index if not exists edges_person_idx on edges (person_id);
+create index if not exists edges_event_idx on edges (event_id);
 `;
 
-// Upsert nodes batch
-async function upsertNodes(client: pg.PoolClient, nodes: any[]) {
-  if (!nodes.length) return;
-  const values = nodes.map((n, i) => `($${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`).join(",");
-  const params: any[] = [];
-  nodes.forEach(n => {
-    params.push(n.id, n.type, n.description ?? null, n.year ?? null, n.meta ?? {});
-  });
-  const sql = `
-    insert into nodes (id, type, description, year, meta)
-    values ${values}
-    on conflict (id) do update
-    set type = excluded.type,
-        description = coalesce(excluded.description, nodes.description),
-        year = coalesce(excluded.year, nodes.year),
-        meta = coalesce(nodes.meta, '{}'::jsonb) || coalesce(excluded.meta, '{}'::jsonb),
-        updated_at = now();
-  `;
-  await client.query(sql, params);
+// Upsert nodes batch and return mapping of (title, type, wikipedia_id) -> id
+async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<string, number>> {
+  if (!nodes.length) return new Map();
+  
+  const idMap = new Map<string, number>();
+  
+  for (const n of nodes) {
+    const sql = `
+      insert into nodes (title, type, description, year, meta, wikipedia_id)
+      values ($1, $2, $3, $4, $5, $6)
+      on conflict (title, type, wikipedia_id) do update
+      set description = coalesce(excluded.description, nodes.description),
+          year = coalesce(excluded.year, nodes.year),
+          meta = coalesce(nodes.meta, '{}'::jsonb) || coalesce(excluded.meta, '{}'::jsonb),
+          updated_at = now()
+      returning id;
+    `;
+    const res = await client.query(sql, [
+      n.title || n.id, // n.id might be the title in old code
+      n.type,
+      n.description ?? null,
+      n.year ?? null,
+      n.meta ?? {},
+      n.wikipedia_id ?? null
+    ]);
+    const key = `${n.title || n.id}|${n.type}|${n.wikipedia_id || ''}`;
+    idMap.set(key, res.rows[0].id);
+  }
+  
+  return idMap;
 }
 
-async function upsertEdge(client: pg.PoolClient, source_id: string, targets: string[], context_fingerprint: string, context_ids: string[]) {
-  if (!targets.length) return;
-  // Upsert each edge individually
-  // We want to avoid creating a massive single query string if targets is large, but batching is better than loop.
-  // For standard expansion (size ~10), a single statement is fine.
-  const values = targets.map((_, i) => `($1, $${i + 5}, $2, $3, $4)`).join(",");
-
-  // Extract single context_id if available
-  const context_id = context_ids.length === 1 ? context_ids[0] : null;
-
-  // params: source_id, context_fingerprint, context_ids, context_id, t1, t2, t3...
-  const params = [source_id, context_fingerprint, context_ids, context_id, ...targets];
-
+async function upsertEdge(client: pg.PoolClient, personId: number, eventId: number, label?: string) {
   await client.query(
     `
-      insert into edges (source_id, target_id, context_fingerprint, context_ids, context_id)
-      values ${values}
-      on conflict (source_id, target_id, context_fingerprint) do update
-      set context_ids = excluded.context_ids, context_id = excluded.context_id, updated_at = now();
+      insert into edges (person_id, event_id, label)
+      values ($1, $2, $3)
+      on conflict (person_id, event_id) do update
+      set label = coalesce(excluded.label, edges.label), updated_at = now();
     `,
-    params
+    [personId, eventId, label || null]
   );
-}
-
-function jaccard(a: Set<string>, b: Set<string>) {
-  const inter = new Set([...a].filter(x => b.has(x)));
-  const union = new Set([...a, ...b]);
-  return union.size === 0 ? 0 : inter.size / union.size;
 }
 
 // Routes
@@ -153,20 +159,8 @@ app.get("/health", (_, res) => res.json({ ok: true }));
 app.post("/init", async (_, res) => {
   const client = await pool.connect();
   try {
-    // Check for schema mismatch (missing context_id or old targets column) and drop if present
-    try {
-      const check = await client.query("select column_name from information_schema.columns where table_name='edges' and column_name='context_id'");
-      if (check.rowCount === 0) {
-        console.log("Old schema detected (missing context_id). Dropping 'edges' table.");
-        await client.query("drop table edges cascade");
-      } else {
-        // Redundant check for very old schema (targets array) just in case
-        await client.query("select targets from edges limit 1");
-        console.log("Old schema detected (targets column). Dropping 'edges' table.");
-        await client.query("drop table edges cascade");
-      }
-    } catch (ignore) { }
-
+    await client.query("drop table if exists edges cascade");
+    await client.query("drop table if exists nodes cascade");
     await client.query(initSql);
     res.json({ ok: true });
   } catch (e: any) {
@@ -177,58 +171,32 @@ app.post("/init", async (_, res) => {
   }
 });
 
-// Fetch expansion: exact first, then optional partial
+// Fetch expansion: return all neighbors of a node
 app.get("/expansion", async (req, res) => {
-  const { sourceId, contextHash, minSimilarity, context } = req.query as { sourceId?: string; contextHash?: string; minSimilarity?: string; context?: string };
+  const { sourceId } = req.query as { sourceId?: string };
   if (!sourceId) return res.status(400).json({ error: "sourceId required" });
-  const minSim = minSimilarity ? parseFloat(minSimilarity) : 0.5;
-  const contextList = context ? context.split(",").filter(Boolean) : [];
-  const requestedSet = new Set(contextList);
+  
+  const id = parseInt(sourceId);
+  if (isNaN(id)) return res.status(400).json({ error: "sourceId must be a number" });
+
   const client = await pool.connect();
   try {
-    // Fetch all edges for this source
+    // Fetch all nodes connected to this node
     const result = await client.query(
-      `select target_id, context_fingerprint, context_ids from edges where source_id = $1`,
-      [sourceId]
+      `
+      select n.* from nodes n
+      join edges e on (e.person_id = n.id or e.event_id = n.id)
+      where (e.person_id = $1 or e.event_id = $1) and n.id != $1
+      `,
+      [id]
     );
 
-    // Group by context_fingerprint to verify sets
-    const groups = new Map<string, { fingerprint: string, context_ids: string[], targets: string[] }>();
-    result.rows.forEach(row => {
-      if (!groups.has(row.context_fingerprint)) {
-        groups.set(row.context_fingerprint, {
-          fingerprint: row.context_fingerprint,
-          context_ids: row.context_ids || [],
-          targets: []
-        });
-      }
-      groups.get(row.context_fingerprint)!.targets.push(row.target_id);
-    });
-
-    const entries = Array.from(groups.values());
-
-    // 1. Exact match
-    const exact = entries.find(g => g.fingerprint === contextHash);
-    if (exact) {
-      const nodes = await client.query(`select * from nodes where id = any($1)`, [exact.targets]);
-      return res.json({ hit: "exact", targets: exact.targets, nodes: nodes.rows, matchedContext: exact.context_ids });
-    }
-
-    // 2. Partial reuse
-    let best: any = null;
-    for (const group of entries) {
-      const ctxIds = new Set(group.context_ids);
-      const score = jaccard(requestedSet, ctxIds);
-      if (!best || score > best.score) best = { group, score };
-    }
-    const requestedHasContext = requestedSet.size > 0;
-    // bestHasNoContext check: if matched context is empty, it's a generic expansion
-    const bestHasNoContext = best && (!best.group.context_ids || best.group.context_ids.length === 0);
-
-    if (best && (best.score >= minSim || (!requestedHasContext && bestHasNoContext) || bestHasNoContext)) {
-      const targets: string[] = best.group.targets;
-      const nodes = await client.query(`select * from nodes where id = any($1)`, [targets]);
-      return res.json({ hit: "partial", score: best.score, targets, nodes: nodes.rows, matchedContext: best.group.context_ids });
+    if (result.rowCount && result.rowCount > 0) {
+      return res.json({ 
+        hit: "exact", 
+        targets: result.rows.map(r => r.id), 
+        nodes: result.rows 
+      });
     }
 
     return res.json({ hit: "miss" });
@@ -240,21 +208,43 @@ app.get("/expansion", async (req, res) => {
   }
 });
 
-// Save expansion (overwrite for this context)
+// Save expansion
 app.post("/expansion", async (req, res) => {
-  const { sourceId, context, targets, nodes } = req.body as {
-    sourceId: string;
-    context: string[]; // neighbor ids used in prompt
-    targets: string[]; // returned neighbors
+  const { sourceId, nodes } = req.body as {
+    sourceId: number;
     nodes: any[];      // nodes to upsert
   };
-  if (!sourceId || !targets) return res.status(400).json({ error: "sourceId and targets required" });
-  const contextFingerprint = sha1((context || []).slice().sort().join("|"));
+  
+  if (!sourceId || !nodes) return res.status(400).json({ error: "sourceId and nodes required" });
+  
   const client = await pool.connect();
   try {
     await client.query("begin");
-    await upsertNodes(client, nodes || []);
-    await upsertEdge(client, sourceId, targets, contextFingerprint, (context || []).slice().sort());
+    
+    // 1. Get source node type to know if it's a person or event
+    const sourceRes = await client.query("select type from nodes where id = $1", [sourceId]);
+    if (sourceRes.rowCount === 0) throw new Error("Source node not found");
+    const sourceType = sourceRes.rows[0].type;
+
+    // 2. Upsert target nodes
+    const idMap = await upsertNodes(client, nodes);
+    
+    // 3. Create edges
+    for (const [key, targetId] of idMap.entries()) {
+        const [title, type, wikiId] = key.split("|");
+        
+        let personId, eventId;
+        if (sourceType === 'Person') {
+            personId = sourceId;
+            eventId = targetId;
+        } else {
+            personId = targetId;
+            eventId = sourceId;
+        }
+        
+        await upsertEdge(client, personId, eventId);
+    }
+
     await client.query("commit");
     res.json({ ok: true });
   } catch (e: any) {
@@ -266,21 +256,25 @@ app.post("/expansion", async (req, res) => {
   }
 });
 
-// Upsert a single node (useful for late-arriving metadata like image URLs)
+// Upsert a single node
 app.post("/node", async (req, res) => {
-  const node = req.body as { id?: string; type?: string; description?: string | null; year?: number | null; meta?: any };
-  if (!node.id) return res.status(400).json({ error: "id required" });
+  const node = req.body as { title?: string; type?: string; description?: string | null; year?: number | null; meta?: any; wikipedia_id?: string };
+  if (!node.title && !(node as any).id) return res.status(400).json({ error: "title required" });
   if (!node.type) return res.status(400).json({ error: "type required" });
+  
   const client = await pool.connect();
   try {
-    await upsertNodes(client, [{
-      id: node.id,
+    const idMap = await upsertNodes(client, [{
+      title: node.title || (node as any).id,
       type: node.type,
       description: node.description ?? null,
       year: node.year ?? null,
-      meta: node.meta ?? {}
+      meta: node.meta ?? {},
+      wikipedia_id: node.wikipedia_id ?? null
     }]);
-    res.json({ ok: true });
+    
+    const id = Array.from(idMap.values())[0];
+    res.json({ ok: true, id });
   } catch (e: any) {
     console.error(e);
     res.status(500).json({ error: e.message });
