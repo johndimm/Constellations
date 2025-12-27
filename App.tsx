@@ -462,7 +462,7 @@ const App: React.FC = () => {
 
                 if (cacheNewNodes === 0 && cacheNewLinks === 0) {
                     console.log(`💾 [Cache] hit contained no new nodes/links, falling back to LLM for ${node.title}`);
-                    // Allow LLM fetch to proceed (no early return)
+                    // Fall through to LLM fetch without early return to allow fresh data
                 } else {
                     console.log(`💾 [Cache] applied ${cacheNewNodes} nodes and ${cacheNewLinks} links for ${node.title}`);
                     validCached.forEach((cn, idx) => {
