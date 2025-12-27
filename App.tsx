@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Graph from './components/Graph';
 import ControlPanel from './components/ControlPanel';
 import Sidebar from './components/Sidebar';
@@ -62,6 +62,7 @@ const App: React.FC = () => {
     const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
     const [error, setError] = useState<string | null>(null);
     const [isKeyReady, setIsKeyReady] = useState(false);
+    const nodesRef = useRef<GraphNode[]>([]);
 
     // Search State Lifted
     const [searchMode, setSearchMode] = useState<'explore' | 'connect'>('explore');
@@ -146,6 +147,10 @@ const App: React.FC = () => {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
+    useEffect(() => {
+        nodesRef.current = nodes;
+    }, [nodes]);
+
     const loadNodeImage = useCallback(async (nodeId: string, context?: string) => {
         if (isTextOnly) return;
 
@@ -153,10 +158,11 @@ const App: React.FC = () => {
         const url = await fetchWikipediaImage(nodeId, context);
         if (url) {
             setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n));
+            saveCacheNodeMeta(nodeId, { imageUrl: url });
         } else {
             setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: false, imageChecked: true } : n));
         }
-    }, [isTextOnly]);
+    }, [isTextOnly, saveCacheNodeMeta]);
 
     const handleClear = () => {
         setNodes([]);
@@ -1044,6 +1050,30 @@ const App: React.FC = () => {
             });
         } catch (e) {
             console.warn("Cache save failed", e);
+        }
+    }, [cacheEnabled, cacheBaseUrl]);
+
+    const saveCacheNodeMeta = useCallback(async (nodeId: string, meta: { imageUrl?: string | null, wikiSummary?: string | null }) => {
+        if (!cacheEnabled) return;
+        const node = nodesRef.current.find(n => n.id === nodeId);
+        if (!node) return;
+        try {
+            await fetch(new URL("/node", cacheBaseUrl).toString(), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: node.id,
+                    type: node.type,
+                    description: node.description || "",
+                    year: node.year ?? null,
+                    meta: {
+                        imageUrl: meta.imageUrl ?? node.imageUrl ?? null,
+                        wikiSummary: meta.wikiSummary ?? (node as any).wikiSummary ?? null
+                    }
+                })
+            });
+        } catch (e) {
+            console.warn("Cache node save failed", e);
         }
     }, [cacheEnabled, cacheBaseUrl]);
 
