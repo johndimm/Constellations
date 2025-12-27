@@ -211,6 +211,29 @@ app.post("/expansion", async (req, res) => {
   }
 });
 
+// Upsert a single node (useful for late-arriving metadata like image URLs)
+app.post("/node", async (req, res) => {
+  const node = req.body as { id?: string; type?: string; description?: string | null; year?: number | null; meta?: any };
+  if (!node.id) return res.status(400).json({ error: "id required" });
+  if (!node.type) return res.status(400).json({ error: "type required" });
+  const client = await pool.connect();
+  try {
+    await upsertNodes(client, [{
+      id: node.id,
+      type: node.type,
+      description: node.description ?? null,
+      year: node.year ?? null,
+      meta: node.meta ?? {}
+    }]);
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
   console.log(`Cache server listening on ${port}`);
