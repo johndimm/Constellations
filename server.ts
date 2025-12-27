@@ -23,7 +23,12 @@ if (!process.env.DATABASE_URL && !process.env.PGHOST) {
   console.warn("Warning: DATABASE_URL is not set. Pool will try local defaults (likely to fail).");
 }
 // Explicitly allow self-signed certs when SSL is enabled (common on hosted Postgres).
+// Force SSL unless PGSSLMODE=disable. We also set environment-level override in case the driver
+// reads from env instead of the config object.
 const useSsl = process.env.PGSSLMODE !== "disable";
+if (useSsl && !process.env.PGSSLMODE) {
+  process.env.PGSSLMODE = "require";
+}
 const sslConfig = useSsl ? { rejectUnauthorized: false } : undefined;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
