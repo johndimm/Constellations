@@ -52,8 +52,8 @@ const App: React.FC = () => {
         return `fallback-${Math.abs(hash)}`;
     };
 
-    const [nodes, setNodes] = useState<GraphNode[]>([]);
-    const [links, setLinks] = useState<GraphLink[]>([]);
+    const [graphData, setGraphData] = useState<{ nodes: GraphNode[], links: GraphLink[] }>({ nodes: [], links: [] });
+    const { nodes, links } = graphData;
     const [isProcessing, setIsProcessing] = useState(false);
     const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
     const [isCompact, setIsCompact] = useState(false);
@@ -103,15 +103,17 @@ const App: React.FC = () => {
             if (data.isTextOnly !== undefined) setIsTextOnly(data.isTextOnly);
 
             // Strip any residual forces/drag so pre-bundled graphs don't keep spinning
-            setNodes(savedNodes.map((n: any) => ({
-                ...n,
-                isLoading: false,
-                vx: 0,
-                vy: 0,
-                fx: null,
-                fy: null
-            })));
-            setLinks(savedLinks);
+            setGraphData({
+                nodes: savedNodes.map((n: any) => ({
+                    ...n,
+                    isLoading: false,
+                    vx: 0,
+                    vy: 0,
+                    fx: null,
+                    fy: null
+                })),
+                links: savedLinks
+            });
             setSearchId(prev => prev + 1);
             setError(null);
             setNotification({ message: `Graph "${sourceLabel}" loaded!`, type: 'success' });
@@ -185,19 +187,27 @@ const App: React.FC = () => {
     const loadNodeImage = useCallback(async (nodeId: string, context?: string, fallbackNode?: Partial<GraphNode> & { id: string; type?: string }) => {
         if (isTextOnly) return;
 
-        setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n));
+        setGraphData(prev => ({
+            ...prev,
+            nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n)
+        }));
         const url = await fetchWikipediaImage(nodeId, context);
         if (url) {
-            setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n));
+            setGraphData(prev => ({
+                ...prev,
+                nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n)
+            }));
             saveCacheNodeMeta(nodeId, { imageUrl: url }, fallbackNode);
         } else {
-            setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, fetchingImage: false, imageChecked: true } : n));
+            setGraphData(prev => ({
+                ...prev,
+                nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: false, imageChecked: true } : n)
+            }));
         }
     }, [isTextOnly, saveCacheNodeMeta]);
 
     const handleClear = () => {
-        setNodes([]);
-        setLinks([]);
+        setGraphData({ nodes: [], links: [] });
         setSelectedNode(null);
         // Do not clear search terms as per user request
         // setExploreTerm('');
@@ -240,8 +250,10 @@ const App: React.FC = () => {
                 expanded: false
             };
 
-            setNodes([startNode]);
-            setLinks([]);
+            setGraphData({
+                nodes: [startNode],
+                links: []
+            });
             setSelectedNode(startNode);
             loadNodeImage(startNode.id);
 
@@ -255,9 +267,9 @@ const App: React.FC = () => {
                 await new Promise(resolve => setTimeout(resolve, 800));
 
                 // Get neighbors from links
-                setLinks(currentLinks => {
+                setGraphData(current => {
                     const neighbors = new Set<string>();
-                    currentLinks.forEach(l => {
+                    current.links.forEach(l => {
                         const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
                         const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
                         if (s === startNode.id) neighbors.add(t);
@@ -265,17 +277,14 @@ const App: React.FC = () => {
                     });
 
                     // Now we expand each neighbor
-                    setNodes(currentNodes => {
-                        neighbors.forEach(neighborId => {
-                            const nodeToExpand = currentNodes.find(n => n.id === neighborId);
-                            if (nodeToExpand && !nodeToExpand.expanded) {
-                                expandNode(nodeToExpand);
-                            }
-                        });
-                        return currentNodes;
+                    neighbors.forEach(neighborId => {
+                        const nodeToExpand = current.nodes.find(n => n.id === neighborId);
+                        if (nodeToExpand && !nodeToExpand.expanded) {
+                            expandNode(nodeToExpand);
+                        }
                     });
 
-                    return currentLinks;
+                    return current;
                 });
             }
         } catch (e) {
@@ -292,8 +301,7 @@ const App: React.FC = () => {
         setSearchId(prev => prev + 1);
 
         // Clear screen first as requested
-        setNodes([]);
-        setLinks([]);
+        setGraphData({ nodes: [], links: [] });
         setSelectedNode(null);
 
         try {
@@ -322,8 +330,10 @@ const App: React.FC = () => {
             };
 
             // Set initial state ONCE to avoid multiple layout resets
-            setNodes([startNode, endNode]);
-            setLinks([]); // Reset links explicitly
+            setGraphData({
+                nodes: [startNode, endNode],
+                links: []
+            });
             loadNodeImage(startNode.id);
             loadNodeImage(endNode.id);
 
@@ -362,11 +372,11 @@ const App: React.FC = () => {
 
             let pathData;
             try {
-            const [startWiki, endWiki] = await Promise.all([
-                fetchWikipediaSummary(start, end),
-                fetchWikipediaSummary(end, start)
-            ]);
-                
+                const [startWiki, endWiki] = await Promise.all([
+                    fetchWikipediaSummary(start, end),
+                    fetchWikipediaSummary(end, start)
+                ]);
+
                 pathData = await fetchConnectionPath(start, end, {
                     startWiki: startWiki || undefined,
                     endWiki: endWiki || undefined
@@ -405,9 +415,9 @@ const App: React.FC = () => {
                 let nodeToExpand: GraphNode | null = null;
                 let resolvedIdForNextStep = currentStep.id;
 
-                setNodes(currentNodes => {
+                setGraphData(current => {
                     const norm = normalizeForDedup(currentStep.id);
-                    const existing = currentNodes.find(n => normalizeForDedup(n.id) === norm);
+                    const existing = current.nodes.find(n => normalizeForDedup(n.id) === norm);
                     const resolvedId = existing ? existing.id : currentStep.id;
                     resolvedIdForNextStep = resolvedId;
 
@@ -430,26 +440,24 @@ const App: React.FC = () => {
                     nodeToExpand = newNode;
 
                     const updatedNodes = existing
-                        ? currentNodes.map(n => n.id === existing.id ? newNode : n)
-                        : [...currentNodes, newNode];
+                        ? current.nodes.map(n => n.id === existing.id ? newNode : n)
+                        : [...current.nodes, newNode];
 
                     setSelectedNode(newNode);
 
-                    setLinks(currentLinks => {
-                        const linkId = `${tailId}-${resolvedId}`;
-                        const reverseLinkId = `${resolvedId}-${tailId}`;
-                        if (currentLinks.some(l => l.id === linkId || l.id === reverseLinkId)) return currentLinks;
-
-                        return [...currentLinks, {
+                    const linkId = `${tailId}-${resolvedId}`;
+                    const reverseLinkId = `${resolvedId}-${tailId}`;
+                    const updatedLinks = current.links.some(l => l.id === linkId || l.id === reverseLinkId)
+                        ? current.links
+                        : [...current.links, {
                             source: tailId,
                             target: resolvedId,
                             id: linkId,
                             label: currentStep.justification || "Connected"
                         }];
-                    });
 
                     loadNodeImage(resolvedId);
-                    return updatedNodes;
+                    return { nodes: updatedNodes, links: updatedLinks };
                 });
 
                 // Trigger expansion on the intermediate node to "show work" as requested by user
@@ -534,8 +542,10 @@ const App: React.FC = () => {
             return nodeIdsToKeep.has(s) && nodeIdsToKeep.has(t);
         });
 
-        setNodes(nodesToKeep);
-        setLinks(linksToKeep);
+        setGraphData({
+            nodes: nodesToKeep,
+            links: linksToKeep
+        });
     };
 
     const computeDeleteOutcome = useCallback((rootId: string) => {
@@ -617,7 +627,10 @@ const App: React.FC = () => {
     const expandNode = useCallback(async (node: GraphNode, isInitial = false, forceMore = false) => {
         if (!forceMore && (node.expanded || node.isLoading)) return;
 
-        setNodes(prev => prev.map(n => n.id === node.id ? { ...n, isLoading: true } : n));
+        setGraphData(prev => ({
+            ...prev,
+            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
+        }));
         setIsProcessing(true);
         setError(null);
 
@@ -657,13 +670,20 @@ const App: React.FC = () => {
                 if (cacheHit && cacheHit.hit && cacheHit.targets && cacheHit.nodes) {
                     const targets: string[] = cacheHit.targets;
                     const cachedNodes: any[] = cacheHit.nodes;
-                    setNodes(prev => {
-                        const map = new Map<string, GraphNode>(prev.map(n => [n.id, n]));
+                    setGraphData(prev => {
+                        const nodeMap = new Map<string, GraphNode>(prev.nodes.map(n => [n.id, n]));
                         cachedNodes.forEach(cn => {
                             const meta = cn.meta || {};
-                            const existing = map.get(cn.id);
+                            const existing = nodeMap.get(cn.id);
                             const imageUrl = meta.imageUrl ?? existing?.imageUrl;
+
+                            // Initialize new nodes near the parent to avoid flying in from (0,0)
+                            const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
+                            const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
+
                             const merged: GraphNode = {
+                                x: initialX,
+                                y: initialY,
                                 ...(existing || {}),
                                 id: cn.id,
                                 type: cn.type,
@@ -675,23 +695,25 @@ const App: React.FC = () => {
                                 expanded: existing?.expanded || false,
                                 isLoading: false
                             };
-                            map.set(cn.id, merged);
+                            nodeMap.set(cn.id, merged);
                         });
-                        if (map.has(node.id)) {
-                            map.set(node.id, { ...map.get(node.id)!, expanded: true, isLoading: false });
+                        if (nodeMap.has(node.id)) {
+                            nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false });
                         }
-                        return Array.from(map.values());
-                    });
-                    setLinks(prev => {
-                        const existingIds = new Set(prev.map(l => l.id));
+                        const updatedNodes = Array.from(nodeMap.values());
+
+                        const existingLinkIds = new Set(prev.links.map(l => l.id));
                         const cacheLinks: GraphLink[] = targets.map(tid => ({
                             source: node.id,
                             target: tid,
                             id: `${node.id}-${tid}`
                         }));
-                        const newOnes = cacheLinks.filter(l => !existingIds.has(l.id));
-                        return [...prev, ...newOnes];
+                        const newLinksToAdd = cacheLinks.filter(l => !existingLinkIds.has(l.id));
+                        const updatedLinks = [...prev.links, ...newLinksToAdd];
+
+                        return { nodes: updatedNodes, links: updatedLinks };
                     });
+
                     // Proactively fetch images for cached nodes that don't have one yet.
                     const nodesNeedingImages = cachedNodes
                         .filter(cn => !(cn.meta && cn.meta.imageUrl));
@@ -733,8 +755,8 @@ const App: React.FC = () => {
                             type: work.type,
                             description: work.description,
                             year: work.year,
-                            x: (node.x || 0) + (Math.random() - 0.5) * 200,
-                            y: (node.y || 0) + (Math.random() - 0.5) * 200,
+                            x: (node.x || 0) + (Math.random() - 0.5) * 100,
+                            y: (node.y || 0) + (Math.random() - 0.5) * 100,
                             expanded: false
                         };
                         newNodes.push(newNode);
@@ -792,7 +814,7 @@ const App: React.FC = () => {
                 if (!data.people || data.people.length === 0) {
                     if (isInitial) {
                         setError(`No connections found for "${node.id}".`);
-                        setNodes([]);
+                        setGraphData({ nodes: [], links: [] });
                         setSelectedNode(null);
                         setIsProcessing(false);
                         return;
@@ -811,8 +833,8 @@ const App: React.FC = () => {
                                 id: resolvedId,
                                 type: 'Person',
                                 description: person.description,
-                                x: (node.x || 0) + (Math.random() - 0.5) * 150,
-                                y: (node.y || 0) + (Math.random() - 0.5) * 150,
+                                x: (node.x || 0) + (Math.random() - 0.5) * 75,
+                                y: (node.y || 0) + (Math.random() - 0.5) * 75,
                                 expanded: false
                             });
                         }
@@ -835,10 +857,10 @@ const App: React.FC = () => {
                 }
             }
 
-            setNodes(prev => {
-                const existingMap = new Map<string, GraphNode>(prev.map(n => [n.id, n] as [string, GraphNode]));
+            setGraphData(prev => {
+                const existingMap = new Map<string, GraphNode>(prev.nodes.map(n => [n.id, n] as [string, GraphNode]));
                 const collisions = newNodes.filter(n => existingMap.has(n.id));
-                const trulyNew = newNodes.filter(n => !existingMap.has(n.id));
+                const trulyNewNodes = newNodes.filter(n => !existingMap.has(n.id));
 
                 nodeUpdates.forEach((updates, id) => {
                     if (existingMap.has(id)) {
@@ -862,13 +884,13 @@ const App: React.FC = () => {
                         expanded: true
                     });
                 }
-                return [...Array.from(existingMap.values()), ...trulyNew];
-            });
+                const finalNodes = [...Array.from(existingMap.values()), ...trulyNewNodes];
 
-            setLinks(prev => {
-                const existingLinkIds = new Set(prev.map(l => l.id));
+                const existingLinkIds = new Set(prev.links.map(l => l.id));
                 const trulyNewLinks = newLinks.filter(l => !existingLinkIds.has(l.id));
-                return [...prev, ...trulyNewLinks];
+                const finalLinks = [...prev.links, ...trulyNewLinks];
+
+                return { nodes: finalNodes, links: finalLinks };
             });
 
             // Persist expansion to cache (overwrite for this context)
@@ -918,7 +940,10 @@ const App: React.FC = () => {
         } catch (error) {
             console.error("Failed to expand node", error);
             setError("Failed to fetch connections. The AI might be busy.");
-            setNodes(prev => prev.map(n => n.id === node.id ? { ...n, isLoading: false } : n));
+            setGraphData(prev => ({
+                ...prev,
+                nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: false } : n)
+            }));
         } finally {
             setIsProcessing(false);
         }
@@ -938,8 +963,10 @@ const App: React.FC = () => {
             onConfirm: () => {
                 const outcome = computeDeleteOutcome(rootId);
 
-                setNodes(outcome.keepNodes);
-                setLinks(outcome.keepLinks);
+                setGraphData({
+                    nodes: outcome.keepNodes,
+                    links: outcome.keepLinks
+                });
                 setSelectedNode(null);
                 setConfirmDialog(null);
                 setDeletePreview(null);
@@ -974,6 +1001,7 @@ const App: React.FC = () => {
 
         for (const targetNode of neighbors) {
             try {
+                setSelectedNode(targetNode);
                 await expandNode(targetNode);
                 // Delay to allow physics and state to settle
                 await new Promise(resolve => setTimeout(resolve, 300));
@@ -983,7 +1011,12 @@ const App: React.FC = () => {
         }
     }, [nodes, links, expandNode]);
 
-    const handleNodeClick = (node: GraphNode) => {
+    const handleNodeClick = (node: GraphNode | null) => {
+        if (!node) {
+            setSelectedNode(null);
+            return;
+        }
+
         // Retry image fetch if it failed previously
         if (node.imageChecked && !node.imageUrl) {
             loadNodeImage(node.id);
@@ -998,8 +1031,9 @@ const App: React.FC = () => {
             }
         }
 
-        setSelectedNode(node);
-        if (!node.expanded) {
+        setSelectedNode(prev => (prev?.id === node.id ? null : node));
+
+        if (node && !node.expanded) {
             expandNode(node);
         }
     };
@@ -1276,11 +1310,11 @@ const App: React.FC = () => {
                 onClose={() => setSelectedNode(null)}
 
                 onAddMore={handleExpandMore}
-            onExpandLeaves={handleExpandLeaves}
-            onSmartDelete={handleSmartDelete}
-            isProcessing={isProcessing}
-            helpHover={helpHover}
-        />
+                onExpandLeaves={handleExpandLeaves}
+                onSmartDelete={handleSmartDelete}
+                isProcessing={isProcessing}
+                helpHover={helpHover}
+            />
 
             {/* Notification Toast */}
             {notification && (
