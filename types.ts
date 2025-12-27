@@ -41,7 +41,6 @@ export interface GeminiPerson {
   name: string;
   role: string; // Role in the source node
   description: string; // Brief bio
-  relatedNodes: GeminiEntity[];
 }
 
 export interface GeminiResponse {

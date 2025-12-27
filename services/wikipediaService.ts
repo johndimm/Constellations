@@ -393,7 +393,31 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
     if (pages) {
       const page = Object.values(pages)[0] as any;
       if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
-        console.log(`✅ [Wiki] Found summary for "${page.title}" (${page.extract?.length || 0} chars)`);
+        const fullExtract = page.extract || "";
+        // Split by double newline to get the first paragraph
+        let paragraphs = fullExtract.split(/\n\n|\r\n\r\n/);
+        let firstParagraph = paragraphs[0].trim();
+        
+        // If first paragraph is very long or empty, try splitting by single newline
+        if (!firstParagraph || firstParagraph.length > 1500) {
+            const lines = fullExtract.split(/\n|\r/);
+            if (lines[0].trim()) firstParagraph = lines[0].trim();
+        }
+
+        // Hard cap at 1000 characters to keep it concise
+        if (firstParagraph.length > 1000) {
+            const truncated = firstParagraph.substring(0, 1000);
+            const lastPeriod = truncated.lastIndexOf('.');
+            if (lastPeriod > 500) {
+                firstParagraph = truncated.substring(0, lastPeriod + 1);
+            } else {
+                firstParagraph = truncated + "...";
+            }
+        }
+
+        const finalExtract = firstParagraph || null;
+
+        console.log(`✅ [Wiki] Found summary for "${page.title}": "${finalExtract?.substring(0, 100)}..." (${finalExtract?.length || 0} chars)`);
 
         if (avoidMedia && isMediaTitle(page.title)) {
           const retryQuery = `${cleanQuery} ${context || 'person'}`;
@@ -403,7 +427,7 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
         }
 
         const isGeneric = page.title.toLowerCase() === cleanQuery.toLowerCase();
-        if (isGeneric && (!page.extract || page.extract.length < 150)) {
+        if (isGeneric && (!finalExtract || finalExtract.length < 150)) {
           console.log(`⚠️ [Wiki] Summary for "${page.title}" is generic/short, searching for media-specific versions.`);
           if (!avoidMedia) {
             const mediaSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(cleanQuery + " film")}&srlimit=1&origin=*`;
@@ -415,11 +439,11 @@ export const fetchWikipediaSummary = async (query: string, context?: string): Pr
           }
         }
 
-        if ((!page.extract || page.extract.length < 50) && cleanQuery !== query) {
+        if ((!finalExtract || finalExtract.length < 50) && cleanQuery !== query) {
           console.log(`⚠️ [Wiki] Summary too short, trying search with clean query: "${cleanQuery}"`);
           return await fetchWikipediaSummary(cleanQuery);
         }
-        return { extract: page.extract || null, pageid: page.pageid || null, title: page.title || null };
+        return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null };
       }
     }
 
