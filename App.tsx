@@ -81,6 +81,12 @@ const App: React.FC = () => {
                 return;
             }
 
+            // Migration check: if IDs are strings, this is an old-format graph.
+            if (savedNodes.length > 0 && typeof savedNodes[0].id === 'string') {
+                setNotification({ message: `Graph "${sourceLabel}" uses an old format and cannot be loaded.`, type: 'error' });
+                return;
+            }
+
             if (data.searchMode) setSearchMode(data.searchMode);
             if (data.exploreTerm) setExploreTerm(data.exploreTerm);
             if (data.pathStart) setPathStart(data.pathStart);
