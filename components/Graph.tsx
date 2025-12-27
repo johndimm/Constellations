@@ -44,9 +44,12 @@ const Graph: React.FC<GraphProps> = ({
     // Track previous data sizes to optimize simulation restarts
     const prevNodesLen = useRef(nodes.length);
     const prevLinksLen = useRef(links.length);
-    const focusedId = focusedNode?.id;
-    const focusExists = focusedId ? nodes.some(n => n.id === focusedId) : false;
-    const effectiveFocused = focusExists ? focusedNode : null;
+
+    // Support unified highlighting from either click (selectedNode prop) or internal focus
+    const activeFocusNode = selectedNode || focusedNode;
+    const focusId = activeFocusNode?.id;
+    const focusExists = focusId ? nodes.some(n => n.id === focusId) : false;
+    const effectiveFocused = focusExists ? activeFocusNode : null;
 
     // Helper functions for Drag
     function dragstarted(event: any, d: GraphNode) {
@@ -306,39 +309,19 @@ const Graph: React.FC<GraphProps> = ({
         simulation.alpha(0.5).restart();
     }, [isTimelineMode, isCompact, nodes, width, height, isTextOnly]);
 
-    // Update DOM & Styles
+    // 4. Structural Effect: Only runs when overall graph structure (nodes/links) changes.
+    // This handles D3 enter/exit/merge and restarts the simulation.
     useEffect(() => {
         if (!simulationRef.current || !zoomGroupRef.current) return;
         const simulation = simulationRef.current;
         const container = d3.select(zoomGroupRef.current);
 
-        const keepHighlight = new Set(highlightKeepIds || []);
-        const dropHighlight = new Set(highlightDropIds || []);
-        const hasHighlight = keepHighlight.size > 0 || dropHighlight.size > 0;
-
-        const oldNodesMap = new Map<string, GraphNode>(simulation.nodes().map(n => [n.id, n]));
-        nodes.forEach(node => {
-            const old = oldNodesMap.get(node.id);
-            if (old) {
-                node.x = old.x;
-                node.y = old.y;
-                node.vx = old.vx;
-                node.vy = old.vy;
-                node.fx = old.fx;
-                node.fy = old.fy;
-            }
-        });
-
-        const nodeMap = new Map(nodes.map(n => [n.id, n]));
-
         // Filter out and CLONE links to avoid D3 mutation issues and ensure fresh node lookups.
-        // We convert back to string IDs to force D3 to re-resolve the objects.
-        // This avoids stale object references from previous renders causing "drift".
         const validLinks = links
             .filter(link => {
-                const sourceId = typeof link.source === 'object' ? (link.source as GraphNode).id : link.source;
-                const targetId = typeof link.target === 'object' ? (link.target as GraphNode).id : link.target;
-                return nodeMap.has(sourceId) && nodeMap.has(targetId);
+                const sId = typeof link.source === 'object' ? (link.source as GraphNode).id : link.source;
+                const tId = typeof link.target === 'object' ? (link.target as GraphNode).id : link.target;
+                return nodes.some(n => n.id === sId) && nodes.some(n => n.id === tId);
             })
             .map(link => ({
                 ...link,
@@ -347,10 +330,8 @@ const Graph: React.FC<GraphProps> = ({
             }));
 
         const linkSel = container.selectAll<SVGPathElement, GraphLink>(".link").data(validLinks, d => d.id);
-
         linkSel.exit().remove();
-
-        const linkEnter = linkSel.enter().insert("path", ".node")
+        linkSel.enter().insert("path", ".node")
             .attr("class", "link")
             .attr("fill", "none")
             .attr("stroke", "#dc2626")
@@ -358,9 +339,7 @@ const Graph: React.FC<GraphProps> = ({
             .attr("stroke-width", 3.5)
             .attr("stroke-linecap", "round");
 
-
         const nodeSel = container.selectAll<SVGGElement, GraphNode>(".node").data(nodes, d => d.id);
-
         const nodeEnter = nodeSel.enter().append("g")
             .attr("class", "node")
             .call(d3.drag<SVGGElement, GraphNode>()
@@ -394,8 +373,6 @@ const Graph: React.FC<GraphProps> = ({
         nodeEnter.append("text")
             .attr("class", "node-label")
             .attr("text-anchor", "middle")
-            .style("font-size", "10px")
-            .style("font-family", "sans-serif")
             .style("pointer-events", "none")
             .style("text-shadow", "0 1px 2px rgba(0,0,0,0.8)")
             .attr("fill", "#e2e8f0");
@@ -434,226 +411,7 @@ const Graph: React.FC<GraphProps> = ({
 
         nodeSel.exit().remove();
 
-        const allNodes = nodeEnter.merge(nodeSel);
-
-        allNodes.sort((a, b) => {
-            const aIsPerson = a.type === 'Person';
-            const bIsPerson = b.type === 'Person';
-            if (aIsPerson && !bIsPerson) return 1;
-            if (!aIsPerson && bIsPerson) return -1;
-            return 0;
-        });
-
-        allNodes.each(function (d) {
-            const g = d3.select(this);
-            const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
-            const isHovered = d.id === hoveredNode?.id;
-            const isFocused = d.id === effectiveFocused?.id;
-            let color = getNodeColor(d.type);
-            const isDrop = dropHighlight.has(d.id);
-            const isKeep = keepHighlight.has(d.id);
-            let baseOpacity = 1;
-            if (isDrop) {
-                baseOpacity = 0.18; // strongly dim nodes that will be removed
-            } else if (hasHighlight) {
-                baseOpacity = isKeep ? 1 : 0.3; // dim non-kept nodes when previewing
-            }
-            // If a focus node exists, dim unrelated nodes
-            if (effectiveFocused && !isFocused) {
-                const isNeighbor = links.some(l => {
-                    const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-                    const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-                    return (s === effectiveFocused.id && t === d.id) || (t === effectiveFocused.id && s === d.id);
-                });
-                if (!isNeighbor) baseOpacity *= 0.25;
-            }
-            g.style("opacity", baseOpacity);
-
-            const strokeColor = isDrop ? "#f87171" : (isKeep && hasHighlight ? "#22c55e" : (isHovered ? "#f59e0b" : "#fff"));
-            const strokeWidth = isDrop ? 3.5 : (isKeep && hasHighlight ? 2.5 : 2);
-
-            // Grey out nodes with missing images
-            if (d.imageChecked && !d.imageUrl) {
-                color = '#64748b'; // Slate 500
-            }
-
-            g.select(".node-circle").style("display", "none");
-            g.select(".node-rect").style("display", "none");
-            g.select(".node-desc").style("display", "none");
-            g.select(".spinner-group").style("display", "none");
-
-            const showSpinner = d.isLoading;
-
-            if (dims.type === 'circle') {
-                const r = dims.w / 2;
-                g.select(".node-circle")
-                    .style("display", "block")
-                    .attr("r", r)
-                    .attr("fill", color)
-                    .attr("stroke", strokeColor)
-                    .attr("stroke-width", strokeWidth)
-                    .style("opacity", (d.fetchingImage) ? 0.7 : 1);
-
-                g.select("image")
-                    .style("display", (d.imageUrl && !isTextOnly) ? "block" : "none")
-                    .attr("href", d.imageUrl || "")
-                    .attr("x", -r).attr("y", -r)
-                    .attr("width", r * 2).attr("height", r * 2)
-                    .attr("clip-path", `url(#clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`)
-                    .style("opacity", (d.fetchingImage) ? 0.7 : 1);
-
-                g.select(`#clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("circle").attr("r", r);
-
-                const labelLines = wrapText(d.id, 90);
-                const labelText = g.select(".node-label");
-
-                labelText
-                    .text(null)
-                    .attr("y", r + 15)
-                    .attr("dy", 0)
-                    .style("font-size", "10px")
-                    .selectAll("tspan").remove();
-
-                labelLines.forEach((line, i) => {
-                    labelText.append("tspan")
-                        .attr("x", 0)
-                        .attr("dy", i === 0 ? 0 : "1.2em")
-                        .text(line);
-                });
-
-                g.select(".year-label")
-                    .text(d.year || "")
-                    .attr("y", -r - 10)
-                    .style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
-
-            } else {
-                const w = dims.w;
-                const h = dims.h;
-
-                g.select(".node-rect")
-                    .style("display", "block")
-                    .attr("width", w).attr("height", h)
-                    .attr("x", -w / 2).attr("y", -h / 2)
-                    .attr("fill", color)
-                    .attr("stroke", strokeColor)
-                    .attr("stroke-width", strokeWidth)
-                    .style("opacity", (d.fetchingImage) ? 0.7 : 1);
-
-                if (dims.type === 'box' && d.imageUrl && !isTextOnly) {
-                    g.select("image")
-                        .style("display", "block")
-                        .attr("href", d.imageUrl)
-                        .attr("x", -w / 2).attr("y", -h / 2)
-                        .attr("width", w).attr("height", h)
-                        .attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`)
-                        .style("opacity", (d.fetchingImage) ? 0.7 : 1);
-
-                    g.select(`#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("rect")
-                        .attr("x", -w / 2).attr("y", -h / 2)
-                        .attr("width", w).attr("height", h)
-                        .attr("rx", 0);
-                } else {
-                    g.select("image").style("display", "none");
-                }
-
-                let textY = 0;
-                let descY = 0;
-                let imgH = 120; // Default
-
-                if (dims.type === 'card') {
-                    const labelW = 200;
-                    const labelLines = wrapText(d.id, labelW);
-                    const descLines = wrapText(d.description || "", 190);
-
-                    // Calculate text height
-                    const titleH = labelLines.length * 15.6;
-                    const descH = descLines.length > 0 ? descLines.length * 14.4 + 6 : 0;
-                    const bottomPadding = 12;
-                    const textAreaH = titleH + descH + bottomPadding + 15; // 15 for gap above title
-
-                    imgH = (d.imageUrl && !isTextOnly) ? h - textAreaH : 0;
-
-                    // Positions
-                    const imgY = -h / 2;
-                    textY = imgY + imgH + 15;
-                    descY = textY + titleH + 6;
-
-                    // Update Image and ClipPath with calculated imgH
-                    if (imgH > 0) {
-                        g.select("image")
-                            .style("display", "block")
-                            .attr("href", d.imageUrl || "")
-                            .attr("x", -w / 2).attr("y", imgY)
-                            .attr("width", w).attr("height", imgH)
-                            .attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`)
-                            .style("opacity", (d.fetchingImage) ? 0.7 : 1);
-
-                        g.select(`#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("rect")
-                            .attr("x", -w / 2).attr("y", imgY)
-                            .attr("width", w).attr("height", imgH)
-                            .attr("rx", 0);
-                    } else {
-                        g.select("image").style("display", "none");
-                    }
-
-                    g.select(".node-desc")
-                        .style("display", descLines.length > 0 ? "block" : "none")
-                        .style("font-size", "12px")
-                        .style("font-weight", "500")
-                        .attr("y", descY)
-                        .selectAll("tspan").remove();
-
-                    const descText = g.select(".node-desc");
-                    descLines.forEach((line, i) => {
-                        descText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").text(line);
-                    });
-                } else if (dims.type === 'box') {
-                    textY = 45;
-                } else {
-                    textY = 4;
-                }
-
-                const labelW = dims.type === 'card' ? 200 : 100;
-                const labelLines = wrapText(d.id, labelW);
-                const labelText = g.select(".node-label");
-
-                labelText
-                    .text(null)
-                    .attr("y", textY)
-                    .attr("dy", 0)
-                    .style("font-size", dims.type === 'card' ? "13px" : "10px")
-                    .style("font-weight", dims.type === 'card' ? "bold" : "normal")
-                    .selectAll("tspan").remove();
-
-                labelLines.forEach((line, i) => {
-                    labelText.append("tspan")
-                        .attr("x", 0)
-                        .attr("dy", i === 0 ? 0 : "1.2em")
-                        .text(line);
-                });
-
-                g.select(".year-label")
-                    .text(d.year || "")
-                    .attr("y", -h / 2 - 10)
-                    .style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
-            }
-
-            const spinnerR = (dims.type === 'circle' || dims.type === 'box') ? (dims.w / 2) + 8 : (dims.h / 2) + 10;
-            g.select(".spinner-group")
-                .style("display", showSpinner ? "block" : "none")
-                .select(".spinner").attr("r", spinnerR);
-        });
-
-        allNodes
-            .on("click", (event, d) => {
-                if (event.defaultPrevented) return;
-                event.stopPropagation();
-                onNodeClick(d);
-                setFocusedNode(prev => (prev && prev.id === d.id) ? null : d);
-            })
-            .on("mouseover", (e, d) => setHoveredNode(d))
-            .on("mouseout", () => setHoveredNode(null));
-
+        // Always update simulation data to ensure D3 resolves string IDs into object references
         simulation.nodes(nodes);
         try {
             const linkForce = simulation.force("link") as d3.ForceLink<GraphNode, GraphLink>;
@@ -664,20 +422,13 @@ const Graph: React.FC<GraphProps> = ({
 
         const hasStructureChanged = nodes.length !== prevNodesLen.current || validLinks.length !== prevLinksLen.current;
         if (hasStructureChanged) {
-            // Reset velocities so new expansions don't inherit shared spin
-            simulation.nodes().forEach(n => {
-                n.vx = 0;
-                n.vy = 0;
-            });
-            // "Warm" restart instead of hot to prevent explosion
-            simulation.alpha(0.25).restart();
-        } else {
-            simulation.alphaTarget(0); 
+            simulation.alpha(0.3).restart();
         }
 
         prevNodesLen.current = nodes.length;
         prevLinksLen.current = validLinks.length;
 
+        // Timeline axis setup
         let axisGroup = container.select<SVGGElement>(".timeline-axis");
         if (axisGroup.empty()) {
             axisGroup = container.insert("g", ":first-child").attr("class", "timeline-axis");
@@ -685,78 +436,161 @@ const Graph: React.FC<GraphProps> = ({
                 .attr("stroke", "#64748b").attr("stroke-width", 1).attr("stroke-dasharray", "5,5");
         }
 
-        const allLinks = container.selectAll<SVGPathElement, GraphLink>(".link");
-
-        const computeLinkOpacity = (d: GraphLink) => {
-            const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
-            const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
-            if (dropHighlight.has(sId) || dropHighlight.has(tId)) return 0.12;
-            if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return 0.25;
-            if (effectiveFocused) {
-                const isNeighbor = sId === effectiveFocused.id || tId === effectiveFocused.id;
-                return isNeighbor ? 0.9 : 0.1;
-            }
-            return 0.7;
-        };
-
-        allLinks
-            .style("stroke-opacity", computeLinkOpacity)
-            .style("stroke", d => {
-                const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
-                const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
-                if (dropHighlight.has(sId) || dropHighlight.has(tId)) return "#f87171";
-                if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return "#94a3b8";
-                if (effectiveFocused) {
-                    const isNeighbor = sId === effectiveFocused.id || tId === effectiveFocused.id;
-                    return isNeighbor ? "#f97316" : "#475569";
-                }
-                return "#dc2626";
-            });
-
         simulation.on("tick", () => {
-            allLinks.attr("d", d => {
-                if (!d.source || !d.target) return "";
+            container.selectAll<SVGPathElement, GraphLink>(".link").attr("d", d => {
                 const source = d.source as GraphNode;
                 const target = d.target as GraphNode;
-
-                if (typeof source === 'string' || typeof target === 'string') return "";
-
-                const sx = source.x;
-                const sy = source.y;
-                const tx = target.x;
-                const ty = target.y;
-
-                if (sx === undefined || sy === undefined || tx === undefined || ty === undefined ||
-                    isNaN(sx) || isNaN(sy) || isNaN(tx) || isNaN(ty)) return "";
-
-                const dx = tx - sx;
-                const dy = ty - sy;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-
-                const sag = dist * 0.15;
-
-                const midX = (sx + tx) / 2;
-                const midY = (sy + ty) / 2 + sag;
-
+                if (!source || !target || typeof source !== 'object' || typeof target !== 'object') return null;
+                const sx = source.x || 0, sy = source.y || 0, tx = target.x || 0, ty = target.y || 0;
+                const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2);
+                const midX = (sx + tx) / 2, midY = (sy + ty) / 2 + dist * 0.15;
                 return `M${sx},${sy} Q${midX},${midY} ${tx},${ty}`;
             });
 
-            allNodes.attr("transform", d => `translate(${d.x},${d.y})`);
+            container.selectAll<SVGGElement, GraphNode>(".node").attr("transform", d => `translate(${d.x},${d.y})`);
 
             if (isTimelineMode) {
-                const years = nodes.map(n => n.year).filter((y): y is number => y !== undefined);
-                if (years.length > 0) {
-                    axisGroup.style("display", "block");
-                    axisGroup.select("line")
-                        .attr("x1", -width * 4).attr("y1", height / 2)
-                        .attr("x2", width * 4).attr("y2", height / 2);
-                }
+                axisGroup.style("display", "block");
+                axisGroup.select("line").attr("x1", -width * 4).attr("y1", height / 2).attr("x2", width * 4).attr("y2", height / 2);
             } else {
                 axisGroup.style("display", "none");
             }
         });
+    }, [nodes, links, isTimelineMode, width, height]);
 
-    }, [nodes, links, isTimelineMode, width, height, hoveredNode, onNodeClick, isTextOnly, highlightKeepIds, highlightDropIds]);
+    // 5. Stylistic Effect: Update colors, opacity, labels without restarting simulation
+    useEffect(() => {
+        if (!zoomGroupRef.current) return;
+        const container = d3.select(zoomGroupRef.current);
+
+        const keepHighlight = new Set(highlightKeepIds || []);
+        const dropHighlight = new Set(highlightDropIds || []);
+        const hasHighlight = keepHighlight.size > 0 || dropHighlight.size > 0;
+
+        // Pre-calculate neighbor set for the focused node to make the loop more efficient and robust
+        const neighborIds = new Set<string>();
+        if (effectiveFocused) {
+            links.forEach(l => {
+                const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
+                const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
+                if (sId === effectiveFocused.id) neighborIds.add(tId as string);
+                else if (tId === effectiveFocused.id) neighborIds.add(sId as string);
+            });
+        }
+
+        const allNodes = container.selectAll<SVGGElement, GraphNode>(".node");
+        const allLinks = container.selectAll<SVGPathElement, GraphLink>(".link");
+
+        allNodes.each(function (d) {
+            const g = d3.select(this);
+            const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
+            const isHovered = d.id === hoveredNode?.id;
+            const isFocused = d.id === effectiveFocused?.id;
+            let color = getNodeColor(d.type);
+            const isDrop = dropHighlight.has(d.id);
+            const isKeep = keepHighlight.has(d.id);
+
+            let baseOpacity = 1;
+            if (isDrop) {
+                baseOpacity = 0.18;
+            } else if (hasHighlight) {
+                baseOpacity = isKeep ? 1 : 0.3;
+            }
+
+            if (effectiveFocused && !isFocused && !neighborIds.has(d.id)) {
+                baseOpacity *= 0.25;
+            }
+            g.style("opacity", baseOpacity);
+
+            const strokeColor = isDrop ? "#f87171" : (isKeep && hasHighlight ? "#22c55e" : (isHovered || isFocused ? "#f59e0b" : "#fff"));
+            const strokeWidth = isDrop ? 3.5 : (isKeep && hasHighlight ? 2.5 : (isFocused ? 3 : 2));
+
+            if (d.imageChecked && !d.imageUrl) color = '#64748b';
+
+            g.select(".node-circle").style("display", "none");
+            g.select(".node-rect").style("display", "none");
+            g.select(".node-desc").style("display", "none");
+            g.select(".spinner-group").style("display", "none");
+
+            if (dims.type === 'circle') {
+                const r = dims.w / 2;
+                g.select(".node-circle").style("display", "block").attr("r", r).attr("fill", color).attr("stroke", strokeColor).attr("stroke-width", strokeWidth);
+                g.select("image").style("display", (d.imageUrl && !isTextOnly) ? "block" : "none").attr("href", d.imageUrl || "").attr("x", -r).attr("y", -r).attr("width", r * 2).attr("height", r * 2)
+                    .attr("clip-path", `url(#clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`);
+                g.select(`#clip-circle-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("circle").attr("r", r);
+
+                const labelText = g.select(".node-label").text(null).attr("y", r + 15);
+                wrapText(d.id, 90).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", "10px").text(line));
+                g.select(".year-label").text(d.year || "").attr("y", -r - 10).style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
+
+            } else {
+                const w = dims.w, h = dims.h;
+                g.select(".node-rect").style("display", "block").attr("width", w).attr("height", h).attr("x", -w / 2).attr("y", -h / 2).attr("fill", color).attr("stroke", strokeColor).attr("stroke-width", strokeWidth);
+
+                if (dims.type === 'box' && d.imageUrl && !isTextOnly) {
+                    g.select("image").style("display", "block").attr("href", d.imageUrl).attr("x", -w / 2).attr("y", -h / 2).attr("width", w).attr("height", h).attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`);
+                    g.select(`#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("rect").attr("x", -w / 2).attr("y", -h / 2).attr("width", w).attr("height", h);
+                } else {
+                    g.select("image").style("display", "none");
+                }
+
+                let textY = (dims.type === 'card') ? 0 : (dims.type === 'box' ? 45 : 4);
+                if (dims.type === 'card') {
+                    const imgH = (d.imageUrl && !isTextOnly) ? h - 80 : 0;
+                    const imgY = -h / 2;
+                    textY = imgY + imgH + 15;
+                    if (imgH > 0) {
+                        g.select("image").style("display", "block").attr("href", d.imageUrl || "").attr("x", -w / 2).attr("y", imgY).attr("width", w).attr("height", imgH).attr("clip-path", `url(#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')})`);
+                        g.select(`#clip-rect-${d.id.replace(/[^a-zA-Z0-9-]/g, '-')}`).select("rect").attr("x", -w / 2).attr("y", imgY).attr("width", w).attr("height", imgH);
+                    }
+                    const descText = g.select(".node-desc").style("display", "block").attr("y", textY + 40);
+                    descText.selectAll("tspan").remove();
+                    wrapText(d.description || "", 190).forEach((line, i) => descText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", "12px").text(line));
+                }
+
+                const labelText = g.select(".node-label").text(null).attr("y", textY);
+                wrapText(d.id, dims.type === 'card' ? 200 : 100).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", dims.type === 'card' ? "13px" : "10px").style("font-weight", dims.type === 'card' ? "bold" : "normal").text(line));
+                g.select(".year-label").text(d.year || "").attr("y", -h / 2 - 10).style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
+            }
+            g.select(".spinner-group").style("display", d.isLoading ? "block" : "none")
+                .select(".spinner").attr("r", (dims.type === 'circle' || dims.type === 'box') ? (dims.w / 2) + 8 : (dims.h / 2) + 10);
+
+            g.on("click", (event) => {
+                if (event.defaultPrevented) return;
+                event.stopPropagation();
+                onNodeClick(d);
+                setFocusedNode(null);
+            })
+                .on("mouseover", () => setHoveredNode(d))
+                .on("mouseout", () => setHoveredNode(null));
+        });
+
+        // Background click to deselect
+        d3.select(svgRef.current).on("click", (event) => {
+            if (event.target === svgRef.current) {
+                onNodeClick(null);
+                setFocusedNode(null);
+            }
+        });
+
+        allLinks
+            .style("stroke-opacity", d => {
+                const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
+                const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
+                if (dropHighlight.has(sId) || dropHighlight.has(tId)) return 0.12;
+                if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return 0.25;
+                if (effectiveFocused) return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? 0.9 : 0.1;
+                return 0.7;
+            })
+            .style("stroke", d => {
+                const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
+                const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
+                if (dropHighlight.has(sId) || dropHighlight.has(tId)) return "#f87171";
+                if (effectiveFocused && (sId === effectiveFocused.id || tId === effectiveFocused.id)) return "#f97316";
+                return (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) ? "#94a3b8" : "#dc2626";
+            });
+
+    }, [nodes, links, isTimelineMode, hoveredNode, effectiveFocused, highlightKeepIds, highlightDropIds, isTextOnly, onNodeClick]);
 
     return (
         <svg
