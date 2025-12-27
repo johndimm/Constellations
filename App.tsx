@@ -428,7 +428,13 @@ const App: React.FC = () => {
                 });
 
                 if (cacheNewNodes === 0 && cacheNewLinks === 0) {
-                    console.log(`💾 [Cache] hit contained no new nodes/links, falling back to LLM for ${node.title}`);
+                    console.log(`💾 [Cache] hit contained no new nodes/links, marking expanded without LLM for ${node.title}`);
+                    setGraphData(prev => ({
+                        ...prev,
+                        nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false, imageChecked: n.imageChecked || !!n.imageUrl } : n)
+                    }));
+                    setIsProcessing(false);
+                    return;
                 } else {
                     console.log(`💾 [Cache] applied ${cacheNewNodes} nodes and ${cacheNewLinks} links for ${node.title}`);
                     validCached.forEach((cn, idx) => {
@@ -465,7 +471,10 @@ const App: React.FC = () => {
                 return currentNodes.find(n => n.id === nid)?.title || '';
             }).filter(Boolean);
 
-            const wiki = await fetchWikipediaSummary(node.title, neighborNames.join(' '));
+            let wiki = { extract: node.wikiSummary || null, pageid: node.wikipedia_id ? Number(node.wikipedia_id) : null };
+            if (!wiki.extract) {
+                wiki = await fetchWikipediaSummary(node.title, neighborNames.join(' '));
+            }
             if (wiki.extract) {
                 nodeUpdates.set(node.id, { wikiSummary: wiki.extract, wikipedia_id: wiki.pageid?.toString() });
             }
