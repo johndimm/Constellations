@@ -63,6 +63,7 @@ const App: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isKeyReady, setIsKeyReady] = useState(false);
     const nodesRef = useRef<GraphNode[]>([]);
+    const cacheEnabled = !!cacheBaseUrl;
 
     // Search State Lifted
     const [searchMode, setSearchMode] = useState<'explore' | 'connect'>('explore');
@@ -150,6 +151,30 @@ const App: React.FC = () => {
     useEffect(() => {
         nodesRef.current = nodes;
     }, [nodes]);
+
+    const saveCacheNodeMeta = useCallback(async (nodeId: string, meta: { imageUrl?: string | null, wikiSummary?: string | null }) => {
+        if (!cacheEnabled) return;
+        const node = nodesRef.current.find(n => n.id === nodeId);
+        if (!node) return;
+        try {
+            await fetch(new URL("/node", cacheBaseUrl).toString(), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: node.id,
+                    type: node.type,
+                    description: node.description || "",
+                    year: node.year ?? null,
+                    meta: {
+                        imageUrl: meta.imageUrl ?? node.imageUrl ?? null,
+                        wikiSummary: meta.wikiSummary ?? (node as any).wikiSummary ?? null
+                    }
+                })
+            });
+        } catch (e) {
+            console.warn("Cache node save failed", e);
+        }
+    }, [cacheEnabled, cacheBaseUrl]);
 
     const loadNodeImage = useCallback(async (nodeId: string, context?: string) => {
         if (isTextOnly) return;
@@ -1006,8 +1031,6 @@ const App: React.FC = () => {
     // Notification & Confirm State
     const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
     const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean, message: string, onConfirm: () => void } | null>(null);
-    const cacheEnabled = !!cacheBaseUrl;
-
     const fetchCacheExpansion = useCallback(async (sourceId: string, context: string[], minSimilarity = 0.5) => {
         if (!cacheEnabled) return null;
         const contextHash = await computeContextFingerprint(context);
@@ -1050,30 +1073,6 @@ const App: React.FC = () => {
             });
         } catch (e) {
             console.warn("Cache save failed", e);
-        }
-    }, [cacheEnabled, cacheBaseUrl]);
-
-    const saveCacheNodeMeta = useCallback(async (nodeId: string, meta: { imageUrl?: string | null, wikiSummary?: string | null }) => {
-        if (!cacheEnabled) return;
-        const node = nodesRef.current.find(n => n.id === nodeId);
-        if (!node) return;
-        try {
-            await fetch(new URL("/node", cacheBaseUrl).toString(), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    id: node.id,
-                    type: node.type,
-                    description: node.description || "",
-                    year: node.year ?? null,
-                    meta: {
-                        imageUrl: meta.imageUrl ?? node.imageUrl ?? null,
-                        wikiSummary: meta.wikiSummary ?? (node as any).wikiSummary ?? null
-                    }
-                })
-            });
-        } catch (e) {
-            console.warn("Cache node save failed", e);
         }
     }, [cacheEnabled, cacheBaseUrl]);
 
