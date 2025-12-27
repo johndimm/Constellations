@@ -373,9 +373,16 @@ const App: React.FC = () => {
         const fixMissingWiki = (targets: any[]) => {
             targets.forEach((cn, idx) => {
                 const hasWikiId = !!(cn.wikipedia_id && String(cn.wikipedia_id).trim());
-                if (hasWikiId) return;
+                const hasSummary = !!(cn.meta?.wikiSummary || cn.wikiSummary);
+                if (hasWikiId || hasSummary) return;
                 setTimeout(async () => {
                     try {
+                        // Mark as checked to avoid repeated attempts this session
+                        setGraphData(prev => ({
+                            ...prev,
+                            nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, wikiChecked: true } : n)
+                        }));
+
                         const wiki = await fetchWikipediaSummary(cn.title);
                         if (!wiki.extract && !wiki.pageid) return;
                         setGraphData(prev => ({
@@ -444,7 +451,7 @@ const App: React.FC = () => {
                         nodeMap.set(cn.id, merged);
                     });
                     if (nodeMap.has(node.id)) {
-                        nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: true });
+                        nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false });
                     }
                     const updatedNodes = Array.from(nodeMap.values());
 
@@ -456,35 +463,23 @@ const App: React.FC = () => {
                     cacheNewLinks = newLinksToAdd.length;
                     const combinedLinks = [...prev.links, ...newLinksToAdd];
 
-                    if (cacheNewNodes === 0 && cacheNewLinks === 0) return prev;
                     return dedupeGraph(updatedNodes, combinedLinks);
                 });
 
-                if (cacheNewNodes === 0 && cacheNewLinks === 0) {
-                    console.log(`💾 [Cache] hit contained no new nodes/links, falling back to LLM for ${node.title}`);
-                    // Fall through to LLM fetch without early return to allow fresh data
-                } else {
-                    console.log(`💾 [Cache] applied ${cacheNewNodes} nodes and ${cacheNewLinks} links for ${node.title}`);
-                    validCached.forEach((cn, idx) => {
-                        if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
-                            setGraphData(prev => ({
-                                ...prev,
-                                nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, imageChecked: true } : n)
-                            }));
-                            setTimeout(() => loadNodeImage(cn.id, cn.title), 200 * idx);
-                        }
-                    });
-                    // Allow the spinner to stay visible briefly until nodes render
-                    setTimeout(() => {
+                console.log(`💾 [Cache] applied ${cacheNewNodes} nodes and ${cacheNewLinks} links for ${node.title}`);
+                validCached.forEach((cn, idx) => {
+                    if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
                         setGraphData(prev => ({
                             ...prev,
-                            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false } : n)
+                            nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, imageChecked: true } : n)
                         }));
-                    }, 400);
-                    fixMissingWiki([node, ...validCached]);
-                    setIsProcessing(false);
-                    return;
-                }
+                        setTimeout(() => loadNodeImage(cn.id, cn.title), 200 * idx);
+                    }
+                });
+                const needsWikiFix = [node, ...validCached].some(cn => !cn.wikipedia_id && !cn.wikiSummary && !(cn.meta && cn.meta.wikiSummary));
+                if (needsWikiFix) fixMissingWiki([node, ...validCached]);
+                setIsProcessing(false);
+                return;
             }
         }
 
@@ -501,7 +496,7 @@ const App: React.FC = () => {
             }).filter(Boolean);
 
             let wiki = { extract: node.wikiSummary || null, pageid: node.wikipedia_id ? Number(node.wikipedia_id) : null };
-            if (!wiki.extract) {
+            if (!wiki.extract && !wiki.pageid) {
                 wiki = await fetchWikipediaSummary(node.title, neighborNames.join(' '));
             }
             if (wiki.extract) {
