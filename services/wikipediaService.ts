@@ -429,22 +429,22 @@ export const fetchWikipediaSummary = async (
         // Split by double newline to get the first paragraph
         let paragraphs = fullExtract.split(/\n\n|\r\n\r\n/);
         let firstParagraph = paragraphs[0].trim();
-        
+
         // If first paragraph is very long or empty, try splitting by single newline
         if (!firstParagraph || firstParagraph.length > 1500) {
-            const lines = fullExtract.split(/\n|\r/);
-            if (lines[0].trim()) firstParagraph = lines[0].trim();
+          const lines = fullExtract.split(/\n|\r/);
+          if (lines[0].trim()) firstParagraph = lines[0].trim();
         }
 
         // Hard cap at 1000 characters to keep it concise
         if (firstParagraph.length > 1000) {
-            const truncated = firstParagraph.substring(0, 1000);
-            const lastPeriod = truncated.lastIndexOf('.');
-            if (lastPeriod > 500) {
-                firstParagraph = truncated.substring(0, lastPeriod + 1);
-            } else {
-                firstParagraph = truncated + "...";
-            }
+          const truncated = firstParagraph.substring(0, 1000);
+          const lastPeriod = truncated.lastIndexOf('.');
+          if (lastPeriod > 500) {
+            firstParagraph = truncated.substring(0, lastPeriod + 1);
+          } else {
+            firstParagraph = truncated + "...";
+          }
         }
 
         const finalExtract = firstParagraph || null;
@@ -459,16 +459,11 @@ export const fetchWikipediaSummary = async (
         }
 
         const isGeneric = page.title.toLowerCase() === cleanQuery.toLowerCase();
-        if (isGeneric && (!finalExtract || finalExtract.length < 150)) {
-          console.log(`⚠️ [Wiki] Summary for "${page.title}" is generic/short, searching for media-specific versions.`);
-          if (!avoidMedia) {
-            const mediaSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(cleanQuery + " film")}&srlimit=1&origin=*`;
-            const mediaSearchRes = await fetch(mediaSearchUrl);
-            const mediaSearchData = await mediaSearchRes.json();
-            if (mediaSearchData.query?.search?.[0]) {
-              return await fetchWikipediaSummary(mediaSearchData.query.search[0].title, context, visited, depth + 1);
-            }
-          }
+        // Lower threshold to 60 chars (was 150) and remove aggressive film search.
+        // Andrew Schloss has a ~120 char bio which is valid.
+        if (isGeneric && (!finalExtract || finalExtract.length < 60)) {
+          console.log(`⚠️ [Wiki] Summary for "${page.title}" is very short (<60 chars), but returning it to avoid bad fallbacks.`);
+          // Removed aggressive "cleanQuery + film" search which was causing "Spencer" to return for "Andrew Schloss"
         }
 
         if ((!finalExtract || finalExtract.length < 50) && cleanQuery !== query) {
@@ -479,7 +474,62 @@ export const fetchWikipediaSummary = async (
       }
     }
 
-    console.log(`❌ [Wiki] No summary found for "${bestTitle}"`);
+    console.log(`❌ [Wiki] No summary found for "${bestTitle}" via search. Attempting direct lookup for "${cleanQuery}".`);
+
+    // Direct lookup fallback
+    const tryDirectLookup = async (titleToFetch: string) => {
+      try {
+        const directUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToFetch)}&redirects=1&origin=*`;
+        const directRes = await fetch(directUrl);
+        const directData = await directRes.json();
+        const directPages = directData.query?.pages;
+
+        if (directPages) {
+          const page = Object.values(directPages)[0] as any;
+          if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
+            // Reuse extraction logic
+            const fullExtract = page.extract || "";
+            let paragraphs = fullExtract.split(/\n\n|\r\n\r\n/);
+            let firstParagraph = paragraphs[0].trim();
+            if (!firstParagraph || firstParagraph.length > 1500) {
+              const lines = fullExtract.split(/\n|\r/);
+              if (lines[0].trim()) firstParagraph = lines[0].trim();
+            }
+            if (firstParagraph.length > 1000) {
+              const truncated = firstParagraph.substring(0, 1000);
+              const lastPeriod = truncated.lastIndexOf('.');
+              firstParagraph = lastPeriod > 500 ? truncated.substring(0, lastPeriod + 1) : truncated + "...";
+            }
+
+            const finalExtract = firstParagraph || null;
+            if (finalExtract) {
+              console.log(`✅ [Wiki] Found summary via direct lookup for "${page.title}"`);
+              return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null };
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Direct lookup failed for ${titleToFetch}`, err);
+      }
+      return null;
+    };
+
+    // 1. Try exact clean query
+    const exactMatch = await tryDirectLookup(cleanQuery);
+    if (exactMatch) return exactMatch;
+
+    // 2. Try Title Case (e.g. "andrew schloss" -> "Andrew Schloss")
+    const toTitleCase = (str: string) => {
+      return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+    };
+    const titleCased = toTitleCase(cleanQuery);
+    if (titleCased !== cleanQuery) {
+      console.log(`⚠️ [Wiki] Direct lookup failed given casing. Retrying with Title Case: "${titleCased}"`);
+      const titleMatch = await tryDirectLookup(titleCased);
+      if (titleMatch) return titleMatch;
+    }
+
+    console.log(`❌ [Wiki] No summary found for "${bestTitle}" matches.`);
   } catch (e) {
     console.error(`❌ [Wiki] Error fetching summary for "${query}":`, e);
   }
