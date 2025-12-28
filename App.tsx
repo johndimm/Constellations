@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Graph from './components/Graph';
 import ControlPanel from './components/ControlPanel';
 import Sidebar from './components/Sidebar';
+import NodeContextMenu from './components/NodeContextMenu';
 import { GraphNode, GraphLink } from './types';
 import { fetchConnections, fetchPersonWorks, classifyEntity, fetchConnectionPath } from './services/geminiService';
 import { getApiKey } from './services/aiUtils';
@@ -147,6 +148,7 @@ const App: React.FC = () => {
     const [deletePreview, setDeletePreview] = useState<{ keepIds: number[], dropIds: number[] } | null>(null);
     const [helpHover, setHelpHover] = useState<string | null>(null);
     const [pendingAutoExpandId, setPendingAutoExpandId] = useState<number | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
 
     // Keep selectedNode in sync with latest node data (e.g., wikiSummary, images)
     useEffect(() => {
@@ -1236,6 +1238,7 @@ const App: React.FC = () => {
     const handleNodeClick = (node: GraphNode | null) => {
         if (!node) {
             setSelectedNode(null);
+            setContextMenu(null);
             return;
         }
 
@@ -1253,9 +1256,19 @@ const App: React.FC = () => {
             }
         }
 
-        setSelectedNode(prev => (prev?.id === node.id ? null : node));
-
-        if (node && !node.expanded) {
+        // If node is already expanded, show context menu
+        if (node.expanded) {
+            // Position context menu at viewport center (Graph doesn't pass event coords yet)
+            setContextMenu({
+                node,
+                x: window.innerWidth / 3,
+                y: window.innerHeight / 3
+            });
+            setSelectedNode(node);
+        } else {
+            // First click: expand the node and show sidebar
+            setSelectedNode(node);
+            setContextMenu(null);
             console.log(`🖱️ [UI] node clicked -> expand`, { id: node.id, title: node.title, type: node.type });
             fetchAndExpandNode(node);
         }
@@ -1486,14 +1499,21 @@ const App: React.FC = () => {
             />
             <Sidebar
                 selectedNode={selectedNode}
-                onClose={() => setSelectedNode(null)}
-
-                onAddMore={handleExpandMore}
-                onExpandLeaves={handleExpandLeaves}
-                onSmartDelete={handleSmartDelete}
-                isProcessing={isProcessing}
-                helpHover={helpHover}
+                onClose={() => { setSelectedNode(null); setContextMenu(null); }}
             />
+
+            {contextMenu && (
+                <NodeContextMenu
+                    node={contextMenu.node}
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    onExpandLeaves={handleExpandLeaves}
+                    onAddMore={handleExpandMore}
+                    onDelete={handleSmartDelete}
+                    onClose={() => setContextMenu(null)}
+                    isProcessing={isProcessing}
+                />
+            )}
 
             {/* Notification Toast */}
             {notification && (

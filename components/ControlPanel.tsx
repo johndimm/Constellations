@@ -170,12 +170,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
 
           <div className="flex items-center justify-between mb-4 gap-2 overflow-visible max-[450px]:flex-col max-[450px]:items-start">
-              <a
-                href={window.location.origin + window.location.pathname}
-                className="text-xl font-bold text-red-500 whitespace-nowrap overflow-visible flex-shrink-0 hover:text-red-400 transition-colors max-[450px]:text-lg"
-              >
-                Constellations
-              </a>
+            <a
+              href={window.location.origin + window.location.pathname}
+              className="text-xl font-bold text-red-500 whitespace-nowrap overflow-visible flex-shrink-0 hover:text-red-400 transition-colors max-[450px]:text-lg"
+            >
+              Constellations
+            </a>
             <div className="flex items-center gap-1.5 overflow-visible no-scrollbar pb-1 flex-wrap max-[450px]:w-full max-[450px]:gap-1 max-[450px]:justify-between">
               {/* File Operations Group */}
               <div className="flex items-center gap-0.5 shrink-0">
@@ -219,7 +219,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
               <div className="h-5 w-px bg-slate-700 shrink-0"></div>
 
-              {/* View Controls Group */}
+              {/* Graph Operations Group */}
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   onClick={onToggleTimeline}
@@ -245,11 +245,18 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 >
                   <Type size={16} />
                 </button>
+                <button
+                  onClick={onClear}
+                  className={`text-slate-400 hover:text-red-400 p-1.5 ${helpHover === 'clear' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
+                  title="Clear Graph"
+                >
+                  <Trash2 size={16} />
+                </button>
               </div>
 
               <div className="h-5 w-px bg-slate-700 shrink-0"></div>
 
-              {/* Actions Group */}
+              {/* Help Group */}
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   onClick={() => { setShowHelp(!showHelp); setShowSave(false); setShowLoad(false); setShowShare(false); }}
@@ -257,13 +264,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   title="Help & Info"
                 >
                   <HelpCircle size={16} />
-                </button>
-                <button
-                  onClick={onClear}
-                  className={`text-slate-400 hover:text-red-400 p-1.5 ${helpHover === 'clear' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
-                  title="Clear Graph"
-                >
-                  <Trash2 size={16} />
                 </button>
               </div>
             </div>
