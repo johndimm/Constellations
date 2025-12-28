@@ -118,7 +118,7 @@ const getEnvCacheUrl = () => {
 const App: React.FC = () => {
     // Use local cache server when running locally, regardless of env var
     const envCacheUrl = getEnvCacheUrl();
-    const cacheBaseUrl = envCacheUrl || 
+    const cacheBaseUrl = envCacheUrl ||
         (window.location.hostname === 'localhost' ? 'http://localhost:4000' : "");
 
     useEffect(() => {
@@ -370,120 +370,165 @@ const App: React.FC = () => {
         try {
             const nodeUpdates = new Map<number, Partial<GraphNode>>();
 
-        const fixMissingWiki = (targets: any[]) => {
-            targets.forEach((cn, idx) => {
-                const hasWikiId = !!(cn.wikipedia_id && String(cn.wikipedia_id).trim());
-                const hasSummary = !!(cn.meta?.wikiSummary || cn.wikiSummary);
-                if (hasWikiId || hasSummary) return;
-                setTimeout(async () => {
-                    try {
-                        // Mark as checked to avoid repeated attempts this session
-                        setGraphData(prev => ({
-                            ...prev,
-                            nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, wikiChecked: true } : n)
-                        }));
+            const fixMissingWiki = (targets: any[]) => {
+                targets.forEach((cn, idx) => {
+                    const hasWikiId = !!(cn.wikipedia_id && String(cn.wikipedia_id).trim());
+                    const hasSummary = !!(cn.meta?.wikiSummary || cn.wikiSummary);
+                    if (hasWikiId || hasSummary) return;
+                    setTimeout(async () => {
+                        try {
+                            // Mark as checked to avoid repeated attempts this session
+                            setGraphData(prev => ({
+                                ...prev,
+                                nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, wikiChecked: true } : n)
+                            }));
 
-                        const wiki = await fetchWikipediaSummary(cn.title);
-                        if (!wiki.extract && !wiki.pageid) return;
-                        setGraphData(prev => ({
-                            ...prev,
-                            nodes: prev.nodes.map(n => {
-                                if (n.id !== cn.id) return n;
-                                return {
-                                    ...n,
-                                    wikiSummary: wiki.extract || n.wikiSummary,
-                                    wikipedia_id: wiki.pageid ? wiki.pageid.toString() : n.wikipedia_id
-                                };
-                            })
-                        }));
-                        saveCacheNodeMeta(
-                            cn.id,
-                            { wikiSummary: wiki.extract || null, wikipedia_id: wiki.pageid ? wiki.pageid.toString() : null },
-                            { id: cn.id, title: cn.title, type: cn.type }
-                        );
-                    } catch (e) {
-                        console.warn("Wiki fixup failed for", cn.title, e);
-                    }
-                }, 50 * idx);
-            });
-        };
+                            const wiki = await fetchWikipediaSummary(cn.title);
+                            if (!wiki.extract && !wiki.pageid) return;
+                            setGraphData(prev => ({
+                                ...prev,
+                                nodes: prev.nodes.map(n => {
+                                    if (n.id !== cn.id) return n;
+                                    return {
+                                        ...n,
+                                        wikiSummary: wiki.extract || n.wikiSummary,
+                                        wikipedia_id: wiki.pageid ? wiki.pageid.toString() : n.wikipedia_id
+                                    };
+                                })
+                            }));
+                            saveCacheNodeMeta(
+                                cn.id,
+                                { wikiSummary: wiki.extract || null, wikipedia_id: wiki.pageid ? wiki.pageid.toString() : null },
+                                { id: cn.id, title: cn.title, type: cn.type }
+                            );
+                        } catch (e) {
+                            console.warn("Wiki fixup failed for", cn.title, e);
+                        }
+                    }, 50 * idx);
+                });
+            };
 
-        // Cache lookup (exact) unless forceMore
-        if (cacheEnabled && !forceMore) {
-            const cacheHit = await fetchCacheExpansion(node.id);
-            if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
-                console.log(`💾 [Cache] exact expansion hit for node ${node.id} (${node.title}), targets=${cacheHit.nodes.length}`);
-                const cachedNodes: any[] = cacheHit.nodes;
-                const validCached = cachedNodes.filter(cn => cn.id !== node.id); // ignore self
-                let cacheNewNodes = 0;
-                let cacheNewLinks = 0;
+            // Cache lookup (exact) unless forceMore
+            if (cacheEnabled && !forceMore) {
+                const cacheHit = await fetchCacheExpansion(node.id);
+                if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
+                    console.log(`💾 [Cache] exact expansion hit for node ${node.id} (${node.title}), targets=${cacheHit.nodes.length}`);
+                    const cachedNodes: any[] = cacheHit.nodes;
+                    const validCached = cachedNodes.filter(cn => cn.id !== node.id); // ignore self
 
-                setGraphData(prev => {
-                    const existingNodeIds = new Set(prev.nodes.map(n => n.id));
-                    const existingLinkIds = new Set(prev.links.map(l => l.id));
-                    const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
+                    if (validCached.length === 0) {
+                        console.log(`💾 [Cache] hit but contained no valid targets. Falling back to LLM.`);
+                        // Fall through to LLM logic below
+                    } else {
+                        // Pre-calculate new items using the ref to avoid stale state in simple functional updates
+                        const currentNodes = nodesRef.current;
+                        const existingNodeIds = new Set(currentNodes.map(n => n.id));
+                        const newNodesCount = validCached.filter(cn => !existingNodeIds.has(cn.id)).length;
 
-                    validCached.forEach(cn => {
-                        const meta = cn.meta || {};
-                        const existing = nodeMap.get(cn.id);
-                        const imageUrl = meta.imageUrl ?? existing?.imageUrl;
-
-                        const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
-                        const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
-
-                        const merged: GraphNode = {
-                            x: initialX,
-                            y: initialY,
-                            ...(existing || {}),
-                            id: cn.id,
-                            title: cn.title,
-                            type: cn.type,
-                            wikipedia_id: cn.wikipedia_id,
-                            description: cn.description || existing?.description || "",
-                            year: cn.year ?? existing?.year,
-                            imageUrl,
-                            imageChecked: !!imageUrl || existing?.imageChecked,
-                            wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
-                            expanded: existing?.expanded || false,
-                            isLoading: false
+                        // Check for new links too (using current links in scope)
+                        // Note: links might be slightly stale but dedupe handles duplicates safely.
+                        // We primarily want to avoid blocking valid link creation.
+                        // Use undirected canonical keys to avoid counting back-links as "new"
+                        const getLinkKey = (a: number | string, b: number | string) => {
+                            const n1 = Number(a);
+                            const n2 = Number(b);
+                            return `${Math.min(n1, n2)}-${Math.max(n1, n2)}`;
                         };
-                        if (!existingNodeIds.has(cn.id)) cacheNewNodes += 1;
-                        nodeMap.set(cn.id, merged);
-                    });
-                    if (nodeMap.has(node.id)) {
-                        nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false });
-                    }
-                    const updatedNodes = Array.from(nodeMap.values());
 
-                    const newLinksToAdd: GraphLink[] = validCached.map(cn => ({
-                        source: node.id,
-                        target: cn.id,
-                        id: `${node.id}-${cn.id}`
-                    })).filter(l => !existingLinkIds.has(l.id));
-                    cacheNewLinks = newLinksToAdd.length;
-                    const combinedLinks = [...prev.links, ...newLinksToAdd];
-
-                    return dedupeGraph(updatedNodes, combinedLinks);
-                });
-
-                console.log(`💾 [Cache] applied ${cacheNewNodes} nodes and ${cacheNewLinks} links for ${node.title}`);
-                validCached.forEach((cn, idx) => {
-                    if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
-                        setGraphData(prev => ({
-                            ...prev,
-                            nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, imageChecked: true } : n)
+                        const existingLinkKeys = new Set(links.map(l => {
+                            const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+                            const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+                            return getLinkKey(s, t);
                         }));
-                        setTimeout(() => loadNodeImage(cn.id, cn.title), 200 * idx);
-                    }
-                });
-                const needsWikiFix = [node, ...validCached].some(cn => !cn.wikipedia_id && !cn.wikiSummary && !(cn.meta && cn.meta.wikiSummary));
-                if (needsWikiFix) fixMissingWiki([node, ...validCached]);
-                setIsProcessing(false);
-                return;
-            }
-        }
+                        const newLinksCount = validCached.filter(cn => {
+                            // Check canonical link existence
+                            return !existingLinkKeys.has(getLinkKey(node.id, cn.id));
+                        }).length;
 
-            // LLM fetch
+                        console.log(`💾 [Cache] contains ${newNodesCount} new nodes and ${newLinksCount} new links for ${node.title}`);
+
+                        if (newNodesCount === 0 && newLinksCount === 0) {
+                            console.log(`💾 [Cache] contains only existing/reverse connections. Falling back to LLM.`);
+                            // Fall through to LLM logic below, DO NOT return
+                        } else {
+                            // Proceed to add them if they are truly new
+
+
+                            // Otherwise, proceed to add them
+                            let cacheNewNodes = 0;
+                            let cacheNewLinks = 0;
+
+                            setGraphData(prev => {
+                                const existingNodeIds = new Set(prev.nodes.map(n => n.id));
+                                const existingLinkIds = new Set(prev.links.map(l => l.id));
+                                const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
+
+                                // We already know some are new, but allow the reducer to handle the merge details
+                                validCached.forEach(cn => {
+                                    const meta = cn.meta || {};
+                                    const existing = nodeMap.get(cn.id);
+                                    const imageUrl = meta.imageUrl ?? existing?.imageUrl;
+
+                                    const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
+                                    const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
+
+                                    const merged: GraphNode = {
+                                        x: initialX,
+                                        y: initialY,
+                                        ...(existing || {}),
+                                        id: cn.id,
+                                        title: cn.title,
+                                        type: cn.type,
+                                        wikipedia_id: cn.wikipedia_id,
+                                        description: cn.description || existing?.description || "",
+                                        year: cn.year ?? existing?.year,
+                                        imageUrl,
+                                        imageChecked: !!imageUrl || existing?.imageChecked,
+                                        wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
+                                        expanded: existing?.expanded || false,
+                                        isLoading: false
+                                    };
+                                    if (!existingNodeIds.has(cn.id)) cacheNewNodes += 1;
+                                    nodeMap.set(cn.id, merged);
+                                });
+                                if (nodeMap.has(node.id)) {
+                                    nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false });
+                                }
+                                const updatedNodes = Array.from(nodeMap.values());
+
+                                const newLinksToAdd: GraphLink[] = validCached.map(cn => ({
+                                    source: node.id,
+                                    target: cn.id,
+                                    id: `${node.id}-${cn.id}`
+                                })).filter(l => !existingLinkIds.has(l.id));
+                                cacheNewLinks = newLinksToAdd.length;
+                                const combinedLinks = [...prev.links, ...newLinksToAdd];
+
+                                return dedupeGraph(updatedNodes, combinedLinks);
+                            });
+
+                            // Log after the callback triggers (approximate) or just use our pre-calc
+                            console.log(`💾 [Cache] scheduled add of ~${newNodesCount} nodes`);
+
+                            validCached.forEach((cn, idx) => {
+                                if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
+                                    setGraphData(prev => ({
+                                        ...prev,
+                                        nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, imageChecked: true } : n)
+                                    }));
+                                    setTimeout(() => loadNodeImage(cn.id, cn.title), 200 * idx);
+                                }
+                            });
+                            const needsWikiFix = [node, ...validCached].some(cn => !cn.wikipedia_id && !cn.wikiSummary && !(cn.meta && cn.meta.wikiSummary));
+                            if (needsWikiFix) fixMissingWiki([node, ...validCached]);
+
+                            console.log(`💾 [Cache] preventing fallback to LLM. Returning early.`);
+                            setIsProcessing(false);
+                            return;
+                        }
+                    }
+                }
+            }
             const neighborLinks = currentLinks.filter(l =>
                 (typeof l.source === 'number' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
                 (typeof l.target === 'number' ? l.target === node.id : (l.target as GraphNode).id === node.id)
@@ -650,16 +695,16 @@ const App: React.FC = () => {
 
         try {
             console.log(`🔎 Starting search for: "${term}"`);
-            
+
             // 1. Classify
             const { type, description: geminiDescription } = await classifyEntity(term);
             console.log(`Type: ${type}`);
-            
+
             // 2. Get Wikipedia metadata
             const wiki = await fetchWikipediaSummary(term);
             const truncatedWiki = wiki.extract ? (wiki.extract.length > 100 ? wiki.extract.substring(0, 100) + "..." : wiki.extract) : "none";
             console.log(`Wiki summary: "${truncatedWiki}"`);
-            
+
             // 3. Upsert to DB to get serial ID
             let nodeId: number = -1;
             if (cacheEnabled) {
@@ -719,7 +764,7 @@ const App: React.FC = () => {
                 nodesRef.current.forEach(n => {
                     // This is a bit indirect, better to check links
                 });
-                
+
                 // Let's use the links from graphData (which should be updated by now)
                 // but since setGraphData is async, we might need a small delay or a more robust way.
                 // For now, let's just find neighbors of startNode in the current links
@@ -767,13 +812,13 @@ const App: React.FC = () => {
 
         try {
             console.log(`🛤️ Finding path from "${start}" to "${end}"`);
-            
+
             // 1. Classify and Upsert endpoints
             const [startC, endC] = await Promise.all([
                 classifyEntity(start),
                 classifyEntity(end)
             ]);
-            
+
             const [startWiki, endWiki] = await Promise.all([
                 fetchWikipediaSummary(start),
                 fetchWikipediaSummary(end)
@@ -907,7 +952,7 @@ const App: React.FC = () => {
 
                 const tailId = currentTailId;
                 const currentStep = step;
-                
+
                 // Get Wikipedia info for disambiguation and serial ID
                 const stepWiki = await fetchWikipediaSummary(currentStep.id);
                 const stepNodeData = await upsertNodeLocal(currentStep.id, currentStep.type, currentStep.description, stepWiki);
@@ -915,7 +960,7 @@ const App: React.FC = () => {
 
                 setGraphData(current => {
                     const existing = current.nodes.find(n => n.id === resolvedId);
-                    
+
                     const newNode: GraphNode = existing ? {
                         ...existing,
                         description: currentStep.description,
@@ -951,7 +996,7 @@ const App: React.FC = () => {
                         }];
 
                     loadNodeImage(resolvedId, newNode.title);
-                    
+
                     // Trigger expansion outside state update
                     setTimeout(() => {
                         const nodeToExpand = updatedNodes.find(n => n.id === resolvedId);
@@ -1127,7 +1172,7 @@ const App: React.FC = () => {
         const preview = computeDeleteOutcome(rootId);
         const node = nodes.find(n => n.id === rootId);
         const title = node?.title || rootId.toString();
-        
+
         setDeletePreview({ keepIds: preview.keepIds, dropIds: preview.dropIds });
 
         setConfirmDialog({
