@@ -146,6 +146,7 @@ const App: React.FC = () => {
     const [searchId, setSearchId] = useState(0);
     const [deletePreview, setDeletePreview] = useState<{ keepIds: number[], dropIds: number[] } | null>(null);
     const [helpHover, setHelpHover] = useState<string | null>(null);
+    const [pendingAutoExpandId, setPendingAutoExpandId] = useState<number | null>(null);
 
     // Keep selectedNode in sync with latest node data (e.g., wikiSummary, images)
     useEffect(() => {
@@ -768,42 +769,8 @@ const App: React.FC = () => {
             await fetchAndExpandNode(startNode, true, false, [startNode], []);
 
             if (recursiveDepth > 0) {
-                setNotification({ message: "Auto-expanding connections...", type: 'success' });
-                await new Promise(resolve => setTimeout(resolve, 800));
-
-                // Get current state from ref to find neighbors
-                const neighborIds = new Set<number>();
-                nodesRef.current.forEach(n => {
-                    // This is a bit indirect, better to check links
-                });
-
-                // Let's use the links from graphData (which should be updated by now)
-                // but since setGraphData is async, we might need a small delay or a more robust way.
-                // For now, let's just find neighbors of startNode in the current links
-                // We'll use a functional update to get the latest links
-                setGraphData(current => {
-                    const neighbors = new Set<number>();
-                    current.links.forEach(l => {
-                        const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
-                        const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
-                        if (s === startNode.id) neighbors.add(t);
-                        else if (t === startNode.id) neighbors.add(s);
-                    });
-
-                    // Trigger expansion for each neighbor
-                    // Note: We're calling async functions from inside a sync state updater.
-                    // This is generally bad, but we'll move it out.
-                    setTimeout(() => {
-                        neighbors.forEach(neighborId => {
-                            const nodeToExpand = current.nodes.find(n => n.id === neighborId);
-                            if (nodeToExpand && !nodeToExpand.expanded) {
-                                fetchAndExpandNode(nodeToExpand);
-                            }
-                        });
-                    }, 0);
-
-                    return current;
-                });
+                // Trigger auto-expansion via shared handleExpandLeaves
+                setPendingAutoExpandId(startNode.id);
             }
         } catch (e) {
             console.error("Search error details:", e);
@@ -1239,7 +1206,32 @@ const App: React.FC = () => {
                 console.warn(`Failed to expand node ${targetNode.id}`, e);
             }
         }
+
+        // Clear selection to restore full brightness
+        setSelectedNode(null);
+        setNotification({ message: `Expansion complete.`, type: 'success' });
     }, [nodes, links, fetchAndExpandNode]);
+
+    // Auto-expand trigger: when pendingAutoExpandId is set and the node is ready, call handleExpandLeaves
+    useEffect(() => {
+        if (!pendingAutoExpandId) return;
+
+        const targetNode = nodes.find(n => n.id === pendingAutoExpandId);
+        if (!targetNode) return;
+
+        // Wait for the node to be expanded (initial expansion finished)
+        if (!targetNode.expanded) return;
+
+        // Clear the pending ID and trigger expansion
+        console.log(`🔄 [Auto-Expand] Triggering handleExpandLeaves for node ${targetNode.id}`);
+        setPendingAutoExpandId(null);
+        setNotification({ message: "Auto-expanding connections...", type: 'success' });
+
+        // Small delay to ensure state has settled after initial expansion
+        setTimeout(() => {
+            handleExpandLeaves(targetNode);
+        }, 500);
+    }, [pendingAutoExpandId, nodes, handleExpandLeaves]);
 
     const handleNodeClick = (node: GraphNode | null) => {
         if (!node) {
