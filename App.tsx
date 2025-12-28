@@ -588,7 +588,19 @@ const App: React.FC = () => {
                 let isCacheHit = false;
 
                 if (cacheEnabled) {
-                    await saveCacheExpansion(node.id, resultsWithWiki);
+                    // Fetch existing cache first to merge
+                    let combinedNodes = [...resultsWithWiki];
+                    const existingCache = await fetchCacheExpansion(node.id);
+
+                    if (existingCache && existingCache.nodes) {
+                        const existingIds = new Set(existingCache.nodes.map((n: any) => n.title.toLowerCase())); // dedup by title roughly
+                        const newUnique = resultsWithWiki.filter(n => !existingIds.has(n.title.toLowerCase()));
+                        combinedNodes = [...existingCache.nodes, ...newUnique];
+                        console.log(`💾 [Cache] Merging ${existingCache.nodes.length} existing + ${newUnique.length} new nodes.`);
+                    }
+
+                    await saveCacheExpansion(node.id, combinedNodes);
+
                     // Re-fetch from cache to get serial IDs
                     const cacheHit = await fetchCacheExpansion(node.id);
                     if (cacheHit && cacheHit.nodes) {

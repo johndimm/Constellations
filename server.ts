@@ -106,41 +106,80 @@ create unique index if not exists nodes_title_type_wiki_idx on nodes (lower(titl
 // Upsert nodes batch and return mapping of (title, type, wikipedia_id) -> id
 async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<string, number>> {
   if (!nodes.length) return new Map();
-  
+
   const idMap = new Map<string, number>();
-  
+
   for (const n of nodes) {
     const meta = n.meta || {};
     const wikiId = (n.wikipedia_id || n.wikipediaId || "").toString().trim();
     const normalizedWikiId = wikiId || "";
     const imageUrl = meta.imageUrl || n.imageUrl || n.image_url || null;
     const wikiSummary = meta.wikiSummary || n.wikiSummary || n.wiki_summary || null;
-    const sql = `
-      insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary)
-      values ($1, $2, $3, $4, $5, $6, $7, $8)
-      on conflict (title, type, wikipedia_id) do update
-      set description = coalesce(excluded.description, nodes.description),
-          year = coalesce(excluded.year, nodes.year),
-          meta = coalesce(nodes.meta, '{}'::jsonb) || coalesce(excluded.meta, '{}'::jsonb),
-          image_url = coalesce(excluded.image_url, nodes.image_url),
-          wiki_summary = coalesce(excluded.wiki_summary, nodes.wiki_summary),
-          updated_at = now()
-      returning id;
-    `;
-    const res = await client.query(sql, [
-      n.title || n.id, // n.id might be the title in old code
-      n.type,
-      n.description ?? null,
-      n.year ?? null,
-      meta,
-      normalizedWikiId,
-      imageUrl,
-      wikiSummary
-    ]);
-    const key = `${n.title || n.id}|${n.type}|${n.wikipedia_id || ''}`;
-    idMap.set(key, res.rows[0].id);
+    // Manual Check-then-Insert/Update Strategy to handle case-insensitive uniqueness reliably
+    try {
+      const title = n.title || n.id;
+
+      // 1. Check for existing node (case-insensitive)
+      const checkSql = `
+            select id from nodes 
+            where lower(title) = lower($1) and type = $2 and wikipedia_id = $3
+        `;
+      const checkRes = await client.query(checkSql, [title, n.type, normalizedWikiId]);
+
+      let id;
+
+      if (checkRes.rows.length > 0) {
+        // 2. UPDATE existing
+        id = checkRes.rows[0].id;
+        const updateSql = `
+                update nodes set
+                  description = coalesce($1, description),
+                  year = coalesce($2, year),
+                  meta = coalesce(meta, '{}'::jsonb) || coalesce($3, '{}'::jsonb),
+                  image_url = coalesce($4, image_url),
+                  wiki_summary = coalesce($5, wiki_summary),
+                  updated_at = now()
+                where id = $6
+             `;
+        await client.query(updateSql, [
+          n.description ?? null,
+          n.year ?? null,
+          meta,
+          imageUrl,
+          wikiSummary,
+          id
+        ]);
+      } else {
+        // 3. INSERT new
+        const insertSql = `
+               insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary)
+               values ($1, $2, $3, $4, $5, $6, $7, $8)
+               returning id
+             `;
+        const insertRes = await client.query(insertSql, [
+          title,
+          n.type,
+          n.description ?? null,
+          n.year ?? null,
+          meta,
+          normalizedWikiId,
+          imageUrl,
+          wikiSummary
+        ]);
+        id = insertRes.rows[0].id;
+      }
+
+      const key = `${title}|${n.type}|${n.wikipedia_id || ''}`;
+      idMap.set(key, id);
+    } catch (e: any) {
+      console.error("Upsert failed for node", n.title, e.message);
+      // Continue best effort or re-throw? 
+      // Logic suggests usually we want to proceed with other nodes if one fails, but explicit errors are helpful.
+      // For now, re-throwing might block the entire batch, but it's consistent with previous behavior.
+      throw e;
+    }
   }
-  
+
   return idMap;
 }
 
@@ -178,7 +217,7 @@ app.post("/init", async (_, res) => {
 app.get("/expansion", async (req, res) => {
   const { sourceId } = req.query as { sourceId?: string };
   if (!sourceId) return res.status(400).json({ error: "sourceId required" });
-  
+
   const id = parseInt(sourceId);
   if (isNaN(id)) return res.status(400).json({ error: "sourceId must be a number" });
 
@@ -195,9 +234,9 @@ app.get("/expansion", async (req, res) => {
     );
 
     if (result.rowCount && result.rowCount > 0) {
-      return res.json({ 
-        hit: "exact", 
-        targets: result.rows.map(r => r.id), 
+      return res.json({
+        hit: "exact",
+        targets: result.rows.map(r => r.id),
         nodes: result.rows.map(r => {
           const m = r.meta || {};
           const mergedMeta = { ...m };
@@ -223,13 +262,13 @@ app.post("/expansion", async (req, res) => {
     sourceId: number;
     nodes: any[];      // nodes to upsert
   };
-  
+
   if (!sourceId || !nodes) return res.status(400).json({ error: "sourceId and nodes required" });
-  
+
   const client = await pool.connect();
   try {
     await client.query("begin");
-    
+
     // 1. Get source node type to know if it's a person or event
     const sourceRes = await client.query("select type from nodes where id = $1", [sourceId]);
     if (sourceRes.rowCount === 0) throw new Error("Source node not found");
@@ -237,21 +276,21 @@ app.post("/expansion", async (req, res) => {
 
     // 2. Upsert target nodes
     const idMap = await upsertNodes(client, nodes);
-    
+
     // 3. Create edges
     for (const [key, targetId] of idMap.entries()) {
-        const [title, type, wikiId] = key.split("|");
-        
-        let personId, eventId;
-        if (sourceType === 'Person') {
-            personId = sourceId;
-            eventId = targetId;
-        } else {
-            personId = targetId;
-            eventId = sourceId;
-        }
-        
-        await upsertEdge(client, personId, eventId);
+      const [title, type, wikiId] = key.split("|");
+
+      let personId, eventId;
+      if (sourceType === 'Person') {
+        personId = sourceId;
+        eventId = targetId;
+      } else {
+        personId = targetId;
+        eventId = sourceId;
+      }
+
+      await upsertEdge(client, personId, eventId);
     }
 
     await client.query("commit");
@@ -270,7 +309,7 @@ app.post("/node", async (req, res) => {
   const node = req.body as { title?: string; type?: string; description?: string | null; year?: number | null; meta?: any; wikipedia_id?: string };
   if (!node.title && !(node as any).id) return res.status(400).json({ error: "title required" });
   if (!node.type) return res.status(400).json({ error: "type required" });
-  
+
   const client = await pool.connect();
   try {
     const idMap = await upsertNodes(client, [{
@@ -281,7 +320,7 @@ app.post("/node", async (req, res) => {
       meta: node.meta ?? {},
       wikipedia_id: node.wikipedia_id ?? null
     }]);
-    
+
     const id = Array.from(idMap.values())[0];
     res.json({ ok: true, id });
   } catch (e: any) {
