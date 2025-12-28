@@ -1,28 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { GraphNode } from '../types';
-import { X, ExternalLink, ChevronUp, Plus, Loader2, Trash2, Maximize } from 'lucide-react';
+import { X, ExternalLink, ChevronUp } from 'lucide-react';
 
 interface SidebarProps {
   selectedNode: GraphNode | null;
   onClose: () => void;
-  onAddMore?: (node: GraphNode) => void;
-  onExpandLeaves?: (node: GraphNode) => void;
-  onSmartDelete?: (nodeId: number) => void;
-  isProcessing?: boolean;
-  helpHover?: string | null;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onExpandLeaves, onSmartDelete, isProcessing, helpHover }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [activeAction, setActiveAction] = useState<'expand' | 'add' | null>(null);
   const [showFullSummary, setShowFullSummary] = useState(false);
-
-  useEffect(() => {
-    if (!isProcessing) {
-      setActiveAction(null);
-    }
-  }, [isProcessing]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -67,46 +55,11 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onAddMore, onE
         <div className="bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex flex-col p-6 max-h-[calc(100vh-2rem)] overflow-visible">
 
           <div className="flex-1 overflow-visible">
-            <div className="flex justify-between items-start mb-4 overflow-visible">
+            <div className="flex justify-between items-start mb-4">
               <h2 className="text-xl font-bold text-white leading-tight">{selectedNode.title}</h2>
-              <div className="flex items-center gap-2 shrink-0 ml-2 overflow-visible">
-                {selectedNode.expanded && (
-                  <div className="flex items-center gap-1.5 overflow-visible">
-                    <button
-                      onClick={() => {
-                        setActiveAction('expand');
-                        onExpandLeaves?.(selectedNode);
-                      }}
-                      disabled={isProcessing}
-                      className={`text-slate-400 hover:text-emerald-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50 flex items-center justify-center min-w-[32px] min-h-[32px] ${helpHover === 'expand' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-                      title="Expand ALL unexpanded nodes in the graph"
-                    >
-                      {isProcessing && activeAction === 'expand' ? <Loader2 size={18} className="animate-spin" /> : <Maximize size={18} />}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setActiveAction('add');
-                        onAddMore?.(selectedNode);
-                      }}
-                      disabled={isProcessing}
-                      className={`text-slate-400 hover:text-indigo-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 disabled:opacity-50 flex items-center justify-center min-w-[32px] min-h-[32px] ${helpHover === 'add' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-                      title="Add more connections (6-8 more)"
-                    >
-                      {isProcessing && activeAction === 'add' ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-                    </button>
-                    <button
-                      onClick={() => onSmartDelete?.(selectedNode.id)}
-                      className={`text-slate-400 hover:text-red-400 transition-colors bg-slate-800 p-1.5 rounded-lg border border-slate-700 ${helpHover === 'delete' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-                      title="Delete this node and prune dangling branches"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                )}
-                <button onClick={onClose} className="text-slate-400 hover:text-white shrink-0">
-                  <X size={20} />
-                </button>
-              </div>
+              <button onClick={onClose} className="text-slate-400 hover:text-white shrink-0 ml-2">
+                <X size={20} />
+              </button>
             </div>
 
             <div className="space-y-4 overflow-y-auto pr-1">
