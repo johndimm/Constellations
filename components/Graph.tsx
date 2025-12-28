@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import * as d3 from 'd3';
 import { GraphNode, GraphLink } from '../types';
 
@@ -19,7 +19,11 @@ interface GraphProps {
     highlightDropIds?: number[];
 }
 
-const Graph: React.FC<GraphProps> = ({
+export interface GraphHandle {
+    centerOnNode: (nodeId: number) => void;
+}
+
+const Graph = forwardRef<GraphHandle, GraphProps>(({
     nodes,
     links,
     onNodeClick,
@@ -34,7 +38,7 @@ const Graph: React.FC<GraphProps> = ({
     selectedNode = null,
     highlightKeepIds = [],
     highlightDropIds = []
-}) => {
+}, ref) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const zoomGroupRef = useRef<SVGGElement>(null);
     const simulationRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
@@ -116,6 +120,35 @@ const Graph: React.FC<GraphProps> = ({
         lines.push(currentLine);
         return lines.slice(0, 3); // Max 3 lines
     };
+
+    // Expose centerOnNode function via ref
+    useImperativeHandle(ref, () => ({
+        centerOnNode: (nodeId: number) => {
+            const node = nodes.find(n => n.id === nodeId);
+            if (!node || !svgRef.current || isTimelineMode) return;
+
+            const svg = d3.select(svgRef.current);
+            const zoom = d3.zoom<SVGSVGElement, unknown>().on("zoom", (event) => {
+                if (zoomGroupRef.current) {
+                    d3.select(zoomGroupRef.current).attr("transform", event.transform);
+                }
+            });
+
+            // Get current transform
+            const currentTransform = d3.zoomTransform(svgRef.current);
+            const targetX = node.x ?? width / 2;
+            const targetY = node.y ?? height / 2;
+
+            // Keep current scale, pan to center the node
+            const k = currentTransform.k;
+            const transform = d3.zoomIdentity
+                .translate(width / 2, height / 2)
+                .scale(k)
+                .translate(-targetX, -targetY);
+
+            svg.transition().duration(500).call(zoom.transform, transform);
+        }
+    }), [nodes, width, height, isTimelineMode]);
 
     // Center on selected node when it changes
     useEffect(() => {
@@ -603,6 +636,6 @@ const Graph: React.FC<GraphProps> = ({
             <g ref={zoomGroupRef} />
         </svg>
     );
-};
+});
 
 export default Graph;

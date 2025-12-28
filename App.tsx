@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import Graph from './components/Graph';
+import Graph, { GraphHandle } from './components/Graph';
 import ControlPanel from './components/ControlPanel';
 import Sidebar from './components/Sidebar';
 import NodeContextMenu from './components/NodeContextMenu';
@@ -137,6 +137,7 @@ const App: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isKeyReady, setIsKeyReady] = useState(false);
     const nodesRef = useRef<GraphNode[]>([]);
+    const graphRef = useRef<GraphHandle>(null);
     const cacheEnabled = !!cacheBaseUrl;
 
     // Search State Lifted
@@ -687,6 +688,11 @@ const App: React.FC = () => {
                         ...prev,
                         nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false, ...nodeUpdates.get(node.id) } : n)
                     }));
+
+                    // Center viewport on the expanded node after a brief delay for physics to settle
+                    setTimeout(() => {
+                        graphRef.current?.centerOnNode(node.id);
+                    }, 200);
                 }, 500);
             }
         } catch (error) {
@@ -1453,6 +1459,7 @@ const App: React.FC = () => {
     return (
         <div className="relative w-screen h-screen bg-slate-900">
             <Graph
+                ref={graphRef}
                 nodes={nodes}
                 links={links}
                 onNodeClick={handleNodeClick}
