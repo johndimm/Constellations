@@ -23,6 +23,8 @@ export interface GraphHandle {
     centerOnNode: (nodeId: number) => void;
 }
 
+const DEFAULT_CARD_SIZE = 220;
+
 const Graph = forwardRef<GraphHandle, GraphProps>(({
     nodes,
     links,
@@ -45,6 +47,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
     const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
     const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
     const [focusedNode, setFocusedNode] = useState<GraphNode | null>(null);
+    const [timelineLayoutVersion, setTimelineLayoutVersion] = useState(0);
+    const wasTimelineRef = useRef(isTimelineMode);
 
     // Track previous data sizes to optimize simulation restarts
     const prevNodesLen = useRef(nodes.length);
@@ -89,15 +93,15 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
     // Calculate dynamic dimensions for nodes
     const getNodeDimensions = (node: GraphNode, isTimeline: boolean, textOnly: boolean): { w: number, h: number, r: number, type: string } => {
         if (node.type === 'Person') {
-            return { w: 48, h: 48, r: 55, type: 'circle' }; // r is collision radius
+            return { w: 96, h: 96, r: 110, type: 'circle' }; // r is collision radius
         }
 
         // Events/Things
         if (isTimeline) {
             // Timeline Card Mode: Fixed height for consistent layout
             return {
-                w: 220,
-                h: 220,
+                w: DEFAULT_CARD_SIZE,
+                h: DEFAULT_CARD_SIZE,
                 r: 120, // Collision radius
                 type: 'card'
             };
@@ -356,8 +360,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 }
                 return dims.r + 5;
             })
-            .strength(isTimelineMode ? 1.0 : 0.8) // Stronger collision force in timeline mode
-            .iterations(isTimelineMode ? 5 : 3); // More iterations for better separation
+            .strength(isTimelineMode ? 0.5 : 0.8) // Lower collision for timeline since events are fixed
+            .iterations(isTimelineMode ? 3 : 3);
 
         simulation.force("collidePeople", null);
         simulation.force("collideEvents", null);
@@ -365,7 +369,6 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
         if (isTimelineMode) {
             // Sort timeline nodes by year (ensure numeric comparison), then by id for stability
-            // Filter out people nodes (nodes without years) for timeline positioning
             const timelineNodes = nodes
                 .filter(n => n.year !== undefined)
                 .sort((a, b) => {
@@ -382,36 +385,100 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             const itemSpacing = 260;
             const totalWidth = timelineNodes.length * itemSpacing;
             const startX = -(totalWidth / 2) + (itemSpacing / 2);
+            const centerY = height / 2;
+            const yOffset = 120;
 
+            // Reset all fixed positions first
+            nodes.forEach(node => {
+                node.fx = null;
+                node.fy = null;
+            });
+
+            // Fix event positions - they don't move
+            timelineNodes.forEach((node, index) => {
+                const fixedX = width / 2 + startX + (index * itemSpacing);
+                const fixedY = centerY + ((index % 2 === 0) ? -yOffset : yOffset);
+                node.fx = fixedX;
+                node.fy = fixedY;
+                // Initialize x, y if not set
+                if (node.x === undefined) node.x = fixedX;
+                if (node.y === undefined) node.y = fixedY;
+            });
+
+            // Position all people in a single horizontal line above events
+            const peopleNodes = nodes.filter(n => n.type === 'Person');
+            
+            if (timelineNodes.length > 0) {
+                const personRadius = 110; // Match Person collision radius for spacing
+                const minPersonDistance = personRadius * 2 + 10; // Small buffer to avoid touching
+                // Place the line above the highest events (top events are at centerY - yOffset)
+                const cardHeightGuess = timelineNodes.reduce((max, event) => {
+                    const h = event.h && event.h > 0 ? event.h : DEFAULT_CARD_SIZE;
+                    return Math.max(max, h);
+                }, DEFAULT_CARD_SIZE);
+                const personLineY = centerY - yOffset - (cardHeightGuess / 2) - personRadius - 30;
+
+                // Compute desired X based on connected events; fall back to center
+                const desiredPositions = peopleNodes.map(person => {
+                    const connectedEvents = links
+                        .filter(l => {
+                            const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
+                            const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
+                            return (sId === person.id || tId === person.id);
+                        })
+                        .map(l => {
+                            const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
+                            const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
+                            const eventId = sId === person.id ? tId : sId;
+                            return nodes.find(n => n.id === eventId && n.year !== undefined);
+                        })
+                        .filter((e): e is GraphNode => e !== undefined);
+
+                    if (connectedEvents.length > 0) {
+                        const sumX = connectedEvents.reduce((sum, event) => {
+                            const index = nodeIndexMap.get(event.id) ?? 0;
+                            return sum + (width / 2 + startX + (index * itemSpacing));
+                        }, 0);
+                        return { person, desiredX: sumX / connectedEvents.length };
+                    }
+                    return { person, desiredX: width / 2 };
+                });
+
+                // Sort by desired X to place left-to-right and resolve overlaps
+                desiredPositions.sort((a, b) => a.desiredX - b.desiredX);
+
+                let lastX = -Infinity;
+                desiredPositions.forEach(({ person, desiredX }) => {
+                    const clampedX = Math.max(width / 2 + startX - itemSpacing, Math.min(width / 2 + startX + (timelineNodes.length * itemSpacing), desiredX));
+                    const x = lastX === -Infinity ? clampedX : Math.max(clampedX, lastX + minPersonDistance);
+                    lastX = x;
+
+                    person.fx = x;
+                    person.fy = personLineY;
+                    if (person.x === undefined) person.x = x;
+                    if (person.y === undefined) person.y = personLineY;
+                });
+            }
 
             if (centerForce) centerForce.strength(0.01);
-            if (chargeForce) chargeForce.strength(-300);
-            if (linkForce) linkForce.strength(0.15).distance(120);
+            if (chargeForce) chargeForce.strength(-50); // Reduced charge to minimize movement
+            if (linkForce) linkForce.strength(0);
 
-            simulation.force("x", d3.forceX<GraphNode>((d) => {
-                if (nodeIndexMap.has(d.id)) {
-                    const index = nodeIndexMap.get(d.id)!;
-                    return width / 2 + startX + (index * itemSpacing);
-                }
-                return width / 2;
-            }).strength((d) => {
-                if (nodeIndexMap.has(d.id)) return 1.0; // Very strong positioning for timeline events
-                return 0.02;
-            }));
-
-            simulation.force("y", d3.forceY<GraphNode>((d) => {
-                if (nodeIndexMap.has(d.id)) {
-                    const index = nodeIndexMap.get(d.id)!;
-                    const offset = (index % 2 === 0) ? -120 : 120;
-                    return (height / 2) + offset;
-                }
-                return height / 2;
-            }).strength((d) => {
-                if (nodeIndexMap.has(d.id)) return 1.0; // Very strong positioning for timeline events
-                return 0.01;
-            }));
+            // Events and people have fixed positions (fx, fy already set above)
+            // No need for positioning forces since everything is fixed
+            simulation.force("x", null);
+            simulation.force("y", null);
+            
+            // Increase velocity decay to stop all movement quickly
+            simulation.velocityDecay(0.9);
 
         } else {
+            // Reset fixed positions for non-timeline mode
+            nodes.forEach(node => {
+                node.fx = null;
+                node.fy = null;
+            });
+
             if (centerForce) centerForce.x(width / 2).y(height / 2).strength(1.0);
 
             // Standard vs Compact Settings
@@ -424,10 +491,37 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
             simulation.force("x", null);
             simulation.force("y", null);
+            
+            // Reset velocity decay for non-timeline mode
+            simulation.velocityDecay(0.4);
         }
 
-        simulation.alpha(0.5).restart();
-    }, [isTimelineMode, isCompact, nodes, links, width, height, isTextOnly]);
+        simulation.alpha(isTimelineMode ? 0.2 : 0.5).restart();
+    }, [isTimelineMode, isCompact, nodes, links, width, height, isTextOnly, timelineLayoutVersion]);
+
+    // Reset zoom and re-center positions when leaving timeline mode to avoid off-screen jumps
+    useEffect(() => {
+        const wasTimeline = wasTimelineRef.current;
+        if (wasTimeline && !isTimelineMode) {
+            // Reset node positions near center with a small jitter to let simulation settle quickly
+            nodes.forEach(node => {
+                node.fx = null;
+                node.fy = null;
+                node.x = width / 2 + (Math.random() - 0.5) * 80;
+                node.y = height / 2 + (Math.random() - 0.5) * 80;
+            });
+
+            if (simulationRef.current) {
+                simulationRef.current.alpha(0.8).restart();
+            }
+
+            if (svgRef.current && zoomBehaviorRef.current) {
+                const svg = d3.select(svgRef.current);
+                svg.transition().duration(500).call(zoomBehaviorRef.current.transform, d3.zoomIdentity);
+            }
+        }
+        wasTimelineRef.current = isTimelineMode;
+    }, [isTimelineMode, nodes, width, height]);
 
     // 4. Structural Effect: Only runs when overall graph structure (nodes/links) changes.
     // This handles D3 enter/exit/merge and restarts the simulation.
@@ -459,7 +553,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             .attr("stroke-width", 3.5)
             .attr("stroke-linecap", "round");
         
-        // Hide links in timeline mode
+        // In timeline mode, links are hidden by default, shown only when person is selected
         const linkMerged = linkSel.merge(linkEnter);
         if (isTimelineMode) {
             linkMerged.style("display", "none");
@@ -660,13 +754,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         allNodes.each(function (d) {
             const g = d3.select(this);
             
-            // Hide people nodes in timeline mode
-            if (isTimelineMode && d.type === 'Person') {
-                g.style("display", "none");
-                return;
-            } else {
-                g.style("display", null);
-            }
+            // Show all nodes (people are now visible in timeline mode)
+            g.style("display", null);
             
             const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
             const isHovered = d.id === hoveredNode?.id;
@@ -838,7 +927,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                         const div = foreignObj.firstElementChild as HTMLElement;
                         const actualHeight = div.offsetHeight || div.scrollHeight;
                         const cardHeight = actualHeight;
-                        const cardWidth = 220; // Fixed width from getNodeDimensions
+                        const cardWidth = DEFAULT_CARD_SIZE; // Fixed width from getNodeDimensions
                         
                         // Only update if height changed
                         if (d.h !== cardHeight) {
@@ -866,9 +955,21 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     }
                 });
                 
-                // Restart simulation with updated heights to fix collisions
-                if (hasChanges && simulationRef.current) {
-                    simulationRef.current.alpha(0.3).restart();
+                // After measuring card heights, trigger re-positioning of people nodes
+                // The timeline mode effect will re-run because nodes have changed (d.h updated)
+                // and it will position people using actual measured heights
+                if (hasChanges) {
+                    if (isTimelineMode) {
+                        setTimelineLayoutVersion(v => v + 1);
+                    }
+                    if (simulationRef.current) {
+                        // Force effect to re-run by restarting simulation with updated node data
+                        setTimeout(() => {
+                            if (simulationRef.current) {
+                                simulationRef.current.alpha(0.3).restart();
+                            }
+                        }, 50);
+                    }
                 }
             });
         }
@@ -881,9 +982,20 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             }
         });
 
-        // Hide links in timeline mode, otherwise style them normally
+        // In timeline mode, show links only for selected person, otherwise hide them
         if (isTimelineMode) {
-            allLinks.style("display", "none");
+            allLinks.style("display", d => {
+                if (!effectiveFocused || effectiveFocused.type !== 'Person') return "none";
+                const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source;
+                const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target;
+                // Show link if it connects to the selected person
+                return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? null : "none";
+            }).style("stroke-opacity", d => {
+                if (!effectiveFocused || effectiveFocused.type !== 'Person') return 0;
+                const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source;
+                const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target;
+                return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? 0.9 : 0;
+            }).style("stroke", "#dc2626").style("stroke-width", 3.5);
         } else {
             allLinks.style("display", null)
                 .style("stroke-opacity", d => {
