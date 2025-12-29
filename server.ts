@@ -119,12 +119,17 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
     try {
       const title = n.title || n.id;
 
-      // 1. Check for existing node (case-insensitive)
+      // 1. Check for existing node (case-insensitive on title+type only, ignore wikipedia_id)
+      // Prefer nodes with wikipedia_id (more complete), then oldest
       const checkSql = `
             select id from nodes 
-            where lower(title) = lower($1) and type = $2 and wikipedia_id = $3
+            where lower(title) = lower($1) and type = $2
+            order by 
+              case when wikipedia_id is not null and wikipedia_id != '' then 0 else 1 end,
+              id
+            limit 1
         `;
-      const checkRes = await client.query(checkSql, [title, n.type, normalizedWikiId]);
+      const checkRes = await client.query(checkSql, [title, n.type]);
 
       let id;
 
