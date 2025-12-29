@@ -405,18 +405,27 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 if (node.y === undefined) node.y = fixedY;
             });
 
-            // Position all people in a single horizontal line above events
+            // Position people in multiple horizontal lines above events (wrap to match event width)
             const peopleNodes = nodes.filter(n => n.type === 'Person');
             
             if (timelineNodes.length > 0) {
                 const personRadius = 110; // Match Person collision radius for spacing
-                const minPersonDistance = personRadius * 2 + 10; // Small buffer to avoid touching
-                // Place the line above the highest events (top events are at centerY - yOffset)
+                const minPersonDistance = personRadius * 2 + 24; // Small buffer to avoid touching
+                // Place lines above the highest events (top events are at centerY - yOffset)
                 const cardHeightGuess = timelineNodes.reduce((max, event) => {
                     const h = event.h && event.h > 0 ? event.h : DEFAULT_CARD_SIZE;
                     return Math.max(max, h);
                 }, DEFAULT_CARD_SIZE);
-                const personLineY = centerY - yOffset - (cardHeightGuess / 2) - personRadius - 30;
+                const basePersonLineY = centerY - yOffset - (cardHeightGuess / 2) - personRadius - 30;
+                const rowSpacing = personRadius * 2 + 30;
+
+                // Compute available width across events, then tighten person span toward the event cluster
+                const eventSpan = Math.max(itemSpacing, (timelineNodes.length - 1) * itemSpacing + DEFAULT_CARD_SIZE);
+                const availableWidth = eventSpan;
+                const maxPersonWidth = Math.max(availableWidth * 0.9, minPersonDistance); // shrink total width to align with events
+                const rowCapacity = Math.max(1, Math.floor(maxPersonWidth / minPersonDistance));
+                const numCols = rowCapacity;
+                const colSpacing = maxPersonWidth / numCols;
 
                 // Compute desired X based on connected events; fall back to center
                 const desiredPositions = peopleNodes.map(person => {
@@ -447,16 +456,25 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 // Sort by desired X to place left-to-right and resolve overlaps
                 desiredPositions.sort((a, b) => a.desiredX - b.desiredX);
 
-                let lastX = -Infinity;
-                desiredPositions.forEach(({ person, desiredX }) => {
-                    const clampedX = Math.max(width / 2 + startX - itemSpacing, Math.min(width / 2 + startX + (timelineNodes.length * itemSpacing), desiredX));
-                    const x = lastX === -Infinity ? clampedX : Math.max(clampedX, lastX + minPersonDistance);
-                    lastX = x;
+                // Chunk into rows to keep similar width as events
+                const rows: typeof desiredPositions[] = [];
+                for (let i = 0; i < desiredPositions.length; i += numCols) {
+                    rows.push(desiredPositions.slice(i, i + numCols));
+                }
 
-                    person.fx = x;
-                    person.fy = personLineY;
-                    if (person.x === undefined) person.x = x;
-                    if (person.y === undefined) person.y = personLineY;
+                rows.forEach((row, rowIndex) => {
+                    const centerX = width / 2;
+                    const rowStartX = centerX - maxPersonWidth / 2;
+                    row.forEach((entry, colIndex) => {
+                        const { person } = entry;
+                        // Place each person in a fixed column slot to enforce width and spacing
+                        const x = rowStartX + colSpacing * colIndex + colSpacing / 2;
+                        const y = basePersonLineY - rowIndex * rowSpacing;
+                        person.fx = x;
+                        person.fy = y;
+                        if (person.x === undefined) person.x = x;
+                        if (person.y === undefined) person.y = y;
+                    });
                 });
             }
 
