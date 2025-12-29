@@ -1262,21 +1262,26 @@ const App: React.FC = () => {
             }
         }
 
-        // If node is already expanded, show context menu
-        if (node.expanded) {
-            // Position context menu at viewport center (Graph doesn't pass event coords yet)
+        // Check if this is a second click on the already selected node
+        const isSecondClick = selectedNode && selectedNode.id === node.id;
+
+        if (isSecondClick) {
+            // Second click on selected node: show context menu
             setContextMenu({
                 node,
                 x: window.innerWidth / 3,
                 y: window.innerHeight / 3
             });
-            setSelectedNode(node);
         } else {
-            // First click: expand the node and show sidebar
+            // First click: select node to highlight connections
             setSelectedNode(node);
             setContextMenu(null);
-            console.log(`🖱️ [UI] node clicked -> expand`, { id: node.id, title: node.title, type: node.type });
-            fetchAndExpandNode(node);
+            
+            // Expand node if not already expanded
+            if (!node.expanded && !node.isLoading) {
+                console.log(`🖱️ [UI] node clicked -> expand`, { id: node.id, title: node.title, type: node.type });
+                fetchAndExpandNode(node);
+            }
         }
     };
 
