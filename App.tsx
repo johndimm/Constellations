@@ -154,6 +154,8 @@ const App: React.FC = () => {
 
     const [graphData, setGraphData] = useState<{ nodes: GraphNode[], links: GraphLink[] }>({ nodes: [], links: [] });
     const { nodes, links } = graphData;
+    const graphDataRef = useRef(graphData);
+    graphDataRef.current = graphData;
     const [isProcessing, setIsProcessing] = useState(false);
     const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
     const [isCompact, setIsCompact] = useState(false);
@@ -173,6 +175,7 @@ const App: React.FC = () => {
     const [pathEnd, setPathEnd] = useState('');
     const [searchId, setSearchId] = useState(0);
     const [deletePreview, setDeletePreview] = useState<{ keepIds: number[], dropIds: number[] } | null>(null);
+    const [pathNodeIds, setPathNodeIds] = useState<number[]>([]);
     const [helpHover, setHelpHover] = useState<string | null>(null);
     const [pendingAutoExpandId, setPendingAutoExpandId] = useState<number | null>(null);
     const [contextMenu, setContextMenu] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
@@ -337,6 +340,7 @@ const App: React.FC = () => {
         // setPathStart('');
         // setPathEnd('');
         setError(null);
+        setPathNodeIds([]); // Clear path highlighting
     };
 
     const fetchCacheExpansion = useCallback(async (sourceId: number) => {
@@ -749,6 +753,7 @@ const App: React.FC = () => {
         setIsProcessing(true);
         setError(null);
         setSearchId(prev => prev + 1);
+        setPathNodeIds([]); // Clear path highlighting when starting a new search
 
         try {
             console.log(`🔎 Starting search for: "${term}"`);
@@ -829,9 +834,18 @@ const App: React.FC = () => {
         setError(null);
         setSearchId(prev => prev + 1);
 
-        // Clear screen first as requested
-        setGraphData({ nodes: [], links: [] });
-        setSelectedNode(null);
+            // Clear screen first as requested
+            setGraphData({ nodes: [], links: [] });
+            setSelectedNode(null);
+            setPathNodeIds([]); // Clear previous path highlighting
+
+        // Helper to clamp node positions within viewport bounds
+        const clampToViewport = (x: number, y: number, margin: number = 100): { x: number, y: number } => {
+            return {
+                x: Math.max(margin, Math.min(dimensions.width - margin, x)),
+                y: Math.max(margin, Math.min(dimensions.height - margin, y))
+            };
+        };
 
         try {
             console.log(`🛤️ Finding path from "${start}" to "${end}"`);
@@ -886,6 +900,8 @@ const App: React.FC = () => {
                 description: startWiki.extract || startC.description || 'Start of path discovery.',
                 x: dimensions.width / 4,
                 y: dimensions.height / 2,
+                fx: dimensions.width / 4, // Fix position during path discovery
+                fy: dimensions.height / 2,
                 expanded: false
             };
 
@@ -897,6 +913,8 @@ const App: React.FC = () => {
                 description: endWiki.extract || endC.description || 'Destination of path discovery.',
                 x: (dimensions.width / 4) * 3,
                 y: dimensions.height / 2,
+                fx: (dimensions.width / 4) * 3, // Fix position during path discovery
+                fy: dimensions.height / 2,
                 expanded: false
             };
 
@@ -921,119 +939,303 @@ const App: React.FC = () => {
                 console.warn("Endpoints expansion partially failed", e);
             }
 
-            // 3. Fetch the path in background
-            setNotification({ message: "Finding hidden connections...", type: 'success' });
+            // 3. Try database pathfinding first, then fall back to AI
+            setNotification({ message: "Finding connections...", type: 'success' });
 
-            const thinkingMessages = [
-                "Scanning world history...",
-                "Analyzing relationships...",
-                "Connecting the dots...",
-                "Consulting historical records...",
-                "Building the bridge..."
-            ];
-            let msgIndex = 0;
-            const thinkingInterval = setInterval(() => {
-                setNotification({ message: thinkingMessages[msgIndex], type: 'success' });
-                msgIndex = (msgIndex + 1) % thinkingMessages.length;
-            }, 3000);
+            let pathData: PathResponse | null = null;
+            let usingDatabase = false;
 
-            let pathData;
+            // First, try database pathfinding (always try if cache server is available)
             try {
-                pathData = await fetchConnectionPath(start, end, {
-                    startWiki: startWiki.extract || undefined,
-                    endWiki: endWiki.extract || undefined
-                });
-            } catch (err: any) {
-                console.error("Pathfinding error:", err);
-                if (err.message?.includes("timed out")) {
-                    setError("Pathfinding timed out. The connection might be too complex or obscure.");
+                const pathUrl = new URL("/path", cacheBaseUrl);
+                pathUrl.searchParams.set("startId", startNodeData.id.toString());
+                pathUrl.searchParams.set("endId", endNodeData.id.toString());
+                pathUrl.searchParams.set("maxDepth", "10");
+                const pathRes = await fetch(pathUrl.toString());
+                if (pathRes.ok) {
+                    const dbPath = await pathRes.json();
+                    if (dbPath.found && dbPath.path && dbPath.path.length >= 2) {
+                        // Store database nodes separately - they already have IDs
+                        (pathData as any) = {
+                            path: dbPath.path,
+                            _dbPath: true // Flag to indicate this is from database
+                        };
+                        usingDatabase = true;
+                        console.log("✅ Found path in database:", dbPath.path.length, "nodes");
+                    } else {
+                        console.log("❌ Database pathfinding: No path found in database");
+                    }
                 } else {
-                    setError("The AI failed to find a connection. Try more common entities.");
+                    console.log("❌ Database pathfinding: Request failed with status", pathRes.status);
                 }
-                return;
-            } finally {
-                clearInterval(thinkingInterval);
+            } catch (err) {
+                console.warn("Database pathfinding failed, trying AI:", err);
             }
 
-            if (!pathData.path || pathData.path.length < 2) {
-                setError("The AI couldn't bridge these two entities. Try a different pair.");
+            // Fall back to AI if database didn't find a path
+            if (!pathData) {
+                setNotification({ message: "Finding hidden connections...", type: 'success' });
+                const thinkingMessages = [
+                    "Scanning world history...",
+                    "Analyzing relationships...",
+                    "Connecting the dots...",
+                    "Consulting historical records...",
+                    "Building the bridge..."
+                ];
+                let msgIndex = 0;
+                const thinkingInterval = setInterval(() => {
+                    setNotification({ message: thinkingMessages[msgIndex], type: 'success' });
+                    msgIndex = (msgIndex + 1) % thinkingMessages.length;
+                }, 3000);
+
+                try {
+                    pathData = await fetchConnectionPath(start, end, {
+                        startWiki: startWiki.extract || undefined,
+                        endWiki: endWiki.extract || undefined
+                    });
+                } catch (err: any) {
+                    clearInterval(thinkingInterval);
+                    console.error("Pathfinding error:", err);
+                    if (err.message?.includes("timed out")) {
+                        setError("Pathfinding timed out. The connection might be too complex or obscure.");
+                    } else {
+                        setError("The AI failed to find a connection. Try more common entities.");
+                    }
+                    return;
+                } finally {
+                    clearInterval(thinkingInterval);
+                }
+            }
+
+            if (!pathData || !pathData.path || pathData.path.length < 2) {
+                setError(usingDatabase 
+                    ? "No path found in database. Try expanding nodes to build connections first."
+                    : "The AI couldn't bridge these two entities. Try a different pair.");
                 return;
             }
 
             // 4. Discover path one by one
             let currentTailId = startNode.id;
-            const steps = pathData.path.length - 1;
-
-            for (let i = 1; i <= steps; i++) {
-                const step = pathData.path[i];
-                await new Promise(resolve => setTimeout(resolve, 500));
-
-                setNotification({
-                    message: `Stitching path... step ${i} of ${steps}: ${step.id}`,
-                    type: 'success'
-                });
-
-                const tailId = currentTailId;
-                const currentStep = step;
-
-                // Get Wikipedia info for disambiguation and serial ID
-                const stepWiki = await fetchWikipediaSummary(currentStep.id);
-                const stepNodeData = await upsertNodeLocal(currentStep.id, currentStep.type, currentStep.description, stepWiki);
-                const resolvedId = stepNodeData.id;
-
+            const totalPathLength = pathData.path.length;
+            const steps = totalPathLength - 1; // Steps to process (excluding start node)
+            
+            // Check if this is a database path (nodes already exist)
+            const isDbPath = (pathData as any)._dbPath === true;
+            
+            // Initialize path list - will be built as we discover the path
+            const pathNodeIdsList: number[] = [];
+            
+            console.log("Path discovery:", { 
+                isDbPath, 
+                totalPathLength, 
+                steps, 
+                startNodeId: startNode.id, 
+                endNodeId: endNode.id,
+                pathDataPath: pathData.path.map((p: any) => p.id || p.title)
+            });
+            
+            if (isDbPath) {
+                // Database path: nodes already exist, add them directly
+                // First, build the pathNodeIdsList from dbNodes (before setGraphData callback)
+                const dbNodes = pathData.path as any[]; // Database returns full node objects
+                for (let i = 0; i < dbNodes.length; i++) {
+                    pathNodeIdsList.push(dbNodes[i].id);
+                }
+                
                 setGraphData(current => {
-                    const existing = current.nodes.find(n => n.id === resolvedId);
+                    const updatedNodes = [...current.nodes];
+                    const updatedLinks = [...current.links];
 
-                    const newNode: GraphNode = existing ? {
-                        ...existing,
-                        description: currentStep.description,
-                        year: currentStep.year || existing.year,
-                        expanded: existing.expanded
-                    } : {
-                        id: resolvedId,
-                        title: currentStep.id,
-                        type: currentStep.type,
-                        wikipedia_id: stepWiki.pageid?.toString(),
-                        description: currentStep.description,
-                        year: currentStep.year,
-                        x: (dimensions.width / 2) + (i - steps / 2) * 50,
-                        y: (dimensions.height / 2) + Math.sin(i) * 50,
-                        expanded: false
-                    };
+                    // Add ALL path nodes including the start node (use database IDs)
+                    for (let i = 0; i < dbNodes.length; i++) {
+                        const dbNode = dbNodes[i];
+                        const nodeId = dbNode.id;
 
-                    const updatedNodes = existing
-                        ? current.nodes.map(n => n.id === existing.id ? newNode : n)
-                        : [...current.nodes, newNode];
+                        // Check if node already exists in graph
+                        let existingNode = updatedNodes.find(n => n.id === nodeId);
+                        
+                        if (!existingNode) {
+                            // Node doesn't exist, add it
+                            // For positioning: first node uses startNode position, others position near previous node
+                            let nodeX, nodeY;
+                            if (i === 0) {
+                                // First node - use startNode position or default
+                                nodeX = startNode.x ?? (dimensions.width / 4);
+                                nodeY = startNode.y ?? (dimensions.height / 2);
+                            } else {
+                            // Position near previous node
+                            const prevNodeId = dbNodes[i - 1].id;
+                            const prevNode = updatedNodes.find(n => n.id === prevNodeId);
+                            const prevX = prevNode?.x ?? (dimensions.width / 2);
+                            const prevY = prevNode?.y ?? (dimensions.height / 2);
+                            const offsetX = (Math.random() - 0.5) * 150;
+                            const offsetY = (Math.random() - 0.5) * 150;
+                            const clampedPos = clampToViewport(prevX + offsetX, prevY + offsetY, 80);
+                            nodeX = clampedPos.x;
+                            nodeY = clampedPos.y;
+                            }
 
-                    setSelectedNode(newNode);
-
-                    const linkId = `${tailId}-${resolvedId}`;
-                    const reverseLinkId = `${resolvedId}-${tailId}`;
-                    const updatedLinks = current.links.some(l => l.id === linkId || l.id === reverseLinkId)
-                        ? current.links
-                        : [...current.links, {
-                            source: tailId,
-                            target: resolvedId,
-                            id: linkId,
-                            label: currentStep.justification || "Connected"
-                        }];
-
-                    loadNodeImage(resolvedId, newNode.title);
-
-                    // Trigger expansion outside state update
-                    setTimeout(() => {
-                        const nodeToExpand = updatedNodes.find(n => n.id === resolvedId);
-                        if (nodeToExpand && !nodeToExpand.expanded) {
-                            fetchAndExpandNode(nodeToExpand).catch(e => console.warn("Intermediate expansion failed", e));
+                            existingNode = {
+                                id: nodeId,
+                                title: dbNode.title,
+                                type: dbNode.type,
+                                wikipedia_id: dbNode.wikipedia_id,
+                                description: dbNode.description || '',
+                                year: dbNode.year || undefined,
+                                imageUrl: dbNode.imageUrl || dbNode.image_url,
+                                wikiSummary: dbNode.wikiSummary || dbNode.wiki_summary,
+                                is_person: dbNode.is_person ?? (dbNode.type?.toLowerCase() === 'person'),
+                                x: nodeX,
+                                y: nodeY,
+                                fx: nodeX, // Fix position during path discovery to prevent flying off screen
+                                fy: nodeY,
+                                expanded: false
+                            };
+                            updatedNodes.push(existingNode);
+                            loadNodeImage(nodeId, existingNode.title);
                         }
-                    }, 0);
+
+                        // Don't create links during path discovery - only highlight links that already exist
+                        // The path visualization will show nodes in sequence, but won't create fake connections
+                    }
 
                     return { nodes: updatedNodes, links: updatedLinks };
                 });
+            } else {
+                // AI path: fetch nodes one by one
+                // Track all node IDs in order as we build the path
+                pathNodeIdsList.push(startNode.id); // Start with start node
+                
+                for (let i = 1; i <= steps; i++) {
+                    const step = pathData.path[i];
+                    await new Promise(resolve => setTimeout(resolve, 500));
 
-                currentTailId = resolvedId;
+                    setNotification({
+                        message: `Stitching path... step ${i} of ${steps}: ${step.id}`,
+                        type: 'success'
+                    });
+
+                    const tailId = currentTailId;
+                    const currentStep = step;
+
+                    // Get Wikipedia info for disambiguation and serial ID
+                    const stepWiki = await fetchWikipediaSummary(currentStep.id);
+                    const stepNodeData = await upsertNodeLocal(currentStep.id, currentStep.type, currentStep.description, stepWiki);
+                    const resolvedId = stepNodeData.id;
+
+                    // Add this node to the path list (avoid duplicates)
+                    if (!pathNodeIdsList.includes(resolvedId)) {
+                        pathNodeIdsList.push(resolvedId);
+                    }
+
+                    setGraphData(current => {
+                        const existing = current.nodes.find(n => n.id === resolvedId);
+
+                        // Find the tail node to position new node near it
+                        const tailNode = current.nodes.find(n => n.id === tailId);
+                        const tailX = tailNode?.x ?? (dimensions.width / 2);
+                        const tailY = tailNode?.y ?? (dimensions.height / 2);
+
+                        // Position new node near the tail node with constrained offset
+                        const offsetX = (Math.random() - 0.5) * 150; // Reduced from 100 to 150 for better spacing
+                        const offsetY = (Math.random() - 0.5) * 150;
+                        const clampedPos = clampToViewport(tailX + offsetX, tailY + offsetY, 80);
+
+                        const newNode: GraphNode = existing ? {
+                            ...existing,
+                            description: currentStep.description,
+                            year: currentStep.year || existing.year,
+                            expanded: existing.expanded,
+                            fx: clampedPos.x, // Fix position during path discovery to prevent flying off screen
+                            fy: clampedPos.y
+                        } : {
+                            id: resolvedId,
+                            title: currentStep.id,
+                            type: currentStep.type,
+                            wikipedia_id: stepWiki.pageid?.toString(),
+                            description: currentStep.description,
+                            year: currentStep.year,
+                            x: clampedPos.x,
+                            y: clampedPos.y,
+                            fx: clampedPos.x, // Fix position during path discovery to prevent flying off screen
+                            fy: clampedPos.y,
+                            expanded: false
+                        };
+
+                        const updatedNodes = existing
+                            ? current.nodes.map(n => n.id === existing.id ? newNode : n)
+                            : [...current.nodes, newNode];
+
+                        setSelectedNode(newNode);
+
+                        // Don't create links during path discovery - only highlight links that already exist
+                        // The path visualization will show nodes in sequence, but won't create fake connections
+                        // Links will only be created naturally through node expansion
+                        const updatedLinks = current.links;
+
+                        loadNodeImage(resolvedId, newNode.title);
+
+                        // Trigger expansion outside state update
+                        setTimeout(() => {
+                            const nodeToExpand = updatedNodes.find(n => n.id === resolvedId);
+                            if (nodeToExpand && !nodeToExpand.expanded) {
+                                fetchAndExpandNode(nodeToExpand).catch(e => console.warn("Intermediate expansion failed", e));
+                            }
+                        }, 0);
+
+                        return { nodes: updatedNodes, links: updatedLinks };
+                    });
+
+                    currentTailId = resolvedId;
+                }
+                
+                // Ensure endNode.id is included (it might be the same as the last resolvedId due to deduplication,
+                // or it might be different if the end node was created separately)
+                if (!pathNodeIdsList.includes(endNode.id)) {
+                    pathNodeIdsList.push(endNode.id);
+                }
+                
+                console.log("AI path - nodes added to path list:", pathNodeIdsList);
             }
 
+            // Highlight the path after completion (all nodes from start to end)
+            // Clear selection first so path highlighting is not interfered with by focused node highlighting
+            setSelectedNode(null);
+            
+            console.log("Path node IDs collected:", pathNodeIdsList, "Total:", pathNodeIdsList.length);
+            console.log("Path details before highlighting:", {
+                startNodeId: startNode.id,
+                endNodeId: endNode.id,
+                pathDataLength: pathData.path.length,
+                steps: steps,
+                collectedIds: pathNodeIdsList
+            });
+            
+            // Wait for graph state to settle
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Use the path we collected during discovery
+            // Filter to only include nodes that actually exist in the graph
+            const currentNodes = graphDataRef.current.nodes;
+            const nodeIdsInGraph = new Set(currentNodes.map(n => n.id));
+            const finalPathIds = pathNodeIdsList.filter(id => nodeIdsInGraph.has(id));
+            
+            console.log("Final path node IDs to highlight:", finalPathIds, "Total nodes:", finalPathIds.length);
+            console.log("Filtered out (not in graph):", pathNodeIdsList.filter(id => !nodeIdsInGraph.has(id)));
+            
+            // Release fixed positions after path discovery completes (let nodes move naturally)
+            setGraphData(current => {
+                const updatedNodes = current.nodes.map(node => {
+                    if (node.fx !== undefined && node.fx !== null || node.fy !== undefined && node.fy !== null) {
+                        // Remove fixed positions to allow natural movement (set to null, not undefined)
+                        return { ...node, fx: null, fy: null };
+                    }
+                    return node;
+                });
+                return { ...current, nodes: updatedNodes };
+            });
+            
+            setPathNodeIds([...finalPathIds]); // Create a new array to ensure React detects the change
             setNotification({ message: "Path discovery complete!", type: 'success' });
 
         } catch (err) {
@@ -1294,6 +1496,7 @@ const App: React.FC = () => {
         if (!node) {
             setSelectedNode(null);
             setContextMenu(null);
+            setPathNodeIds([]); // Clear path highlighting when deselecting
             return;
         }
 
@@ -1525,7 +1728,7 @@ const App: React.FC = () => {
                 isTextOnly={isTextOnly}
                 searchId={searchId}
                 selectedNode={selectedNode}
-                highlightKeepIds={deletePreview?.keepIds}
+                highlightKeepIds={pathNodeIds.length > 0 ? pathNodeIds : (deletePreview?.keepIds)}
                 highlightDropIds={deletePreview?.dropIds}
             />
 
@@ -1560,7 +1763,7 @@ const App: React.FC = () => {
             />
             <Sidebar
                 selectedNode={selectedNode}
-                onClose={() => { setSelectedNode(null); setContextMenu(null); }}
+                onClose={() => { setSelectedNode(null); setContextMenu(null); setPathNodeIds([]); }}
             />
 
             {contextMenu && (
