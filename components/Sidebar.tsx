@@ -33,7 +33,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
   if (!selectedNode) return null;
 
   const nonPersonTypes = ['Movie', 'Event', 'Battle', 'Project', 'Company', 'Organization', 'Album', 'Song', 'Book', 'War', 'Treaty', 'Administration'];
-  const isPerson = selectedNode.type === 'Person' || !nonPersonTypes.includes(selectedNode.type);
+  const isPerson = selectedNode.is_person ?? selectedNode.type.toLowerCase() === 'person';
 
   // Unified side panel styling - slides right on both mobile and desktop
   const panelClasses = `fixed top-4 right-4 z-20 transition-transform duration-300 ease-in-out ${isMobile ? 'w-[calc(100vw-2rem)] max-w-[24rem]' : 'w-[24rem]'
@@ -63,10 +63,13 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
             </div>
 
             <div className="space-y-4 overflow-y-auto pr-1">
-              <div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Type</span>
-                <p className={`${isPerson ? 'text-amber-400' : 'text-blue-400'} font-medium`}>{selectedNode.type}</p>
-              </div>
+              {/* Display type for events only (not for persons) */}
+              {!isPerson && selectedNode.type && (
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Type</span>
+                  <p className="text-blue-400 font-medium">{selectedNode.type}</p>
+                </div>
+              )}
 
               {selectedNode.description && (
                 <div>

@@ -59,7 +59,13 @@ export const classifyEntity = async (term: string): Promise<{ type: string; desc
     const prompt = `Classify "${term}".
       Return JSON with a "type" field.
       If it is a specific Person (real, fictional, alias, criminal identity, e.g. "Zodiac Killer", "Jack the Ripper"), type = "Person".
-      If it is a Movie, Event, Book, Academic Paper, Project, Place, Organization, or generic Concept, type = "Event".`;
+      If it is a Movie, return type = "Movie".
+      If it is a TV Show or TV Series, return type = "TV Show".
+      If it is a Book, return type = "Book".
+      If it is an Academic Paper, return type = "Academic Paper".
+      If it is a Battle or War, return type = "Battle" or "War".
+      If it is an Organization or Company, return type = "Organization" or "Company".
+      For other Events, Projects, Places, or generic Concepts, return an appropriate specific type name.`;
     
     console.log("🤖 [Gemini] Classify Prompt:", prompt);
 
@@ -71,7 +77,7 @@ export const classifyEntity = async (term: string): Promise<{ type: string; desc
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            type: { type: Type.STRING, enum: ["Person", "Event"] },
+            type: { type: Type.STRING },
             description: { type: Type.STRING, description: "Short 1-sentence description" }
           },
           required: ["type", "description"]
@@ -91,7 +97,8 @@ export const classifyEntity = async (term: string): Promise<{ type: string; desc
     console.log("Classify response text:", truncatedText);
     if (!text) return { type: 'Event', description: '' };
     const json = JSON.parse(text);
-    return { type: json.type, description: json.description || '' };
+    // Return the detailed type as-is (server will compute is_person)
+    return { type: json.type || 'Event', description: json.description || '' };
   } catch (error) {
     console.warn("Classification failed, defaulting to Event:", error);
     return { type: 'Event', description: '' };

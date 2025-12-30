@@ -17,12 +17,28 @@ const normalizeForDedup = (str: string) => {
         .replace(/\s+/g, ' ');   // Collapse spaces
 };
 
-const normalizeType = (t?: string) => (t || '').trim().toLowerCase();
+const canonicalType = (t?: string) => {
+    const norm = (t || '').trim().toLowerCase();
+    if (!norm) return '';
+    if (['film', 'movie', 'film series'].includes(norm) || norm.startsWith('film ')) return 'movie';
+    if (norm === 'tv show' || norm === 'tv series' || norm === 'television series') return 'tv';
+    return norm;
+};
 
 const dedupeKey = (title: string, type?: string, wikipediaId?: string | null) => {
-    const normType = normalizeType(type);
-    if (wikipediaId) return `wiki|${wikipediaId}|${normType}`;
-    return `${normalizeForDedup(title)}|${normType}`;
+    const normType = canonicalType(type);
+    // Always use normalized title for case-insensitive deduplication
+    // If wikipedia_id exists, include it as additional info, but still dedupe by normalized title
+    const normTitle = normalizeForDedup(title);
+    if (wikipediaId) return `wiki|${wikipediaId}|${normTitle}|${normType}`;
+    return `${normTitle}|${normType}`;
+};
+
+// Helper to get base dedupe key (normalized title + type, ignoring wikipedia_id)
+const baseDedupeKey = (title: string, type?: string) => {
+    const normType = canonicalType(type);
+    const normTitle = normalizeForDedup(title);
+    return `${normTitle}|${normType}`;
 };
 
 // Merge duplicate nodes (same normalized title/type) and remap links accordingly.
@@ -30,6 +46,7 @@ const dedupeGraph = (
     nodes: GraphNode[],
     links: GraphLink[]
 ): { nodes: GraphNode[]; links: GraphLink[] } => {
+    // Use base key (normalized title + type) for deduplication, regardless of wikipedia_id
     const dedupMap = new Map<string, GraphNode>();
     const idRemap = new Map<number, number>();
 
@@ -42,8 +59,10 @@ const dedupeGraph = (
     };
 
     const mergeNode = (existing: GraphNode, incoming: GraphNode): GraphNode => {
+        // Prefer node with wikipedia_id for base properties (title, wikipedia_id)
+        const prefer = existing.wikipedia_id ? existing : incoming;
         return {
-            ...existing,
+            ...prefer,
             type: mergeType(existing.type, incoming.type),
             imageUrl: existing.imageUrl || incoming.imageUrl || undefined,
             imageChecked: existing.imageChecked || incoming.imageChecked || !!existing.imageUrl || !!incoming.imageUrl,
@@ -53,12 +72,15 @@ const dedupeGraph = (
                 : incoming.description,
             year: existing.year ?? incoming.year,
             expanded: existing.expanded || incoming.expanded,
-            isLoading: existing.isLoading || incoming.isLoading
+            isLoading: existing.isLoading || incoming.isLoading,
+            // Keep wikipedia_id from whichever node has it (already in prefer spread, but explicit for clarity)
+            wikipedia_id: existing.wikipedia_id || incoming.wikipedia_id || undefined
         };
     };
 
     nodes.forEach(n => {
-        const key = dedupeKey(n.title, n.type, n.wikipedia_id);
+        // Use base key (normalized title + type) for case-insensitive deduplication
+        const key = baseDedupeKey(n.title, n.type);
         const existing = dedupMap.get(key);
         if (!existing) {
             dedupMap.set(key, n);
@@ -159,6 +181,16 @@ const App: React.FC = () => {
             setSelectedNode(updated);
         }
     }, [nodes, selectedNode]);
+
+    // Global safety net: dedupe graph whenever nodes/links change to eliminate stray duplicates
+    useEffect(() => {
+        const deduped = dedupeGraph(nodes, links);
+        const nodesChanged = deduped.nodes.length !== nodes.length || deduped.nodes.some((n, i) => n.id !== nodes[i]?.id);
+        const linksChanged = deduped.links.length !== links.length || deduped.links.some((l, i) => l.id !== links[i]?.id);
+        if (nodesChanged || linksChanged) {
+            setGraphData(deduped);
+        }
+    }, [nodes, links]);
 
     // Centralized apply-graph helper to reuse for imports/localStorage/public graphs
     const applyGraphData = useCallback((data: any, sourceLabel: string) => {
@@ -554,8 +586,7 @@ const App: React.FC = () => {
             console.log(`📄 [Expand] wiki summary for "${node.title}": ${wiki.extract ? wiki.extract.substring(0, 120) + '…' : 'none'} (pageid=${wiki.pageid || 'n/a'})`);
 
             let results: any[] = [];
-            const nonPersonTypes = ['Movie', 'Event', 'Battle', 'Project', 'Company', 'Organization', 'Album', 'Song', 'Book', 'War', 'Treaty', 'Administration'];
-            const isPerson = node.type === 'Person' || !nonPersonTypes.includes(node.type);
+            const isPerson = node.is_person ?? node.type.toLowerCase() === 'person';
 
             console.log(`📡 [Expand] Expanding ${node.type}: "${node.title}" (ID: ${node.id}, WikiID: ${node.wikipedia_id || 'none'})`);
 
@@ -614,11 +645,12 @@ const App: React.FC = () => {
                 }
 
                 // Ensure all nodes have IDs and dedupe by normalized title to prevent duplicates (e.g., multiple Marlon Brando nodes).
+                // Use baseDedupeKey for case-insensitive matching regardless of wikipedia_id
                 const existingByNorm = new Map<string, GraphNode>(
-                    (nodesOverride || nodes).map(n => [dedupeKey(n.title, n.type, n.wikipedia_id), n])
+                    (nodesOverride || nodes).map(n => [baseDedupeKey(n.title, n.type), n])
                 );
                 const processedNodes = nodesToUse.map(cn => {
-                    const norm = dedupeKey(cn.title, cn.type, cn.wikipedia_id);
+                    const norm = baseDedupeKey(cn.title, cn.type);
                     const existing = existingByNorm.get(norm);
                     const idToUse = existing ? existing.id : (cn.id ?? Math.floor(Math.random() * 1000000));
                     if (!existing) {

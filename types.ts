@@ -3,7 +3,8 @@ import { SimulationNodeDatum, SimulationLinkDatum } from 'd3';
 export interface GraphNode extends SimulationNodeDatum {
   id: number; // Sequential serial ID
   title: string; // The name of the event/project/thing/person
-  type: string; // 'Person', 'Movie', 'Battle', etc.
+  type: string; // Original detailed type: 'Person', 'Movie', 'Battle', etc. (preserved)
+  is_person?: boolean; // True for person nodes, false for event nodes
   wikipedia_id?: string;
   description?: string;
   imageUrl?: string | null; // URL for the node image
