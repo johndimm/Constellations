@@ -465,26 +465,41 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     return { person, desiredX: width / 2 };
                 });
 
-                // Sort by desired X to place left-to-right and resolve overlaps
+                // Sort by desired X to place left-to-right
                 desiredPositions.sort((a, b) => a.desiredX - b.desiredX);
 
-                // Chunk into rows to keep similar width as events
-                const rows: typeof desiredPositions[] = [];
-                for (let i = 0; i < desiredPositions.length; i += numCols) {
-                    rows.push(desiredPositions.slice(i, i + numCols));
-                }
+                // Calculate if all people fit in one row
+                const totalWidthNeeded = desiredPositions.length * minPersonDistance;
+                const availableWidth = Math.min(eventSpan * 1.2, width * 0.9); // Use more of available width
+                const fitsInOneRow = totalWidthNeeded <= availableWidth;
 
-                rows.forEach((row, rowIndex) => {
-                    const centerX = width / 2;
-                    const rowStartX = centerX - maxPersonWidth / 2;
-                    row.forEach((entry, colIndex) => {
+                if (fitsInOneRow) {
+                    // Place all people in a single row
+                    const rowStartX = width / 2 - (totalWidthNeeded / 2);
+                    desiredPositions.forEach((entry, index) => {
                         const { person } = entry;
-                        // Place each person in a fixed column slot to enforce width and spacing
-                        const x = rowStartX + colSpacing * colIndex + colSpacing / 2;
-                        const y = basePersonLineY - rowIndex * rowSpacing;
-                        lockNodePosition(person, x, y);
+                        const x = rowStartX + minPersonDistance * index + minPersonDistance / 2;
+                        lockNodePosition(person, x, basePersonLineY);
                     });
-                });
+                } else {
+                    // Only create multiple rows if necessary
+                    const colsPerRow = Math.max(1, Math.floor(availableWidth / minPersonDistance));
+                    const rows: typeof desiredPositions[] = [];
+                    for (let i = 0; i < desiredPositions.length; i += colsPerRow) {
+                        rows.push(desiredPositions.slice(i, i + colsPerRow));
+                    }
+
+                    rows.forEach((row, rowIndex) => {
+                        const rowWidth = row.length * minPersonDistance;
+                        const rowStartX = width / 2 - (rowWidth / 2);
+                        row.forEach((entry, colIndex) => {
+                            const { person } = entry;
+                            const x = rowStartX + minPersonDistance * colIndex + minPersonDistance / 2;
+                            const y = basePersonLineY - rowIndex * rowSpacing;
+                            lockNodePosition(person, x, y);
+                        });
+                    });
+                }
             }
 
             if (centerForce) centerForce.strength(0.01);
@@ -734,7 +749,15 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
         const hasStructureChanged = nodes.length !== prevNodesLen.current || validLinks.length !== prevLinksLen.current;
         if (hasStructureChanged) {
-            simulation.alpha(0.3).restart();
+            // Use lower alpha to prevent jarring movements when nodes are added during expansion
+            // Only restart if simulation is not already active (alpha > 0.01)
+            const currentAlpha = simulation.alpha();
+            if (currentAlpha < 0.01) {
+                simulation.alpha(0.15).restart();
+            } else {
+                // Just increase alpha slightly if already running, don't fully restart
+                simulation.alpha(Math.min(currentAlpha + 0.05, 0.5));
+            }
         }
 
         prevNodesLen.current = nodes.length;
@@ -1051,7 +1074,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                         // Force effect to re-run by restarting simulation with updated node data
                         setTimeout(() => {
                             if (simulationRef.current) {
-                                simulationRef.current.alpha(0.3).restart();
+                                // Use lower alpha to prevent jarring movements
+                                const currentAlpha = simulationRef.current.alpha();
+                                if (currentAlpha < 0.01) {
+                                    simulationRef.current.alpha(0.15).restart();
+                                } else {
+                                    simulationRef.current.alpha(Math.min(currentAlpha + 0.05, 0.5));
+                                }
                             }
                         }, 50);
                     }
@@ -1070,15 +1099,17 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         // In timeline mode, show links only for selected person, otherwise hide them
         if (isTimelineMode) {
             allLinks.style("display", d => {
+                if (!effectiveFocused) return "none";
                 const isPersonNode = effectiveFocused.is_person ?? effectiveFocused.type.toLowerCase() === 'person';
-                if (!effectiveFocused || !isPersonNode) return "none";
+                if (!isPersonNode) return "none";
                 const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source;
                 const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target;
                 // Show link if it connects to the selected person
                 return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? null : "none";
             }).style("stroke-opacity", d => {
+                if (!effectiveFocused) return 0;
                 const isPersonNode = effectiveFocused.is_person ?? effectiveFocused.type.toLowerCase() === 'person';
-                if (!effectiveFocused || !isPersonNode) return 0;
+                if (!isPersonNode) return 0;
                 const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source;
                 const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target;
                 return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? 0.9 : 0;
