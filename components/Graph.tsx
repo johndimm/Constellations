@@ -49,6 +49,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
     const [focusedNode, setFocusedNode] = useState<GraphNode | null>(null);
     const [timelineLayoutVersion, setTimelineLayoutVersion] = useState(0);
     const wasTimelineRef = useRef(isTimelineMode);
+    const timelinePositionsRef = useRef(new Map<number, { x: number, y: number }>());
 
     // Track previous data sizes to optimize simulation restarts
     const prevNodesLen = useRef(nodes.length);
@@ -78,9 +79,9 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         d.fy = null;
     }
 
-    function getNodeColor(type: string) {
+    function getNodeColor(type: string, isPerson?: boolean) {
         if (type === 'Origin') return '#ef4444';
-        if (type === 'Person') return '#f59e0b';
+        if (isPerson ?? type.toLowerCase() === 'person') return '#f59e0b';
         return '#3b82f6';
     }
 
@@ -92,7 +93,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
     // Calculate dynamic dimensions for nodes
     const getNodeDimensions = (node: GraphNode, isTimeline: boolean, textOnly: boolean): { w: number, h: number, r: number, type: string } => {
-        if (node.type === 'Person') {
+        const isPersonNode = node.is_person ?? node.type.toLowerCase() === 'person';
+        if (isPersonNode) {
             return { w: 96, h: 96, r: 110, type: 'circle' }; // r is collision radius
         }
 
@@ -368,6 +370,18 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         simulation.force("collide", collideForce);
 
         if (isTimelineMode) {
+            const lockNodePosition = (node: GraphNode, x: number, y: number) => {
+                node.fx = x;
+                node.fy = y;
+                node.x = x;
+                node.y = y;
+                node.vx = 0;
+                node.vy = 0;
+                timelinePositionsRef.current.set(node.id, { x, y });
+            };
+
+            timelinePositionsRef.current.clear();
+
             // Sort timeline nodes by year (ensure numeric comparison), then by id for stability
             const timelineNodes = nodes
                 .filter(n => n.year !== undefined)
@@ -398,15 +412,11 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             timelineNodes.forEach((node, index) => {
                 const fixedX = width / 2 + startX + (index * itemSpacing);
                 const fixedY = centerY + ((index % 2 === 0) ? -yOffset : yOffset);
-                node.fx = fixedX;
-                node.fy = fixedY;
-                // Initialize x, y if not set
-                if (node.x === undefined) node.x = fixedX;
-                if (node.y === undefined) node.y = fixedY;
+                lockNodePosition(node, fixedX, fixedY);
             });
 
             // Position people in multiple horizontal lines above events (wrap to match event width)
-            const peopleNodes = nodes.filter(n => n.type === 'Person');
+            const peopleNodes = nodes.filter(n => n.is_person ?? n.type.toLowerCase() === 'person');
             
             if (timelineNodes.length > 0) {
                 const personRadius = 110; // Match Person collision radius for spacing
@@ -421,8 +431,10 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
                 // Compute available width across events, then tighten person span toward the event cluster
                 const eventSpan = Math.max(itemSpacing, (timelineNodes.length - 1) * itemSpacing + DEFAULT_CARD_SIZE);
-                const availableWidth = eventSpan;
-                const maxPersonWidth = Math.max(availableWidth * 0.9, minPersonDistance); // shrink total width to align with events
+                const maxPersonWidth = Math.max(
+                    minPersonDistance,
+                    Math.min(eventSpan * 0.9, width * 0.8) // stay roughly within event span and viewport
+                );
                 const rowCapacity = Math.max(1, Math.floor(maxPersonWidth / minPersonDistance));
                 const numCols = rowCapacity;
                 const colSpacing = maxPersonWidth / numCols;
@@ -470,10 +482,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                         // Place each person in a fixed column slot to enforce width and spacing
                         const x = rowStartX + colSpacing * colIndex + colSpacing / 2;
                         const y = basePersonLineY - rowIndex * rowSpacing;
-                        person.fx = x;
-                        person.fy = y;
-                        if (person.x === undefined) person.x = x;
-                        if (person.y === undefined) person.y = y;
+                        lockNodePosition(person, x, y);
                     });
                 });
             }
@@ -491,6 +500,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             simulation.velocityDecay(0.9);
 
         } else {
+            timelinePositionsRef.current.clear();
             // Reset fixed positions for non-timeline mode
             nodes.forEach(node => {
                 node.fx = null;
@@ -516,6 +526,49 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
         simulation.alpha(isTimelineMode ? 0.2 : 0.5).restart();
     }, [isTimelineMode, isCompact, nodes, links, width, height, isTextOnly, timelineLayoutVersion]);
+
+    // Hard-clamp positions every frame in timeline mode to prevent drifting
+    useEffect(() => {
+        if (!isTimelineMode || !zoomGroupRef.current) return;
+        const container = d3.select(zoomGroupRef.current);
+
+        const getCoords = (node: GraphNode) => {
+            const fixed = timelinePositionsRef.current.get(node.id);
+            const x = (fixed?.x ?? node.fx ?? node.x) || 0;
+            const y = (fixed?.y ?? node.fy ?? node.y) || 0;
+            return { x, y };
+        };
+
+        const render = () => {
+            container.selectAll<SVGPathElement, GraphLink>(".link").attr("d", d => {
+                const source = d.source as GraphNode;
+                const target = d.target as GraphNode;
+                if (!source || !target || typeof source !== 'object' || typeof target !== 'object') return null;
+                const s = getCoords(source);
+                const t = getCoords(target);
+                const dist = Math.sqrt((t.x - s.x) ** 2 + (t.y - s.y) ** 2);
+                const midX = (s.x + t.x) / 2;
+                const midY = (s.y + t.y) / 2 + dist * 0.15;
+                return `M${s.x},${s.y} Q${midX},${midY} ${t.x},${t.y}`;
+            });
+
+            container.selectAll<SVGGElement, GraphNode>(".node").attr("transform", d => {
+                const { x, y } = getCoords(d);
+                d.x = x;
+                d.y = y;
+                d.vx = 0;
+                d.vy = 0;
+                return `translate(${x},${y})`;
+            });
+        };
+
+        let frame = requestAnimationFrame(function loop() {
+            render();
+            frame = requestAnimationFrame(loop);
+        });
+
+        return () => cancelAnimationFrame(frame);
+    }, [isTimelineMode, nodes, links]);
 
     // Reset zoom and re-center positions when leaving timeline mode to avoid off-screen jumps
     useEffect(() => {
@@ -696,17 +749,29 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         }
 
         simulation.on("tick", () => {
-            container.selectAll<SVGPathElement, GraphLink>(".link").attr("d", d => {
+            const linkPath = (d: GraphLink) => {
                 const source = d.source as GraphNode;
                 const target = d.target as GraphNode;
                 if (!source || !target || typeof source !== 'object' || typeof target !== 'object') return null;
-                const sx = source.x || 0, sy = source.y || 0, tx = target.x || 0, ty = target.y || 0;
+                const fixedS = timelinePositionsRef.current.get(source.id);
+                const fixedT = timelinePositionsRef.current.get(target.id);
+                const sx = (fixedS?.x ?? source.fx ?? source.x) || 0;
+                const sy = (fixedS?.y ?? source.fy ?? source.y) || 0;
+                const tx = (fixedT?.x ?? target.fx ?? target.x) || 0;
+                const ty = (fixedT?.y ?? target.fy ?? target.y) || 0;
                 const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2);
                 const midX = (sx + tx) / 2, midY = (sy + ty) / 2 + dist * 0.15;
                 return `M${sx},${sy} Q${midX},${midY} ${tx},${ty}`;
-            });
+            };
 
-            container.selectAll<SVGGElement, GraphNode>(".node").attr("transform", d => `translate(${d.x},${d.y})`);
+            container.selectAll<SVGPathElement, GraphLink>(".link").attr("d", linkPath);
+
+            container.selectAll<SVGGElement, GraphNode>(".node").attr("transform", d => {
+                const fixed = timelinePositionsRef.current.get(d.id);
+                const x = (fixed?.x ?? d.fx ?? d.x) || 0;
+                const y = (fixed?.y ?? d.fy ?? d.y) || 0;
+                return `translate(${x},${y})`;
+            });
 
             if (isTimelineMode) {
                 axisGroup.style("display", "block");
@@ -778,7 +843,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
             const isHovered = d.id === hoveredNode?.id;
             const isFocused = d.id === effectiveFocused?.id;
-            let color = getNodeColor(d.type);
+            let color = getNodeColor(d.type, d.is_person);
             const isDrop = dropHighlight.has(d.id);
             const isKeep = keepHighlight.has(d.id);
 
@@ -814,7 +879,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     .attr("clip-path", `url(#clip-circle-${String(d.id)})`);
                 g.select(`#clip-circle-${String(d.id)}`).select("circle").attr("r", r);
 
-                const labelText = g.select(".node-label").text(null).attr("y", r + 15);
+                const labelText = g.select(".node-label").style("display", "block").text(null).attr("y", r + 15);
                 wrapText(d.title, 90).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", "10px").text(line));
                 g.select(".year-label").text(d.year || "").attr("y", -r - 10).style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
 
@@ -911,7 +976,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     // Hide card-content for non-card nodes
                     g.select(".card-content").style("display", "none");
                     g.select(".people-label").style("display", "none");
-                    const labelText = g.select(".node-label").text(null).attr("y", textY);
+                    // Show and update node-label for box mode
+                    const labelText = g.select(".node-label").style("display", "block").text(null).attr("y", textY);
                     wrapText(d.title, dims.type === 'box' ? 100 : 200).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", dims.type === 'card' ? "13px" : "10px").style("font-weight", dims.type === 'card' ? "bold" : "normal").text(line));
                 }
 
@@ -935,7 +1001,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             requestAnimationFrame(() => {
                 let hasChanges = false;
                 allNodes.each(function(d) {
-                    if (d.type === 'Person') return; // Skip people nodes
+                    const isPersonNode = d.is_person ?? d.type.toLowerCase() === 'person';
+                    if (isPersonNode) return; // Skip people nodes
                     const g = d3.select(this);
                     const cardContent = g.select(".card-content");
                     if (cardContent.empty()) return;
@@ -1003,13 +1070,15 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         // In timeline mode, show links only for selected person, otherwise hide them
         if (isTimelineMode) {
             allLinks.style("display", d => {
-                if (!effectiveFocused || effectiveFocused.type !== 'Person') return "none";
+                const isPersonNode = effectiveFocused.is_person ?? effectiveFocused.type.toLowerCase() === 'person';
+                if (!effectiveFocused || !isPersonNode) return "none";
                 const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source;
                 const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target;
                 // Show link if it connects to the selected person
                 return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? null : "none";
             }).style("stroke-opacity", d => {
-                if (!effectiveFocused || effectiveFocused.type !== 'Person') return 0;
+                const isPersonNode = effectiveFocused.is_person ?? effectiveFocused.type.toLowerCase() === 'person';
+                if (!effectiveFocused || !isPersonNode) return 0;
                 const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source;
                 const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target;
                 return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? 0.9 : 0;

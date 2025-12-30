@@ -59,7 +59,13 @@ async function ensureSchema() {
     await client.query("update nodes set wikipedia_id = '' where wikipedia_id is null");
     await client.query("alter table if exists nodes alter column wikipedia_id set not null");
     await client.query("create unique index if not exists nodes_title_type_wiki_idx on nodes (lower(title), type, wikipedia_id)");
-    console.log("Schema migrations applied (image_url, wiki_summary, wikipedia_id defaults, unique index).");
+    
+    // Add is_person column for app logic (boolean), preserving original type
+    await client.query("alter table if exists nodes add column if not exists is_person boolean");
+    await client.query("update nodes set is_person = (lower(type) = 'person') where is_person is null");
+    await client.query("create index if not exists nodes_is_person_idx on nodes(is_person)");
+    
+    console.log("Schema migrations applied (image_url, wiki_summary, wikipedia_id defaults, unique index, is_person).");
   } catch (e) {
     console.error("Schema init failed", e);
   } finally {
@@ -79,6 +85,7 @@ create table if not exists nodes (
   id serial primary key,
   title text not null,
   type text not null,
+  is_person boolean,
   wikipedia_id text not null default '',
   description text,
   year int,
@@ -119,34 +126,42 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
     try {
       const title = n.title || n.id;
 
-      // 1. Check for existing node (case-insensitive on title+type only, ignore wikipedia_id)
-      // Prefer nodes with wikipedia_id (more complete), then oldest
+      // 1. Check for existing node (case-insensitive on title, match wikipedia_id, ignore type)
+      // This prevents duplicates like "Last Tango in Paris" with different types
+      // Prefer nodes with wikipedia_id (more complete), then nodes with more specific types, then oldest
       const checkSql = `
-            select id from nodes 
-            where lower(title) = lower($1) and type = $2
+            select id, type from nodes 
+            where lower(title) = lower($1) and COALESCE(wikipedia_id, '') = COALESCE($2, '')
             order by 
               case when wikipedia_id is not null and wikipedia_id != '' then 0 else 1 end,
+              case when type != lower(type) then 0 else 1 end,  -- Prefer capitalized types (Movie) over lowercase (event)
               id
             limit 1
         `;
-      const checkRes = await client.query(checkSql, [title, n.type]);
+      const checkRes = await client.query(checkSql, [title, normalizedWikiId || '']);
 
       let id;
 
       if (checkRes.rows.length > 0) {
-        // 2. UPDATE existing
+        // 2. UPDATE existing node (duplicate found)
         id = checkRes.rows[0].id;
+        const existingType = checkRes.rows[0].type;
+        // Prefer the more specific type (capitalized like "Movie" over lowercase like "event")
+        const typeToKeep = (existingType && existingType !== existingType.toLowerCase()) ? existingType : n.type;
         const updateSql = `
                 update nodes set
-                  description = coalesce($1, description),
-                  year = coalesce($2, year),
-                  meta = coalesce(meta, '{}'::jsonb) || coalesce($3, '{}'::jsonb),
-                  image_url = coalesce($4, image_url),
-                  wiki_summary = coalesce($5, wiki_summary),
+                  type = $1,
+                  description = coalesce($2, description),
+                  year = coalesce($3, year),
+                  meta = coalesce(meta, '{}'::jsonb) || coalesce($4, '{}'::jsonb),
+                  image_url = coalesce($5, image_url),
+                  wiki_summary = coalesce($6, wiki_summary),
+                  is_person = (lower($1) = 'person'),
                   updated_at = now()
-                where id = $6
+                where id = $7
              `;
         await client.query(updateSql, [
+          typeToKeep,
           n.description ?? null,
           n.year ?? null,
           meta,
@@ -157,8 +172,8 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
       } else {
         // 3. INSERT new
         const insertSql = `
-               insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary)
-               values ($1, $2, $3, $4, $5, $6, $7, $8)
+               insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary, is_person)
+               values ($1, $2, $3, $4, $5, $6, $7, $8, lower($2) = 'person')
                returning id
              `;
         const insertRes = await client.query(insertSql, [
@@ -247,7 +262,7 @@ app.get("/expansion", async (req, res) => {
           const mergedMeta = { ...m };
           if (!mergedMeta.imageUrl && r.image_url) mergedMeta.imageUrl = r.image_url;
           if (!mergedMeta.wikiSummary && r.wiki_summary) mergedMeta.wikiSummary = r.wiki_summary;
-          return { ...r, meta: mergedMeta, imageUrl: r.image_url, wikiSummary: r.wiki_summary };
+          return { ...r, meta: mergedMeta, imageUrl: r.image_url, wikiSummary: r.wiki_summary, is_person: r.is_person ?? (r.type?.toLowerCase() === 'person') };
         })
       });
     }
@@ -274,10 +289,10 @@ app.post("/expansion", async (req, res) => {
   try {
     await client.query("begin");
 
-    // 1. Get source node type to know if it's a person or event
-    const sourceRes = await client.query("select type from nodes where id = $1", [sourceId]);
+    // 1. Get source node is_person to know if it's a person or event
+    const sourceRes = await client.query("select is_person, type from nodes where id = $1", [sourceId]);
     if (sourceRes.rowCount === 0) throw new Error("Source node not found");
-    const sourceType = sourceRes.rows[0].type;
+    const sourceIsPerson = sourceRes.rows[0].is_person ?? (sourceRes.rows[0].type?.toLowerCase() === 'person');
 
     // 2. Upsert target nodes
     const idMap = await upsertNodes(client, nodes);
@@ -287,10 +302,12 @@ app.post("/expansion", async (req, res) => {
       const [title, type, wikiId] = key.split("|");
 
       let personId, eventId;
-      if (sourceType === 'Person') {
+      if (sourceIsPerson) {
+        // Source is a person, so source -> target is person -> event
         personId = sourceId;
         eventId = targetId;
       } else {
+        // Source is an event, so target -> source is person -> event
         personId = targetId;
         eventId = sourceId;
       }
