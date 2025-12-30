@@ -238,7 +238,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             .force("link", d3.forceLink<GraphNode, GraphLink>(validLinks).id(d => d.id).distance(100))
             .force("charge", d3.forceManyBody().strength(-300))
             .force("center", d3.forceCenter(width / 2, height / 2))
-            .velocityDecay(0.75); // Higher decay to bleed off shared angular momentum and prevent spinning
+            .velocityDecay(0.85); // Higher decay to prevent spinning (increased from 0.75)
 
         simulationRef.current = simulation;
 
@@ -520,11 +520,11 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             simulation.force("x", null);
             simulation.force("y", null);
             
-            // Reset velocity decay for non-timeline mode
-            simulation.velocityDecay(0.4);
+            // Higher velocity decay for non-timeline mode to prevent spinning
+            simulation.velocityDecay(0.85);
         }
 
-        simulation.alpha(isTimelineMode ? 0.2 : 0.5).restart();
+        simulation.alpha(isTimelineMode ? 0.2 : 0.3).restart(); // Reduced from 0.5 to 0.3 to prevent spinning
     }, [isTimelineMode, isCompact, nodes, links, width, height, isTextOnly, timelineLayoutVersion]);
 
     // Hard-clamp positions every frame in timeline mode to prevent drifting
@@ -634,11 +634,38 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
         const nodeSel = container.selectAll<SVGGElement, GraphNode>(".node").data(nodes, d => d.id);
         const nodeEnter = nodeSel.enter().append("g")
-            .attr("class", "node")
-            .call(d3.drag<SVGGElement, GraphNode>()
-                .on("start", dragstarted)
-                .on("drag", dragged)
-                .on("end", dragended));
+            .attr("class", "node");
+        
+        // Create drag behavior - only allow dragging if not in timeline mode, or if not a person node in timeline mode
+        const dragBehavior = d3.drag<SVGGElement, GraphNode>()
+            .on("start", (event, d) => {
+                if (isTimelineMode) {
+                    const isPerson = (d.is_person ?? d.type.toLowerCase()) === 'person';
+                    if (isPerson) {
+                        event.sourceEvent.stopPropagation();
+                        return; // Don't allow dragging people in timeline mode
+                    }
+                }
+                dragstarted(event, d);
+            })
+            .on("drag", (event, d) => {
+                if (isTimelineMode) {
+                    const isPerson = (d.is_person ?? d.type.toLowerCase()) === 'person';
+                    if (isPerson) return; // Don't allow dragging people in timeline mode
+                }
+                dragged(event, d);
+            })
+            .on("end", (event, d) => {
+                if (isTimelineMode) {
+                    const isPerson = (d.is_person ?? d.type.toLowerCase()) === 'person';
+                    if (isPerson) return; // Don't allow dragging people in timeline mode
+                }
+                dragended(event, d);
+            });
+        
+        // Apply drag to all nodes (both new and existing)
+        // nodeSel includes all nodes, so we call drag on the merged selection
+        nodeEnter.merge(nodeSel).call(dragBehavior);
 
         nodeEnter.append("circle")
             .attr("class", "node-circle")
@@ -738,10 +765,10 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             // Only restart if simulation is not already active (alpha > 0.01)
             const currentAlpha = simulation.alpha();
             if (currentAlpha < 0.01) {
-                simulation.alpha(0.15).restart();
+                simulation.alpha(0.1).restart(); // Lower alpha to reduce spinning (reduced from 0.15)
             } else {
                 // Just increase alpha slightly if already running, don't fully restart
-                simulation.alpha(Math.min(currentAlpha + 0.05, 0.5));
+                simulation.alpha(Math.min(currentAlpha + 0.03, 0.3)); // Reduced max alpha from 0.5 to 0.3
             }
         }
 
@@ -798,6 +825,30 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         const keepHighlight = new Set(highlightKeepIds || []);
         const dropHighlight = new Set(highlightDropIds || []);
         const hasHighlight = keepHighlight.size > 0 || dropHighlight.size > 0;
+
+        // Build set of path links (links between consecutive nodes in the path)
+        // IMPORTANT: Only highlight links that actually exist and are part of the path sequence
+        const pathLinkIds = new Set<string>();
+        if (hasHighlight && highlightKeepIds && highlightKeepIds.length > 1) {
+            // For each consecutive pair in the path, check if a link exists
+            for (let i = 0; i < highlightKeepIds.length - 1; i++) {
+                const nodeId1 = highlightKeepIds[i];
+                const nodeId2 = highlightKeepIds[i + 1];
+                // Find the actual link ID in the links array
+                const link = links.find(l => {
+                    const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
+                    const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
+                    return (sId === nodeId1 && tId === nodeId2) || (sId === nodeId2 && tId === nodeId1);
+                });
+                if (link) {
+                    pathLinkIds.add(link.id);
+                    console.log(`Path link found: ${nodeId1} <-> ${nodeId2} (link ID: ${link.id})`);
+                } else {
+                    console.log(`Path link NOT found: ${nodeId1} <-> ${nodeId2} - will not highlight`);
+                }
+            }
+            console.log(`Path link IDs to highlight:`, Array.from(pathLinkIds));
+        }
 
         // Pre-calculate neighbor set for the focused node to make the loop more efficient and robust
         const neighborIds = new Set<string | number>();
@@ -862,7 +913,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 baseOpacity = isKeep ? 1 : 0.3;
             }
 
-            if (effectiveFocused && !isFocused && !neighborIds.has(d.id)) {
+            // Don't dim nodes that are in the path (keepHighlight) even if they're not focused
+            if (effectiveFocused && !isFocused && !neighborIds.has(d.id) && !isKeep) {
                 baseOpacity *= 0.25;
             }
             g.style("opacity", baseOpacity);
@@ -1059,12 +1111,12 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                         // Force effect to re-run by restarting simulation with updated node data
                         setTimeout(() => {
                             if (simulationRef.current) {
-                                // Use lower alpha to prevent jarring movements
+                                // Use lower alpha to prevent jarring movements and spinning
                                 const currentAlpha = simulationRef.current.alpha();
                                 if (currentAlpha < 0.01) {
-                                    simulationRef.current.alpha(0.15).restart();
+                                    simulationRef.current.alpha(0.1).restart(); // Lower alpha to reduce spinning
                                 } else {
-                                    simulationRef.current.alpha(Math.min(currentAlpha + 0.05, 0.5));
+                                    simulationRef.current.alpha(Math.min(currentAlpha + 0.03, 0.3)); // Reduced max alpha
                                 }
                             }
                         }, 50);
@@ -1105,7 +1157,11 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
                     const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
                     if (dropHighlight.has(sId) || dropHighlight.has(tId)) return 0.12;
+                    // Priority 1: Path highlighting - only highlight links that are actually in the path sequence
+                    if (hasHighlight && pathLinkIds.has(d.id)) return 0.9;
+                    // Priority 2: Other links when path highlighting is active
                     if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return 0.25;
+                    // Priority 3: Focused node highlighting
                     if (effectiveFocused) return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? 0.9 : 0.1;
                     return 0.7;
                 })
@@ -1113,8 +1169,18 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
                     const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
                     if (dropHighlight.has(sId) || dropHighlight.has(tId)) return "#f87171";
+                    // Priority 1: Path highlighting - only highlight links that are actually in the path sequence
+                    if (hasHighlight && pathLinkIds.has(d.id)) return "#f97316";
+                    // Priority 2: Other links when path highlighting is active
+                    if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return "#94a3b8";
+                    // Priority 3: Focused node highlighting
                     if (effectiveFocused && (sId === effectiveFocused.id || tId === effectiveFocused.id)) return "#f97316";
-                    return (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) ? "#94a3b8" : "#dc2626";
+                    return "#dc2626";
+                })
+                .style("stroke-width", d => {
+                    // Make path links thicker - only for links actually in the path sequence
+                    if (hasHighlight && pathLinkIds.has(d.id)) return 3;
+                    return 2;
                 });
         }
 

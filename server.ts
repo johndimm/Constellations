@@ -233,6 +233,91 @@ app.post("/init", async (_, res) => {
   }
 });
 
+// Find path between two nodes using database (BFS)
+app.get("/path", async (req, res) => {
+  const { startId, endId, maxDepth = "10" } = req.query as { startId?: string; endId?: string; maxDepth?: string };
+  if (!startId || !endId) return res.status(400).json({ error: "startId and endId required" });
+
+  const start = parseInt(startId);
+  const end = parseInt(endId);
+  const maxD = parseInt(maxDepth || "10");
+  if (isNaN(start) || isNaN(end)) return res.status(400).json({ error: "startId and endId must be numbers" });
+
+  const client = await pool.connect();
+  try {
+    // BFS to find path between two nodes
+    // Graph is bipartite: Person <-> Event <-> Person <-> Event...
+    const visited = new Set<number>();
+    const queue: Array<{ nodeId: number; path: number[] }> = [{ nodeId: start, path: [start] }];
+    visited.add(start);
+
+    while (queue.length > 0) {
+      const { nodeId, path } = queue.shift()!;
+      
+      if (path.length > maxD) continue; // Skip paths that exceed max depth
+
+      // Get node type to know if we need person or event neighbors
+      const nodeRes = await client.query("select is_person from nodes where id = $1", [nodeId]);
+      if (nodeRes.rows.length === 0) continue;
+      const isPerson = nodeRes.rows[0].is_person ?? false;
+
+      // Get neighbors: if current node is person, get events; if event, get people
+      const neighborsRes = await client.query(
+        isPerson
+          ? `select event_id as neighbor_id from edges where person_id = $1`
+          : `select person_id as neighbor_id from edges where event_id = $1`,
+        [nodeId]
+      );
+
+      for (const row of neighborsRes.rows) {
+        const neighborId = row.neighbor_id;
+        
+        if (neighborId === end) {
+          // Found path!
+          const fullPath = [...path, neighborId];
+          // Fetch all nodes in the path using parameterized query
+          const nodesRes = await client.query(
+            `select * from nodes where id = ANY($1::int[])`,
+            [fullPath]
+          );
+          const nodeMap = new Map(nodesRes.rows.map(r => [r.id, r]));
+          
+          const pathNodes = fullPath.map(id => {
+            const node = nodeMap.get(id);
+            if (!node) return null;
+            const m = node.meta || {};
+            const mergedMeta = { ...m };
+            if (!mergedMeta.imageUrl && node.image_url) mergedMeta.imageUrl = node.image_url;
+            if (!mergedMeta.wikiSummary && node.wiki_summary) mergedMeta.wikiSummary = node.wiki_summary;
+            return {
+              ...node,
+              meta: mergedMeta,
+              imageUrl: node.image_url,
+              wikiSummary: node.wiki_summary,
+              is_person: node.is_person ?? (node.type?.toLowerCase() === 'person')
+            };
+          }).filter((n): n is NonNullable<typeof n> => n !== null);
+
+          return res.json({ path: pathNodes, found: true });
+        }
+
+        if (!visited.has(neighborId)) {
+          visited.add(neighborId);
+          queue.push({ nodeId: neighborId, path: [...path, neighborId] });
+        }
+      }
+    }
+
+    // No path found
+    return res.json({ path: [], found: false });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 // Fetch expansion: return all neighbors of a node
 app.get("/expansion", async (req, res) => {
   const { sourceId } = req.query as { sourceId?: string };
