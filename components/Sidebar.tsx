@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GraphNode } from '../types';
 import { X, ExternalLink, ChevronUp } from 'lucide-react';
 
@@ -11,6 +11,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFullSummary, setShowFullSummary] = useState(false);
+  const userManuallyCollapsedRef = useRef(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -18,10 +19,11 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Auto-expand logic: Only auto-expand on desktop. On mobile, keep it collapsed so it doesn't block the graph.
+  // Auto-expand logic: Only auto-expand on desktop if user hasn't manually collapsed it
+  // On mobile, keep it collapsed so it doesn't block the graph.
   useEffect(() => {
     if (selectedNode) {
-      if (!isMobile) {
+      if (!isMobile && !userManuallyCollapsedRef.current) {
         setIsCollapsed(false);
       } else {
         setIsCollapsed(true);
@@ -29,6 +31,13 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
       setShowFullSummary(false);
     }
   }, [selectedNode, isMobile]);
+
+  const handleToggleCollapse = () => {
+    const newCollapsed = !isCollapsed;
+    setIsCollapsed(newCollapsed);
+    // Track that user manually collapsed it
+    userManuallyCollapsedRef.current = newCollapsed;
+  };
 
   if (!selectedNode) return null;
 
@@ -43,7 +52,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
     <>
       {/* Toggle Handle - Positioned independently to stay visible */}
       <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
+        onClick={handleToggleCollapse}
         className={`fixed top-4 z-60 w-10 h-10 bg-slate-900/90 border border-slate-700 rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-all duration-300 shadow-xl pointer-events-auto ${isCollapsed ? 'right-4 max-[450px]:right-3' : 'right-[calc(min(24rem,100vw-2rem)+1rem)] max-[450px]:right-3'
           }`}
         title={isCollapsed ? "Expand Details" : "Collapse Details"}
