@@ -95,7 +95,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
     const getNodeDimensions = (node: GraphNode, isTimeline: boolean, textOnly: boolean): { w: number, h: number, r: number, type: string } => {
         const isPersonNode = node.is_person ?? node.type.toLowerCase() === 'person';
         if (isPersonNode) {
-            return { w: 96, h: 96, r: 110, type: 'circle' }; // r is collision radius
+            if (isTimeline) {
+                // Larger size in timeline mode (2x)
+                return { w: 96, h: 96, r: 110, type: 'circle' }; // r is collision radius
+            } else {
+                // Smaller size in graph mode (original size)
+                return { w: 48, h: 48, r: 55, type: 'circle' }; // r is collision radius
+            }
         }
 
         // Events/Things
@@ -419,25 +425,18 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             const peopleNodes = nodes.filter(n => n.is_person ?? n.type.toLowerCase() === 'person');
             
             if (timelineNodes.length > 0) {
-                const personRadius = 110; // Match Person collision radius for spacing
-                const minPersonDistance = personRadius * 2 + 24; // Small buffer to avoid touching
+                const personRadius = 110; // Match Person collision radius for timeline (2x size)
+                const minPersonDistance = personRadius * 2 + 20; // Spacing between people
                 // Place lines above the highest events (top events are at centerY - yOffset)
                 const cardHeightGuess = timelineNodes.reduce((max, event) => {
                     const h = event.h && event.h > 0 ? event.h : DEFAULT_CARD_SIZE;
                     return Math.max(max, h);
                 }, DEFAULT_CARD_SIZE);
                 const basePersonLineY = centerY - yOffset - (cardHeightGuess / 2) - personRadius - 30;
-                const rowSpacing = personRadius * 2 + 30;
 
-                // Compute available width across events, then tighten person span toward the event cluster
+                // Compute available width - use the full event span
                 const eventSpan = Math.max(itemSpacing, (timelineNodes.length - 1) * itemSpacing + DEFAULT_CARD_SIZE);
-                const maxPersonWidth = Math.max(
-                    minPersonDistance,
-                    Math.min(eventSpan * 0.9, width * 0.8) // stay roughly within event span and viewport
-                );
-                const rowCapacity = Math.max(1, Math.floor(maxPersonWidth / minPersonDistance));
-                const numCols = rowCapacity;
-                const colSpacing = maxPersonWidth / numCols;
+                const availableWidth = Math.min(eventSpan * 1.1, width * 0.95); // Use most of available width
 
                 // Compute desired X based on connected events; fall back to center
                 const desiredPositions = peopleNodes.map(person => {
@@ -468,38 +467,24 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 // Sort by desired X to place left-to-right
                 desiredPositions.sort((a, b) => a.desiredX - b.desiredX);
 
-                // Calculate if all people fit in one row
+                // Always try to fit all people in one row, spacing them out evenly
+                // Calculate spacing: if they don't fit with minPersonDistance, reduce spacing slightly
                 const totalWidthNeeded = desiredPositions.length * minPersonDistance;
-                const availableWidth = Math.min(eventSpan * 1.2, width * 0.9); // Use more of available width
-                const fitsInOneRow = totalWidthNeeded <= availableWidth;
-
-                if (fitsInOneRow) {
-                    // Place all people in a single row
-                    const rowStartX = width / 2 - (totalWidthNeeded / 2);
-                    desiredPositions.forEach((entry, index) => {
-                        const { person } = entry;
-                        const x = rowStartX + minPersonDistance * index + minPersonDistance / 2;
-                        lockNodePosition(person, x, basePersonLineY);
-                    });
-                } else {
-                    // Only create multiple rows if necessary
-                    const colsPerRow = Math.max(1, Math.floor(availableWidth / minPersonDistance));
-                    const rows: typeof desiredPositions[] = [];
-                    for (let i = 0; i < desiredPositions.length; i += colsPerRow) {
-                        rows.push(desiredPositions.slice(i, i + colsPerRow));
-                    }
-
-                    rows.forEach((row, rowIndex) => {
-                        const rowWidth = row.length * minPersonDistance;
-                        const rowStartX = width / 2 - (rowWidth / 2);
-                        row.forEach((entry, colIndex) => {
-                            const { person } = entry;
-                            const x = rowStartX + minPersonDistance * colIndex + minPersonDistance / 2;
-                            const y = basePersonLineY - rowIndex * rowSpacing;
-                            lockNodePosition(person, x, y);
-                        });
-                    });
+                let actualSpacing = minPersonDistance;
+                if (totalWidthNeeded > availableWidth && desiredPositions.length > 1) {
+                    // Reduce spacing to fit, but keep at least personRadius * 1.8 to avoid overlap
+                    actualSpacing = Math.max(personRadius * 1.8, availableWidth / desiredPositions.length);
                 }
+
+                const totalRowWidth = actualSpacing * (desiredPositions.length - 1);
+                const rowStartX = width / 2 - (totalRowWidth / 2);
+                
+                // Place all people in a single row
+                desiredPositions.forEach((entry, index) => {
+                    const { person } = entry;
+                    const x = rowStartX + actualSpacing * index;
+                    lockNodePosition(person, x, basePersonLineY);
+                });
             }
 
             if (centerForce) centerForce.strength(0.01);
