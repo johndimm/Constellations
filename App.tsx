@@ -50,6 +50,10 @@ const dedupeGraph = (
     const dedupMap = new Map<string, GraphNode>();
     const idRemap = new Map<number, number>();
 
+    const normalizeType = (t?: string) => {
+        return (t || '').trim().toLowerCase();
+    };
+
     const mergeType = (a?: string, b?: string) => {
         const na = normalizeType(a);
         const nb = normalizeType(b);
@@ -1218,38 +1222,51 @@ const App: React.FC = () => {
     };
 
     const handleExpandLeaves = useCallback(async (node: GraphNode) => {
-        // Only expand direct neighbors of the selected node
-        const neighborIds = links.reduce<number[]>((acc, l) => {
-            const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
-            const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
-            if (s === node.id) acc.push(t);
-            else if (t === node.id) acc.push(s);
-            return acc;
-        }, []);
+        try {
+            // Only expand direct neighbors of the selected node
+            const neighborIds = links.reduce<number[]>((acc, l) => {
+                const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+                const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+                if (s === node.id) acc.push(t);
+                else if (t === node.id) acc.push(s);
+                return acc;
+            }, []);
 
-        const neighbors = nodes.filter(n => neighborIds.includes(n.id) && !n.expanded && !n.isLoading);
+            const neighbors = nodes.filter(n => neighborIds.includes(n.id) && !n.expanded && !n.isLoading);
 
-        if (neighbors.length === 0) {
-            setNotification({ message: "No unexpanded neighbors.", type: 'error' });
-            return;
-        }
-
-        setNotification({ message: `Expanding ${neighbors.length} neighbors...`, type: 'success' });
-
-        for (const targetNode of neighbors) {
-            try {
-                setSelectedNode(targetNode);
-                await fetchAndExpandNode(targetNode);
-                // Delay to allow physics and state to settle
-                await new Promise(resolve => setTimeout(resolve, 300));
-            } catch (e) {
-                console.warn(`Failed to expand node ${targetNode.id}`, e);
+            if (neighbors.length === 0) {
+                setNotification({ message: "No unexpanded neighbors.", type: 'error' });
+                return;
             }
-        }
 
-        // Clear selection to restore full brightness
-        setSelectedNode(null);
-        setNotification({ message: `Expansion complete.`, type: 'success' });
+            setNotification({ message: `Expanding ${neighbors.length} neighbors...`, type: 'success' });
+
+            // Don't change selectedNode during expansion - just expand the nodes
+            // This prevents state conflicts and rendering issues
+            for (const targetNode of neighbors) {
+                try {
+                    // Verify node still exists before expanding
+                    const nodeStillExists = nodes.some(n => n.id === targetNode.id);
+                    if (!nodeStillExists) {
+                        console.warn(`Node ${targetNode.id} no longer exists, skipping`);
+                        continue;
+                    }
+                    
+                    await fetchAndExpandNode(targetNode);
+                    // Delay to allow physics and state to settle
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                } catch (e) {
+                    console.error(`Failed to expand node ${targetNode.id} (${targetNode.title})`, e);
+                    // Continue with next node instead of crashing
+                }
+            }
+
+            setNotification({ message: `Expansion complete.`, type: 'success' });
+        } catch (e) {
+            console.error("Error in handleExpandLeaves:", e);
+            setError("Error expanding leaf nodes. Please try again.");
+            setNotification({ message: "Expansion failed.", type: 'error' });
+        }
     }, [nodes, links, fetchAndExpandNode]);
 
     // Auto-expand trigger: when pendingAutoExpandId is set and the node is ready, call handleExpandLeaves
