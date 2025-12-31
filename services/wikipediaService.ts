@@ -371,45 +371,15 @@ export const fetchWikipediaSummary = async (
           if (regex.test(title) || regex.test(snippet)) s -= 400;
         });
 
-        // Heuristic disambiguation for notorious ambiguous titles
-        if (normalized === 'gaslight') {
-          // Strongly prefer the film pages over lighting/industry topics
-          if (title.includes('(1944 film)')) s += 2500;
-          else if (title.includes('(1940 film)') || title.includes('film')) s += 1500;
-          if (title.includes('lighting') || title.includes('industry') || title.includes('gaslight (piping)')) s -= 2000;
-        }
-
-        if (normalized === 'brazil') {
-          const ctx = (context || '').toLowerCase();
-          const wantsFilm = ctx.includes('gilliam') || ctx.includes('movie') || ctx.includes('film') || ctx.includes('director');
-          if (title.includes('(1985 film)') || title.includes('(film)')) s += wantsFilm ? 2500 : 1200;
-          if (wantsFilm && (title === 'brazil' || title.includes('country') || title.includes('brazilian'))) s -= 1800;
-        }
-
-        const scienceTerms = ['computer', 'software', 'engineer', 'engineering', 'scientist', 'researcher', 'data', 'ai', 'machine learning', 'analytics', 'algorithm', 'ircam', 'cnmat', 'music', 'acoustics', 'composer', 'composition'];
-        let hasScienceContext = false;
-        if (context) {
-          const lowerContext = context.toLowerCase();
-          hasScienceContext = scienceTerms.some(t => lowerContext.includes(t));
-        }
-
-        scienceTerms.forEach(t => {
-          const regex = new RegExp(`\\b${t}\\b`, 'i');
-          if (regex.test(title) || regex.test(snippet)) s += 250;
-        });
-
-        const journalismTerms = ['journalist', 'reporter', 'correspondent', 'columnist', 'newspaper', 'wsj', 'economics', 'political', 'brookings'];
-        let isJournalism = false;
-        journalismTerms.forEach(t => {
-          const regex = new RegExp(`\\b${t}\\b`, 'i');
-          if (regex.test(title) || regex.test(snippet)) {
-            s -= 100;
-            isJournalism = true;
+        // Contextual boost: if context clearly implies film/TV, upweight media pages
+        const filmContext = (context || '').toLowerCase().match(/\b(film|movie|director|screenplay|starring|cast|ridley scott|screenwriter|cinematography|box office)\b/);
+        if (filmContext) {
+          if (title.includes('(film)') || title.includes('(movie)') || title.includes('(tv') || title.includes('(television)')) {
+            s += 1200;
           }
-        });
-
-        if (hasScienceContext && isJournalism) {
-          s -= 2000;
+          if (title.includes('(2000 film)') || title.includes('(199') || title.includes('(20')) {
+            s += 600; // gentle year-specific nudge, not title-specific
+          }
         }
 
         if (/born\s\d{4}/.test(snippet)) s += 80;
