@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GraphNode } from '../types';
-import { X, ExternalLink, ChevronUp } from 'lucide-react';
+import { X, ExternalLink } from 'lucide-react';
 
 interface SidebarProps {
   selectedNode: GraphNode | null;
   onClose: () => void;
+  externalToggleSignal?: number;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, externalToggleSignal }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFullSummary, setShowFullSummary] = useState(false);
   const userManuallyCollapsedRef = useRef(false);
+  const lastToggleSignalRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -32,6 +34,19 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
     }
   }, [selectedNode, isMobile]);
 
+  // External toggle (from header button)
+  useEffect(() => {
+    if (externalToggleSignal === undefined) return;
+    if (lastToggleSignalRef.current === undefined) {
+      lastToggleSignalRef.current = externalToggleSignal;
+      return;
+    }
+    if (externalToggleSignal !== lastToggleSignalRef.current) {
+      lastToggleSignalRef.current = externalToggleSignal;
+      handleToggleCollapse();
+    }
+  }, [externalToggleSignal]);
+
   const handleToggleCollapse = () => {
     const newCollapsed = !isCollapsed;
     setIsCollapsed(newCollapsed);
@@ -45,30 +60,17 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose }) => {
   const isPerson = selectedNode.is_person ?? selectedNode.type.toLowerCase() === 'person';
 
   // Unified side panel styling - slides right on both mobile and desktop
-  const panelClasses = `fixed top-4 right-4 z-20 transition-transform duration-300 ease-in-out ${isMobile ? 'w-[calc(100vw-2rem)] max-w-[24rem]' : 'w-[24rem]'
+  const panelClasses = `fixed top-16 right-4 z-50 transition-transform duration-300 ease-in-out ${isMobile ? 'w-[calc(100vw-2rem)] max-w-[24rem]' : 'w-[24rem]'
     } ${isCollapsed ? 'translate-x-[calc(100%+2rem)]' : 'translate-x-0'}`;
 
   return (
     <>
-      {/* Toggle Handle - Positioned independently to stay visible */}
-      <button
-        onClick={handleToggleCollapse}
-        className={`fixed top-4 z-60 w-10 h-10 bg-slate-900/90 border border-slate-700 rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-all duration-300 shadow-xl pointer-events-auto ${isCollapsed ? 'right-4 max-[450px]:right-3' : 'right-[calc(min(24rem,100vw-2rem)+1rem)] max-[450px]:right-3'
-          }`}
-        title={isCollapsed ? "Expand Details" : "Collapse Details"}
-      >
-        {isCollapsed ? <ChevronUp className="-rotate-90" size={20} /> : <ChevronUp className="rotate-90" size={20} />}
-      </button>
-
       <div className={panelClasses}>
         <div className="bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex flex-col p-6 max-h-[calc(100vh-2rem)] overflow-visible">
 
           <div className="flex-1 overflow-visible">
             <div className="flex justify-between items-start mb-4">
               <h2 className="text-xl font-bold text-white leading-tight">{selectedNode.title}</h2>
-              <button onClick={onClose} className="text-slate-400 hover:text-white shrink-0 ml-2">
-                <X size={20} />
-              </button>
             </div>
 
             <div className="space-y-4 overflow-y-auto pr-1">
