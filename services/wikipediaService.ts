@@ -371,6 +371,21 @@ export const fetchWikipediaSummary = async (
           if (regex.test(title) || regex.test(snippet)) s -= 400;
         });
 
+        // Heuristic disambiguation for notorious ambiguous titles
+        if (normalized === 'gaslight') {
+          // Strongly prefer the film pages over lighting/industry topics
+          if (title.includes('(1944 film)')) s += 2500;
+          else if (title.includes('(1940 film)') || title.includes('film')) s += 1500;
+          if (title.includes('lighting') || title.includes('industry') || title.includes('gaslight (piping)')) s -= 2000;
+        }
+
+        if (normalized === 'brazil') {
+          const ctx = (context || '').toLowerCase();
+          const wantsFilm = ctx.includes('gilliam') || ctx.includes('movie') || ctx.includes('film') || ctx.includes('director');
+          if (title.includes('(1985 film)') || title.includes('(film)')) s += wantsFilm ? 2500 : 1200;
+          if (wantsFilm && (title === 'brazil' || title.includes('country') || title.includes('brazilian'))) s -= 1800;
+        }
+
         const scienceTerms = ['computer', 'software', 'engineer', 'engineering', 'scientist', 'researcher', 'data', 'ai', 'machine learning', 'analytics', 'algorithm', 'ircam', 'cnmat', 'music', 'acoustics', 'composer', 'composition'];
         let hasScienceContext = false;
         if (context) {

@@ -1259,8 +1259,14 @@ const App: React.FC = () => {
 
                 const width = Math.max(dimensions.width, 800);
                 const height = Math.max(dimensions.height, 600);
-                const margin = Math.min(200, width * 0.15);
-                const arcAmplitude = Math.min(140, height * 0.25);
+                const margin = Math.min(160, width * 0.1);
+                const pathCount = Math.max(finalPathIds.length, 2);
+                // Keep nodes much closer together: span scales with count, capped to 65% viewport
+                const perStep = 180;
+                const minSpan = 260;
+                const maxSpan = width * 0.65;
+                const arcSpan = Math.min(Math.max((pathCount - 1) * perStep, minSpan), maxSpan);
+                const arcAmplitude = Math.min(110, height * 0.2);
 
                 const updatedNodes = current.nodes.map(node => {
                     let next = node;
@@ -1269,7 +1275,7 @@ const App: React.FC = () => {
                     if (pathIndex.has(node.id) && finalPathIds.length >= 2) {
                         const idx = pathIndex.get(node.id)!;
                         const t = finalPathIds.length === 1 ? 0 : idx / (finalPathIds.length - 1);
-                        const x = margin + t * Math.max(width - 2 * margin, 200);
+                        const x = margin + t * arcSpan;
                         const y = height / 2 + Math.sin((t - 0.5) * Math.PI) * arcAmplitude;
                         next = { ...next, x, y };
                     }
@@ -1285,6 +1291,15 @@ const App: React.FC = () => {
             
             setPathNodeIds([...finalPathIds]); // Create a new array to ensure React detects the change
             setNotification({ message: "Path discovery complete!", type: 'success' });
+
+            // Nudge viewport toward the middle of the path so end nodes stay in view
+            if (finalPathIds.length > 0) {
+                const midIdx = Math.floor(finalPathIds.length / 2);
+                const midId = finalPathIds[midIdx] ?? finalPathIds[0];
+                setTimeout(() => {
+                    graphRef.current?.centerOnNode(midId);
+                }, 200);
+            }
 
         } catch (err) {
             console.error("Path search failed", err);
