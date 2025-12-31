@@ -7,7 +7,7 @@ import { GraphNode, GraphLink } from './types';
 import { fetchConnections, fetchPersonWorks, classifyEntity, fetchConnectionPath } from './services/geminiService';
 import { getApiKey } from './services/aiUtils';
 import { fetchWikipediaImage, fetchWikipediaSummary } from './services/wikipediaService';
-import { Key, ChevronLeft, ChevronRight, ChevronUp, Trash2 } from 'lucide-react';
+import { Key, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react';
 
 // Normalize string for deduplication: lower case, remove 'the ', remove punctuation
 const normalizeForDedup = (str: string) => {
@@ -1794,19 +1794,7 @@ const App: React.FC = () => {
                         Constellations
                     </div>
                 </div>
-                <div
-                    id="header-actions"
-                    className="flex-1 min-w-0 w-full md:w-auto flex flex-nowrap items-center justify-center gap-1 overflow-x-auto whitespace-nowrap px-1 py-1"
-                    style={{ WebkitOverflowScrolling: 'touch' }}
-                />
                 <div className="flex items-center gap-2 shrink-0">
-                    <button
-                        onClick={handleClear}
-                        className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-400 transition"
-                        title="Clear graph"
-                    >
-                        <Trash2 size={18} />
-                    </button>
                     {selectedNode && (
                         <button
                             onClick={() => { setSidebarCollapsed(c => !c); setSidebarToggleSignal(s => s + 1); }}
