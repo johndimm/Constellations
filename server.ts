@@ -58,7 +58,10 @@ async function ensureSchema() {
     await client.query("alter table if exists nodes alter column wikipedia_id set default ''");
     await client.query("update nodes set wikipedia_id = '' where wikipedia_id is null");
     await client.query("alter table if exists nodes alter column wikipedia_id set not null");
-    await client.query("create unique index if not exists nodes_title_type_wiki_idx on nodes (lower(title), type, wikipedia_id)");
+    // Enforce case-insensitive uniqueness across title and type to avoid duplicates like "Gaslight" vs "gaslight" or "Movie" vs "movie"
+    await client.query("drop index if exists nodes_title_type_wiki_idx");
+    await client.query("create unique index if not exists nodes_title_ltype_wiki_idx on nodes (lower(title), lower(type), wikipedia_id)");
+    await client.query("create unique index if not exists nodes_title_ltype_blank_wiki_uidx on nodes (lower(title), lower(type)) where (wikipedia_id is null or wikipedia_id = '')");
     
     // Add is_person column for app logic (boolean), preserving original type
     await client.query("alter table if exists nodes add column if not exists is_person boolean");
@@ -107,7 +110,7 @@ create table if not exists edges (
 
 create index if not exists edges_person_idx on edges (person_id);
 create index if not exists edges_event_idx on edges (event_id);
-create unique index if not exists nodes_title_type_wiki_idx on nodes (lower(title), type, wikipedia_id);
+create unique index if not exists nodes_title_ltype_wiki_idx on nodes (lower(title), lower(type), wikipedia_id);
 `;
 
 // Upsert nodes batch and return mapping of (title, type, wikipedia_id) -> id
@@ -126,28 +129,44 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
     try {
       const title = n.title || n.id;
 
-      // 1. Check for existing node (case-insensitive on title, match wikipedia_id, ignore type)
-      // This prevents duplicates like "Last Tango in Paris" with different types
-      // Prefer nodes with wikipedia_id (more complete), then nodes with more specific types, then oldest
-      const checkSql = `
-            select id, type from nodes 
-            where lower(title) = lower($1) and COALESCE(wikipedia_id, '') = COALESCE($2, '')
+      // 1. Prefer exact wiki_id match (case-insensitive title/type)
+      const exactRes = normalizedWikiId
+        ? await client.query(
+          `
+            select id, type, wikipedia_id from nodes
+            where lower(title) = lower($1) and lower(type) = lower($2) and COALESCE(wikipedia_id, '') = $3
+            order by id
+            limit 1
+          `,
+          [title, n.type, normalizedWikiId]
+        )
+        : { rows: [] as any[] };
+
+      // 2. Fallback: any node with same lower(title)/lower(type), prefer one that already has a wiki_id
+      const fuzzyRes = exactRes.rows.length === 0
+        ? await client.query(
+          `
+            select id, type, wikipedia_id from nodes
+            where lower(title) = lower($1) and lower(type) = lower($2)
             order by 
               case when wikipedia_id is not null and wikipedia_id != '' then 0 else 1 end,
-              case when type != lower(type) then 0 else 1 end,  -- Prefer capitalized types (Movie) over lowercase (event)
               id
             limit 1
-        `;
-      const checkRes = await client.query(checkSql, [title, normalizedWikiId || '']);
+          `,
+          [title, n.type]
+        )
+        : exactRes;
 
       let id;
 
-      if (checkRes.rows.length > 0) {
+      if (fuzzyRes.rows.length > 0) {
         // 2. UPDATE existing node (duplicate found)
-        id = checkRes.rows[0].id;
-        const existingType = checkRes.rows[0].type;
+        id = fuzzyRes.rows[0].id;
+        const existingType = fuzzyRes.rows[0].type;
+        const existingWiki = fuzzyRes.rows[0].wikipedia_id || '';
         // Prefer the more specific type (capitalized like "Movie" over lowercase like "event")
         const typeToKeep = (existingType && existingType !== existingType.toLowerCase()) ? existingType : n.type;
+        const wikiToKeep = existingWiki || normalizedWikiId || '';
         const updateSql = `
                 update nodes set
                   type = $1,
@@ -156,6 +175,7 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
                   meta = coalesce(meta, '{}'::jsonb) || coalesce($4, '{}'::jsonb),
                   image_url = coalesce($5, image_url),
                   wiki_summary = coalesce($6, wiki_summary),
+                  wikipedia_id = $8,
                   is_person = (lower($1) = 'person'),
                   updated_at = now()
                 where id = $7
@@ -167,7 +187,8 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
           meta,
           imageUrl,
           wikiSummary,
-          id
+          id,
+          wikiToKeep
         ]);
       } else {
         // 3. INSERT new
