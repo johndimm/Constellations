@@ -1794,7 +1794,10 @@ const App: React.FC = () => {
                         Constellations
                     </div>
                 </div>
-                <div id="header-actions" className="flex-1 w-full md:w-auto flex flex-wrap items-center justify-center gap-1" />
+                <div
+                    id="header-actions"
+                    className="flex-1 w-full md:w-auto flex flex-wrap md:flex-nowrap items-center justify-center gap-1 overflow-x-auto whitespace-nowrap px-1 py-1"
+                />
                 <div className="flex items-center gap-2 shrink-0">
                     <button
                         onClick={handleClear}
