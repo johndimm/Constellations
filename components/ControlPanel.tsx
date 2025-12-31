@@ -156,8 +156,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       {/* Toggle Handle - Positioned independently to stay visible */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className={`fixed top-4 z-50 w-10 h-10 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-all duration-300 shadow-xl pointer-events-auto ${isCollapsed ? 'left-4 max-[450px]:left-3' : 'left-[calc(min(34rem,100vw-3rem)+1rem)] max-[450px]:left-3'
-          }`}
+        className={`fixed top-4 z-50 w-10 h-10 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-all duration-300 shadow-xl pointer-events-auto
+          ${isCollapsed ? 'left-4 max-[450px]:left-3' : 'left-[calc(min(34rem,100vw-3rem)+1rem)] max-[450px]:left-3'}
+          max-[640px]:left-auto max-[640px]:right-4`}
         title={isCollapsed ? "Expand Search" : "Collapse Search"}
       >
         {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
