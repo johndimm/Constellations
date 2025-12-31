@@ -998,8 +998,10 @@ const App: React.FC = () => {
                     console.error("Pathfinding error:", err);
                     if (err.message?.includes("timed out")) {
                         setError("Pathfinding timed out. The connection might be too complex or obscure.");
+                    } else if (err.message?.includes("too long") || err.message?.includes("parse")) {
+                        setError("The AI generated a path that's too complex. Try a different connection or expand nodes first.");
                     } else {
-                        setError("The AI failed to find a connection. Try more common entities.");
+                        setError("The AI failed to find a connection. Try more common entities or expand nodes to build connections first.");
                     }
                     return;
                 } finally {
