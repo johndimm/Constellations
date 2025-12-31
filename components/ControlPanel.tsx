@@ -161,8 +161,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     <>
       {headerActions}
       <div
-        className={`absolute left-4 z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%+1rem)]' : 'translate-x-0'
-          } w-[calc(100vw-3.5rem)] sm:w-[calc(100vw-3rem)] max-w-full sm:max-w-[34rem] max-[450px]:w-[calc(100vw-7rem)] top-16 sm:top-16`}
+        className={`absolute left-3 right-3 sm:left-4 sm:right-auto z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%+1rem)]' : 'translate-x-0'
+          } w-[calc(100vw-1.5rem)] sm:w-[calc(100vw-3rem)] max-w-full sm:max-w-[34rem] top-16`}
       >
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
           {/* Primary actions (panel-local) */}
