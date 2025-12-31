@@ -1796,7 +1796,8 @@ const App: React.FC = () => {
                 </div>
                 <div
                     id="header-actions"
-                    className="flex-1 w-full md:w-auto flex flex-wrap md:flex-nowrap items-center justify-center gap-1 overflow-x-auto whitespace-nowrap px-1 py-1"
+                    className="flex-1 min-w-0 w-full md:w-auto flex flex-nowrap items-center justify-center gap-1 overflow-x-auto whitespace-nowrap px-1 py-1"
+                    style={{ WebkitOverflowScrolling: 'touch' }}
                 />
                 <div className="flex items-center gap-2 shrink-0">
                     <button
