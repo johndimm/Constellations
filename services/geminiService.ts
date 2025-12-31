@@ -293,19 +293,20 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
 
   try {
     const prompt = `${wikiPrompt}Find a valid connection path between "${start}" and "${end}".
+            CRITICAL: The path MUST contain between 2 and 8 nodes total (including start and end). DO NOT exceed 8 nodes.
+            
             STRICT RULE: The path MUST follow an alternating sequence (Bipartite structure):
             - A "Person" MUST connect to a "Thing" (Movie, Paper, Event, Project, Book).
             - A "Thing" MUST connect to a "Person".
             - DIRECT connections between two People (e.g. "co-author of") or two Things are FORBIDDEN. You must reveal the hidden internal step (e.g. the specific Paper or Movie they shared).
             
             Adjacent entities must be directly connected (e.g. Person A -> Movie X -> Person B -> Event Y -> Person C).
-            Try to keep the path under 6 steps if possible (Six Degrees concept).
             
             WEIGHTING PREFERENCE: 
             Prioritize "niche" or "exclusive" connections. For example, if two people both worked on a specific obscure research paper, that is a much stronger path link than if they both "participated" in a massive event like "World War II" or "The 2024 Olympics". Prefer the most direct and exclusive links possible.
             
             Return the full sequence as an ordered list, starting with "${start}" and ending with "${end}".
-            For 'justification', explain the link to the PREVIOUS node in the chain.`;
+            For 'justification', explain the link to the PREVIOUS node in the chain (keep it brief, one sentence).`;
     
     console.log(`🤖 [Gemini] fetchConnectionPath Prompt:`, prompt);
 
@@ -346,9 +347,39 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     
     const rawText = getResponseText(response);
     const text = cleanJson(rawText);
-    console.log("fetchConnectionPath response text:", text);
+    
+    // Truncate for logging if too long
+    const truncatedText = text.length > 5000 ? text.substring(0, 5000) + `... [truncated, total length: ${text.length}]` : text;
+    console.log("fetchConnectionPath response text:", truncatedText);
+    
     if (!text) return { path: [] };
-    return JSON.parse(text) as PathResponse;
+    
+    let parsed: PathResponse;
+    try {
+      parsed = JSON.parse(text) as PathResponse;
+    } catch (parseError: any) {
+      console.error("JSON parsing error in pathfinding response:", parseError.message);
+      // Try to recover by finding valid JSON in the response
+      const jsonMatch = text.match(/\{"path":\[.*?\]\}/s);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]) as PathResponse;
+          console.log("Recovered JSON from malformed response");
+        } catch (e) {
+          throw new Error(`Failed to parse pathfinding response: ${parseError.message}`);
+        }
+      } else {
+        throw new Error(`Failed to parse pathfinding response: ${parseError.message}`);
+      }
+    }
+    
+    // Validate and limit path length
+    if (parsed.path && parsed.path.length > 8) {
+      console.warn(`Path too long (${parsed.path.length} nodes), rejecting path`);
+      throw new Error(`Path too long: ${parsed.path.length} nodes (max 8 allowed)`);
+    }
+    
+    return parsed;
 
   } catch (error) {
     console.error("Gemini API Error (Pathfinding):", error);
