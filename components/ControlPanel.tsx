@@ -155,65 +155,17 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     "Napoleon Bonaparte"
   ];
 
-  const headerActionsHost = typeof document !== 'undefined' ? document.getElementById('header-actions') : null;
+  const [headerActionsHost, setHeaderActionsHost] = React.useState<HTMLElement | null>(null);
+
+  // Mount-time lookup so the portal still renders after the header DOM exists (fixes mobile SSR timing)
+  React.useEffect(() => {
+    if (typeof document !== 'undefined') {
+      setHeaderActionsHost(document.getElementById('header-actions'));
+    }
+  }, []);
 
   const headerActions = headerActionsHost ? createPortal(
     <div className="flex items-center gap-1.5 text-xs">
-      <div className="flex items-center gap-0.5 shrink-0">
-        <button
-          onClick={() => {
-            let defaultName = "";
-            if (searchMode === 'explore' && exploreTerm) {
-              defaultName = exploreTerm;
-            } else if (searchMode === 'connect' && pathStart && pathEnd) {
-              defaultName = `${pathStart} to ${pathEnd}`;
-            } else {
-              defaultName = `Graph ${new Date().toLocaleTimeString()}`;
-            }
-            onSetCollapsed(false);
-            setSaveName(defaultName);
-            setShowSave(true);
-            setShowLoad(false);
-            setShowShare(false);
-            setShowHelp(false);
-            onHelpHoverChange(null);
-          }}
-          className={`text-slate-300 hover:text-amber-300 px-2 py-1 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-          title="Save Graph"
-        >
-          SAVE
-        </button>
-        <button
-          onClick={() => {
-            onSetCollapsed(false);
-            setShowLoad(true);
-            setShowSave(false);
-            setShowShare(false);
-            setShowHelp(false);
-          }}
-          className={`text-slate-300 hover:text-amber-300 px-2 py-1 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-          title="Load Graph"
-        >
-          LOAD
-        </button>
-        <button
-          onClick={() => {
-            onSetCollapsed(false);
-            setShowShare(!showShare);
-            setShowSave(false);
-            setShowLoad(false);
-            setShowHelp(false);
-            onHelpHoverChange(null);
-          }}
-          className={`text-slate-300 hover:text-amber-300 px-2 py-1 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-          title="Share Graph"
-        >
-          SHARE
-        </button>
-      </div>
-
-      <div className="h-5 w-px bg-slate-700 shrink-0" />
-
       <div className="flex items-center gap-0.5 shrink-0">
         <button
           onClick={onToggleTimeline}
@@ -277,6 +229,57 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           } w-[calc(100vw-3.5rem)] sm:w-[calc(100vw-3rem)] max-w-full sm:max-w-[34rem] max-[450px]:w-[calc(100vw-7rem)]`}
       >
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
+          {/* Primary actions (panel-local) */}
+          <div className="flex flex-wrap gap-2 mb-3 text-xs">
+            <button
+              onClick={() => {
+                let defaultName = "";
+                if (searchMode === 'explore' && exploreTerm) {
+                  defaultName = exploreTerm;
+                } else if (searchMode === 'connect' && pathStart && pathEnd) {
+                  defaultName = `${pathStart} to ${pathEnd}`;
+                } else {
+                  defaultName = `Graph ${new Date().toLocaleTimeString()}`;
+                }
+                setSaveName(defaultName);
+                setShowSave(true);
+                setShowLoad(false);
+                setShowShare(false);
+                setShowHelp(false);
+                onHelpHoverChange(null);
+              }}
+              className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+              title="Save Graph"
+            >
+              SAVE
+            </button>
+            <button
+              onClick={() => {
+                setShowLoad(true);
+                setShowSave(false);
+                setShowShare(false);
+                setShowHelp(false);
+              }}
+              className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+              title="Load Graph"
+            >
+              LOAD
+            </button>
+            <button
+              onClick={() => {
+                setShowShare(!showShare);
+                setShowSave(false);
+                setShowLoad(false);
+                setShowHelp(false);
+                onHelpHoverChange(null);
+              }}
+              className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+              title="Share Graph"
+            >
+              SHARE
+            </button>
+          </div>
+
           {/* Help Dialog */}
           {showHelp && (
             <div className="mb-4 bg-slate-800 p-4 rounded-lg border border-slate-600 animate-in fade-in slide-in-from-top-2 duration-200 max-h-[60vh] overflow-y-auto">
