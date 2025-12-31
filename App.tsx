@@ -1252,13 +1252,33 @@ const App: React.FC = () => {
             console.log("Filtered out (not in graph):", pathNodeIdsList.filter(id => !nodeIdsInGraph.has(id)));
             
             // Release fixed positions after path discovery completes (let nodes move naturally)
+            // Also gently lay out the discovered path along a smooth arc to avoid a single long edge that stays stretched
             setGraphData(current => {
+                const pathIndex = new Map<number, number>();
+                finalPathIds.forEach((id, idx) => pathIndex.set(id, idx));
+
+                const width = Math.max(dimensions.width, 800);
+                const height = Math.max(dimensions.height, 600);
+                const margin = Math.min(200, width * 0.15);
+                const arcAmplitude = Math.min(140, height * 0.25);
+
                 const updatedNodes = current.nodes.map(node => {
-                    if (node.fx !== undefined && node.fx !== null || node.fy !== undefined && node.fy !== null) {
-                        // Remove fixed positions to allow natural movement (set to null, not undefined)
-                        return { ...node, fx: null, fy: null };
+                    let next = node;
+
+                    // If node is in the path, position it along a gentle arc from left to right
+                    if (pathIndex.has(node.id) && finalPathIds.length >= 2) {
+                        const idx = pathIndex.get(node.id)!;
+                        const t = finalPathIds.length === 1 ? 0 : idx / (finalPathIds.length - 1);
+                        const x = margin + t * Math.max(width - 2 * margin, 200);
+                        const y = height / 2 + Math.sin((t - 0.5) * Math.PI) * arcAmplitude;
+                        next = { ...next, x, y };
                     }
-                    return node;
+
+                    // Remove fixed positions to allow natural movement
+                    if (next.fx !== undefined && next.fx !== null || next.fy !== undefined && next.fy !== null) {
+                        next = { ...next, fx: null, fy: null };
+                    }
+                    return next;
                 });
                 return { ...current, nodes: updatedNodes };
             });
