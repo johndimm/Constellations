@@ -1047,6 +1047,14 @@ const App: React.FC = () => {
                 setGraphData(current => {
                     const updatedNodes = [...current.nodes];
                     const updatedLinks = [...current.links];
+                    // Track existing links in an undirected way to avoid duplicates from reversed orientations
+                    const linkKeys = new Set(updatedLinks.map(l => {
+                        const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+                        const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+                        const a = Math.min(s, t);
+                        const b = Math.max(s, t);
+                        return `${a}-${b}`;
+                    }));
 
                     // Add ALL path nodes including the start node (use database IDs)
                     for (let i = 0; i < dbNodes.length; i++) {
@@ -1096,12 +1104,23 @@ const App: React.FC = () => {
                             updatedNodes.push(existingNode);
                             loadNodeImage(nodeId, existingNode.title);
                         }
-
-                        // Don't create links during path discovery - only highlight links that already exist
-                        // The path visualization will show nodes in sequence, but won't create fake connections
                     }
 
-                    return { nodes: updatedNodes, links: updatedLinks };
+                    // Create links along the discovered database path so the graph shows actual connections
+                    for (let i = 0; i < dbNodes.length - 1; i++) {
+                        const a = dbNodes[i].id;
+                        const b = dbNodes[i + 1].id;
+                        const key = `${Math.min(a, b)}-${Math.max(a, b)}`;
+                        if (linkKeys.has(key)) continue;
+                        linkKeys.add(key);
+                        updatedLinks.push({
+                            source: a,
+                            target: b,
+                            id: `${a}-${b}`
+                        });
+                    }
+
+                    return dedupeGraph(updatedNodes, updatedLinks);
                 });
             } else {
                 // AI path: fetch nodes one by one
@@ -1170,10 +1189,17 @@ const App: React.FC = () => {
 
                         setSelectedNode(newNode);
 
-                        // Don't create links during path discovery - only highlight links that already exist
-                        // The path visualization will show nodes in sequence, but won't create fake connections
-                        // Links will only be created naturally through node expansion
-                        const updatedLinks = current.links;
+                        // Ensure the path is actually connected in the UI by creating links along the AI path
+                        const canonicalKey = (a: number, b: number) => `${Math.min(a, b)}-${Math.max(a, b)}`;
+                        const existingLinkKeys = new Set(current.links.map(l => {
+                            const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
+                            const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
+                            return canonicalKey(sId, tId);
+                        }));
+                        const linkKey = canonicalKey(tailId, resolvedId);
+                        const updatedLinks = existingLinkKeys.has(linkKey)
+                            ? current.links
+                            : [...current.links, { source: tailId, target: resolvedId, id: `${tailId}-${resolvedId}` }];
 
                         loadNodeImage(resolvedId, newNode.title);
 
