@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, Download, Upload, Share2, Copy } from 'lucide-react';
 
 interface ControlPanelProps {
@@ -30,6 +31,8 @@ interface ControlPanelProps {
   savedGraphs: string[];
   helpHover: string | null;
   onHelpHoverChange: (value: string | null) => void;
+  isCollapsed: boolean;
+  onSetCollapsed: (val: boolean) => void;
 }
 
 const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -60,12 +63,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onImport,
   savedGraphs,
   helpHover,
-  onHelpHoverChange
+  onHelpHoverChange,
+  isCollapsed,
+  onSetCollapsed
 }) => {
   const [showHelp, setShowHelp] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
 
   // Save/Load/Share State
   const [showSave, setShowSave] = useState(false);
@@ -80,13 +84,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       if (exploreTerm.trim()) {
         onSearch(exploreTerm.trim());
         setHasStarted(true);
-        if (window.innerWidth < 768) setIsCollapsed(true);
+        if (window.innerWidth < 768) onSetCollapsed(true);
       }
     } else {
       if (pathStart.trim() && pathEnd.trim()) {
         onPathSearch(pathStart.trim(), pathEnd.trim());
         setHasStarted(true);
-        if (window.innerWidth < 768) setIsCollapsed(true);
+        if (window.innerWidth < 768) onSetCollapsed(true);
       }
     }
   };
@@ -151,125 +155,128 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     "Napoleon Bonaparte"
   ];
 
+  const headerActionsHost = typeof document !== 'undefined' ? document.getElementById('header-actions') : null;
+
+  const headerActions = headerActionsHost ? createPortal(
+    <div className="flex items-center gap-1.5 text-xs">
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          onClick={() => {
+            let defaultName = "";
+            if (searchMode === 'explore' && exploreTerm) {
+              defaultName = exploreTerm;
+            } else if (searchMode === 'connect' && pathStart && pathEnd) {
+              defaultName = `${pathStart} to ${pathEnd}`;
+            } else {
+              defaultName = `Graph ${new Date().toLocaleTimeString()}`;
+            }
+            onSetCollapsed(false);
+            setSaveName(defaultName);
+            setShowSave(true);
+            setShowLoad(false);
+            setShowShare(false);
+            setShowHelp(false);
+            onHelpHoverChange(null);
+          }}
+          className={`text-slate-300 hover:text-amber-300 px-2 py-1 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+          title="Save Graph"
+        >
+          SAVE
+        </button>
+        <button
+          onClick={() => {
+            onSetCollapsed(false);
+            setShowLoad(true);
+            setShowSave(false);
+            setShowShare(false);
+            setShowHelp(false);
+          }}
+          className={`text-slate-300 hover:text-amber-300 px-2 py-1 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+          title="Load Graph"
+        >
+          LOAD
+        </button>
+        <button
+          onClick={() => {
+            onSetCollapsed(false);
+            setShowShare(!showShare);
+            setShowSave(false);
+            setShowLoad(false);
+            setShowHelp(false);
+            onHelpHoverChange(null);
+          }}
+          className={`text-slate-300 hover:text-amber-300 px-2 py-1 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+          title="Share Graph"
+        >
+          SHARE
+        </button>
+      </div>
+
+      <div className="h-5 w-px bg-slate-700 shrink-0" />
+
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          onClick={onToggleTimeline}
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all border shrink-0 ${isTimelineMode
+            ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
+            : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400 hover:text-amber-400'
+            } ${helpHover === 'timeline' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+          title="Toggle Timeline/Network View"
+        >
+          {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
+        </button>
+        <button
+          onClick={onToggleCompact}
+          className={`text-slate-300 hover:text-white p-1.5 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'compact' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+          title="Toggle Compact Mode"
+        >
+          {isCompact ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
+        </button>
+        <button
+          onClick={onToggleTextOnly}
+          className={`p-1.5 rounded-md border border-slate-700 bg-slate-800/80 ${isTextOnly ? 'text-indigo-400' : 'text-slate-300 hover:text-white'} ${helpHover === 'text' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+          title="Toggle Text-Only Mode"
+        >
+          <Type size={16} />
+        </button>
+        <button
+          onClick={onClear}
+          className={`text-slate-300 hover:text-red-400 p-1.5 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'clear' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+          title="Clear Graph"
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+
+      <div className="h-5 w-px bg-slate-700 shrink-0" />
+
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          onClick={() => {
+            onSetCollapsed(false);
+            setShowHelp(!showHelp);
+            setShowSave(false);
+            setShowLoad(false);
+            setShowShare(false);
+          }}
+          className={`text-slate-300 hover:text-white p-1.5 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'help' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+          title="Help & Info"
+        >
+          <HelpCircle size={16} />
+        </button>
+      </div>
+    </div>,
+    headerActionsHost
+  ) : null;
+
   return (
     <>
-      {/* Toggle Handle - Positioned independently to stay visible */}
-      <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className={`fixed z-50 w-10 h-10 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-all duration-300 shadow-xl pointer-events-auto
-          top-3 right-3 left-auto sm:top-4 sm:right-auto
-          ${isCollapsed ? 'sm:left-4' : 'sm:left-[calc(min(34rem,100vw-3rem)+1rem)]'}`}
-        title={isCollapsed ? "Expand Search" : "Collapse Search"}
-      >
-        {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-      </button>
-
+      {headerActions}
       <div
-        className={`absolute top-4 left-4 z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%+1rem)]' : 'translate-x-0'
+        className={`absolute top-16 left-4 z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%+1rem)]' : 'translate-x-0'
           } w-[calc(100vw-3.5rem)] sm:w-[calc(100vw-3rem)] max-w-full sm:max-w-[34rem] max-[450px]:w-[calc(100vw-7rem)]`}
       >
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
-
-          <div className="flex items-center justify-between mb-4 gap-2 overflow-visible max-[450px]:flex-col max-[450px]:items-start">
-            <a
-              href={window.location.origin + window.location.pathname}
-              className="text-xl font-bold text-red-500 whitespace-nowrap overflow-visible flex-shrink-0 hover:text-red-400 transition-colors max-[450px]:text-lg"
-            >
-              Constellations
-            </a>
-            <div className="flex items-center gap-1.5 overflow-visible no-scrollbar pb-1 flex-wrap max-[450px]:w-full max-[450px]:gap-1 max-[450px]:justify-between">
-              {/* File Operations Group */}
-              <div className="flex items-center gap-0.5 shrink-0">
-                <button
-                  onClick={() => {
-                    let defaultName = "";
-                    if (searchMode === 'explore' && exploreTerm) {
-                      defaultName = exploreTerm;
-                    } else if (searchMode === 'connect' && pathStart && pathEnd) {
-                      defaultName = `${pathStart} to ${pathEnd}`;
-                    } else {
-                      defaultName = `Graph ${new Date().toLocaleTimeString()}`;
-                    }
-                    setSaveName(defaultName);
-                    setShowSave(true);
-                    setShowLoad(false);
-                    setShowShare(false);
-                    setShowHelp(false);
-                    onHelpHoverChange(null);
-                  }}
-                  className={`text-slate-400 hover:text-amber-300 p-1.5 max-[450px]:px-1.5 max-[450px]:py-1 max-[450px]:text-[10px] ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
-                  title="Save Graph"
-                >
-                  <div className="flex items-center font-bold text-xs"><ArrowRight className="rotate-90 mr-1" size={12} /> SAVE</div>
-                </button>
-                <button
-                  onClick={() => { setShowLoad(true); setShowSave(false); setShowShare(false); setShowHelp(false); }}
-                  className={`text-slate-400 hover:text-amber-300 p-1.5 max-[450px]:px-1.5 max-[450px]:py-1 max-[450px]:text-[10px] ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
-                  title="Load Graph"
-                >
-                  <div className="flex items-center font-bold text-xs"><ArrowRight className="rotate-270 mr-1" size={12} /> LOAD</div>
-                </button>
-                <button
-                  onClick={() => { setShowShare(!showShare); setShowSave(false); setShowLoad(false); setShowHelp(false); onHelpHoverChange(null); }}
-                  className={`text-slate-400 hover:text-amber-300 p-1.5 max-[450px]:px-1.5 max-[450px]:py-1 max-[450px]:text-[10px] ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
-                  title="Share Graph"
-                >
-                  <div className="flex items-center font-bold text-xs"><Share2 size={12} className="mr-1" /> SHARE</div>
-                </button>
-              </div>
-
-              <div className="h-5 w-px bg-slate-700 shrink-0"></div>
-
-              {/* Graph Operations Group */}
-              <div className="flex items-center gap-0.5 shrink-0">
-                <button
-                  onClick={onToggleTimeline}
-                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all border shrink-0 max-[450px]:px-2 max-[450px]:py-1 ${isTimelineMode
-                    ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
-                    : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400 hover:text-amber-400'
-                    } ${helpHover === 'timeline' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-                  title="Toggle Timeline/Network View"
-                >
-                  {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
-                </button>
-                <button
-                  onClick={onToggleCompact}
-                  className={`text-slate-400 hover:text-white p-1.5 ${helpHover === 'compact' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
-                  title="Toggle Compact Mode"
-                >
-                  {isCompact ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-                </button>
-                <button
-                  onClick={onToggleTextOnly}
-                  className={`p-1.5 ${isTextOnly ? 'text-indigo-400' : 'text-slate-400 hover:text-white'} ${helpHover === 'text' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
-                  title="Toggle Text-Only Mode"
-                >
-                  <Type size={16} />
-                </button>
-                <button
-                  onClick={onClear}
-                  className={`text-slate-400 hover:text-red-400 p-1.5 ${helpHover === 'clear' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
-                  title="Clear Graph"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-
-              <div className="h-5 w-px bg-slate-700 shrink-0"></div>
-
-              {/* Help Group */}
-              <div className="flex items-center gap-0.5 shrink-0">
-                <button
-                  onClick={() => { setShowHelp(!showHelp); setShowSave(false); setShowLoad(false); setShowShare(false); }}
-                  className={`text-slate-400 hover:text-white p-1.5 ${helpHover === 'help' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 rounded-md' : ''}`}
-                  title="Help & Info"
-                >
-                  <HelpCircle size={16} />
-                </button>
-              </div>
-            </div>
-          </div>
-
           {/* Help Dialog */}
           {showHelp && (
             <div className="mb-4 bg-slate-800 p-4 rounded-lg border border-slate-600 animate-in fade-in slide-in-from-top-2 duration-200 max-h-[60vh] overflow-y-auto">
@@ -583,7 +590,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             {searchMode === 'explore' && (!hasStarted || isHovered) && (
               <div className="flex flex-wrap gap-1.5">
                 {EXAMPLES.map(ex => (
-                  <button key={ex} onClick={() => { setExploreTerm(ex); onSearch(ex); setHasStarted(true); if (window.innerWidth < 768) setIsCollapsed(true); }} className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-full border border-slate-700 transition-colors">
+                  <button key={ex} onClick={() => { setExploreTerm(ex); onSearch(ex); setHasStarted(true); if (window.innerWidth < 768) onSetCollapsed(true); }} className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-full border border-slate-700 transition-colors">
                     {ex}
                   </button>
                 ))}

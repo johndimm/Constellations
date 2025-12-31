@@ -389,8 +389,9 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             };
 
             // Sort timeline nodes by year (ensure numeric comparison), then by id for stability
+            // Treat missing/zero years as "unknown" and keep out of the timeline row
             const timelineNodes = nodes
-                .filter(n => n.year !== undefined)
+                .filter(n => n.year !== undefined && n.year !== null && n.year !== 0)
                 .sort((a, b) => {
                     const yearA = Number(a.year ?? 0);
                     const yearB = Number(b.year ?? 0);
@@ -426,8 +427,12 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 lockNodePosition(node, fixedX, fixedY);
             });
 
-            // Position people in multiple horizontal lines above events (wrap to match event width)
+            // Position people (and yearless non-people) in multiple horizontal lines above events (wrap to match event width)
             const peopleNodes = nodes.filter(n => n.is_person ?? n.type.toLowerCase() === 'person');
+            const unknownEvents = nodes.filter(n =>
+                !(n.is_person ?? n.type.toLowerCase() === 'person') &&
+                (n.year === undefined || n.year === null || n.year === 0)
+            );
             
             if (timelineNodes.length > 0) {
                 const personRadius = 110; // Match Person collision radius for timeline (2x size)
@@ -474,14 +479,15 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
                 // Always try to fit all people in one row, spacing them out evenly
                 // Calculate spacing: if they don't fit with minPersonDistance, reduce spacing slightly
-                const totalWidthNeeded = desiredPositions.length * minPersonDistance;
+                const totalRowCount = desiredPositions.length + unknownEvents.length;
+                const totalWidthNeeded = totalRowCount * minPersonDistance;
                 let actualSpacing = minPersonDistance;
-                if (totalWidthNeeded > availableWidth && desiredPositions.length > 1) {
+                if (totalWidthNeeded > availableWidth && totalRowCount > 1) {
                     // Reduce spacing to fit, but keep at least personRadius * 1.8 to avoid overlap
-                    actualSpacing = Math.max(personRadius * 1.8, availableWidth / desiredPositions.length);
+                    actualSpacing = Math.max(personRadius * 1.8, availableWidth / totalRowCount);
                 }
 
-                const totalRowWidth = actualSpacing * (desiredPositions.length - 1);
+                const totalRowWidth = actualSpacing * Math.max(0, totalRowCount - 1);
                 const rowStartX = width / 2 - (totalRowWidth / 2);
                 
                 // Place all people in a single row
@@ -494,6 +500,11 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                         const x = rowStartX + actualSpacing * index;
                         lockNodePosition(person, x, basePersonLineY);
                     }
+                });
+                // Place unknown-year non-people on the same row to avoid wandering
+                unknownEvents.forEach((ev, idxOffset) => {
+                    const x = rowStartX + actualSpacing * (desiredPositions.length + idxOffset);
+                    lockNodePosition(ev, x, basePersonLineY);
                 });
             }
 

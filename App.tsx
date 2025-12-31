@@ -7,7 +7,7 @@ import { GraphNode, GraphLink } from './types';
 import { fetchConnections, fetchPersonWorks, classifyEntity, fetchConnectionPath } from './services/geminiService';
 import { getApiKey } from './services/aiUtils';
 import { fetchWikipediaImage, fetchWikipediaSummary } from './services/wikipediaService';
-import { Key } from 'lucide-react';
+import { Key, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react';
 
 // Normalize string for deduplication: lower case, remove 'the ', remove punctuation
 const normalizeForDedup = (str: string) => {
@@ -179,6 +179,9 @@ const App: React.FC = () => {
     const [helpHover, setHelpHover] = useState<string | null>(null);
     const [pendingAutoExpandId, setPendingAutoExpandId] = useState<number | null>(null);
     const [contextMenu, setContextMenu] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
+    const [panelCollapsed, setPanelCollapsed] = useState(false);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [sidebarToggleSignal, setSidebarToggleSignal] = useState(0);
 
     // Keep selectedNode in sync with latest node data (e.g., wikiSummary, images)
     useEffect(() => {
@@ -1778,6 +1781,32 @@ const App: React.FC = () => {
 
     return (
         <div className="relative w-screen h-screen bg-slate-900">
+            <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex items-center px-3 gap-3">
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setPanelCollapsed(c => !c)}
+                        className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition"
+                        title={panelCollapsed ? "Show controls" : "Hide controls"}
+                    >
+                        {panelCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+                    </button>
+                    <div className="text-lg font-bold text-red-500">
+                        Constellations
+                    </div>
+                </div>
+                <div id="header-actions" className="flex-1 flex items-center justify-center gap-1 flex-wrap" />
+                <div className="flex items-center gap-2">
+                    {selectedNode && (
+                        <button
+                            onClick={() => { setSidebarCollapsed(c => !c); setSidebarToggleSignal(s => s + 1); }}
+                            className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition"
+                            title="Toggle details"
+                        >
+                            {sidebarCollapsed ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+                        </button>
+                    )}
+                </div>
+            </header>
             <Graph
                 ref={graphRef}
                 nodes={nodes}
@@ -1823,10 +1852,13 @@ const App: React.FC = () => {
                 savedGraphs={savedGraphs}
                 helpHover={helpHover}
                 onHelpHoverChange={setHelpHover}
+                isCollapsed={panelCollapsed}
+                onSetCollapsed={setPanelCollapsed}
             />
             <Sidebar
                 selectedNode={selectedNode}
                 onClose={() => { setSelectedNode(null); setContextMenu(null); setPathNodeIds([]); }}
+                externalToggleSignal={sidebarToggleSignal}
             />
 
             {contextMenu && (
