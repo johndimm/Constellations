@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, Download, Upload, Share2, Copy } from 'lucide-react';
 
 interface ControlPanelProps {
@@ -155,61 +154,19 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     "Napoleon Bonaparte"
   ];
 
-  const [headerActionsHost, setHeaderActionsHost] = React.useState<HTMLElement | null>(null);
-
-  // Mount-time lookup so the portal still renders after the header DOM exists (fixes mobile SSR timing)
-  React.useEffect(() => {
-    if (typeof document !== 'undefined') {
-      setHeaderActionsHost(document.getElementById('header-actions'));
-    }
-  }, []);
-
-  const headerActions = headerActionsHost ? createPortal(
-    <div className="flex items-center gap-1.5 text-xs">
-      <div className="flex items-center gap-0.5 shrink-0">
-        <button
-          onClick={onToggleTimeline}
-          className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all border shrink-0 ${isTimelineMode
-            ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
-            : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400 hover:text-amber-400'
-            } ${helpHover === 'timeline' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-          title="Toggle Timeline/Network View"
-        >
-          {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
-        </button>
-        <button
-          onClick={onToggleCompact}
-          className={`text-slate-300 hover:text-white p-1.5 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'compact' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-          title="Toggle Compact Mode"
-        >
-          {isCompact ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-        </button>
-        <button
-          onClick={onToggleTextOnly}
-          className={`p-1.5 rounded-md border border-slate-700 bg-slate-800/80 ${isTextOnly ? 'text-indigo-400' : 'text-slate-300 hover:text-white'} ${helpHover === 'text' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-          title="Toggle Text-Only Mode"
-        >
-          <Type size={16} />
-        </button>
-      </div>
-
-      <div className="h-5 w-px bg-slate-700 shrink-0" />
-
-      {/* Help moved into control panel to free header space */}
-    </div>,
-    headerActionsHost
-  ) : null;
+  // Header actions portal removed; all actions live in the control panel for mobile space
+  const headerActions = null;
 
   return (
     <>
       {headerActions}
       <div
         className={`absolute left-4 z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%+1rem)]' : 'translate-x-0'
-          } w-[calc(100vw-3.5rem)] sm:w-[calc(100vw-3rem)] max-w-full sm:max-w-[34rem] max-[450px]:w-[calc(100vw-7rem)] top-24 sm:top-16`}
+          } w-[calc(100vw-3.5rem)] sm:w-[calc(100vw-3rem)] max-w-full sm:max-w-[34rem] max-[450px]:w-[calc(100vw-7rem)] top-16 sm:top-16`}
       >
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
           {/* Primary actions (panel-local) */}
-          <div className="flex flex-wrap gap-2 mb-3 text-xs">
+          <div className="flex flex-wrap gap-2 mb-2 text-xs">
             <button
               onClick={() => {
                 let defaultName = "";
@@ -256,6 +213,39 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               title="Share Graph"
             >
               SHARE
+            </button>
+            <button
+              onClick={onClear}
+              className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-red-300 flex items-center gap-1`}
+              title="Clear Graph"
+            >
+              <Trash2 size={14} /> CLEAR
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2 mb-3 text-xs">
+            <button
+              onClick={onToggleTimeline}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md uppercase tracking-wider transition-all border shrink-0 ${isTimelineMode
+                ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
+                : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400 hover:text-amber-400'
+                }`}
+              title="Toggle Timeline/Network View"
+            >
+              {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
+            </button>
+            <button
+              onClick={onToggleCompact}
+              className="text-slate-300 hover:text-white p-1.5 rounded-md border border-slate-700 bg-slate-800/80"
+              title="Toggle Compact Mode"
+            >
+              {isCompact ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
+            </button>
+            <button
+              onClick={onToggleTextOnly}
+              className={`p-1.5 rounded-md border border-slate-700 bg-slate-800/80 ${isTextOnly ? 'text-indigo-400' : 'text-slate-300 hover:text-white'}`}
+              title="Toggle Text-Only Mode"
+            >
+              <Type size={16} />
             </button>
             <button
               onClick={() => {
@@ -592,7 +582,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             )}
           </div>
         </div>
-      </div >
+      </div>
     </>
   );
 };
