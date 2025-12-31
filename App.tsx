@@ -1790,9 +1790,12 @@ const App: React.FC = () => {
                     >
                         {panelCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
                     </button>
-                    <div className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap">
+                    <a 
+                        href="/"
+                        className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap hover:text-red-400 transition-colors"
+                    >
                         Constellations
-                    </div>
+                    </a>
                 </div>
                 <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
                     {selectedNode && (
