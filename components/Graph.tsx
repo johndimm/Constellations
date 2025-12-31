@@ -376,6 +376,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         simulation.force("collide", collideForce);
 
         if (isTimelineMode) {
+            const prevPositions = new Map(timelinePositionsRef.current);
+
             const lockNodePosition = (node: GraphNode, x: number, y: number) => {
                 node.fx = x;
                 node.fy = y;
@@ -385,8 +387,6 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 node.vy = 0;
                 timelinePositionsRef.current.set(node.id, { x, y });
             };
-
-            timelinePositionsRef.current.clear();
 
             // Sort timeline nodes by year (ensure numeric comparison), then by id for stability
             const timelineNodes = nodes
@@ -412,6 +412,11 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             nodes.forEach(node => {
                 node.fx = null;
                 node.fy = null;
+                const prev = prevPositions.get(node.id);
+                if (prev) {
+                    node.x = prev.x;
+                    node.y = prev.y;
+                }
             });
 
             // Fix event positions - they don't move
@@ -432,7 +437,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     const h = event.h && event.h > 0 ? event.h : DEFAULT_CARD_SIZE;
                     return Math.max(max, h);
                 }, DEFAULT_CARD_SIZE);
-                const basePersonLineY = centerY - yOffset - (cardHeightGuess / 2) - personRadius - 30;
+                const basePersonLineY = centerY - yOffset - (cardHeightGuess / 2) - personRadius - 60;
 
                 // Compute available width - use the full event span
                 const eventSpan = Math.max(itemSpacing, (timelineNodes.length - 1) * itemSpacing + DEFAULT_CARD_SIZE);
@@ -482,8 +487,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 // Place all people in a single row
                 desiredPositions.forEach((entry, index) => {
                     const { person } = entry;
-                    const x = rowStartX + actualSpacing * index;
-                    lockNodePosition(person, x, basePersonLineY);
+                    const prev = prevPositions.get(person.id);
+                    if (prev) {
+                        lockNodePosition(person, prev.x, prev.y);
+                    } else {
+                        const x = rowStartX + actualSpacing * index;
+                        lockNodePosition(person, x, basePersonLineY);
+                    }
                 });
             }
 
