@@ -1781,8 +1781,8 @@ const App: React.FC = () => {
 
     return (
         <div className="relative w-screen h-screen bg-slate-900">
-            <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex items-center px-3 gap-3">
-                <div className="flex items-center gap-2">
+            <header className="fixed top-0 left-0 right-0 z-50 min-h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex flex-wrap md:flex-nowrap items-center px-3 py-2 gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                     <button
                         onClick={() => setPanelCollapsed(c => !c)}
                         className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition"
@@ -1794,8 +1794,8 @@ const App: React.FC = () => {
                         Constellations
                     </div>
                 </div>
-                <div id="header-actions" className="flex-1 flex items-center justify-center gap-1 flex-wrap" />
-                <div className="flex items-center gap-2">
+                <div id="header-actions" className="flex-1 w-full md:w-auto flex flex-wrap items-center justify-center gap-1" />
+                <div className="flex items-center gap-2 shrink-0">
                     {selectedNode && (
                         <button
                             onClick={() => { setSidebarCollapsed(c => !c); setSidebarToggleSignal(s => s + 1); }}
