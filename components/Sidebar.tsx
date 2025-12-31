@@ -60,12 +60,14 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, externalToggle
   const isPerson = selectedNode.is_person ?? selectedNode.type.toLowerCase() === 'person';
 
   // Unified side panel styling - slides right on both mobile and desktop
-  const panelClasses = `fixed top-16 right-3 sm:right-4 z-50 transition-transform duration-300 ease-in-out ${isMobile ? 'w-[calc(100vw-1.5rem)] max-w-[24rem]' : 'w-[24rem]'
-    } ${isCollapsed ? 'translate-x-[calc(100%+2rem)]' : 'translate-x-0'}`;
+  const panelClasses = `fixed top-16 right-3 sm:right-4 z-50 transition-transform duration-300 ease-in-out ${isCollapsed ? 'translate-x-[calc(100%+2rem)]' : 'translate-x-0'}`;
+  const panelStyle = isMobile
+    ? { width: 'calc(100% - 1.5rem)', maxWidth: '24rem' }
+    : { width: '24rem' };
 
   return (
     <>
-      <div className={panelClasses}>
+      <div className={panelClasses} style={panelStyle}>
         <div className="bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex flex-col p-6 max-h-[calc(100vh-2rem)] overflow-visible">
 
           <div className="flex-1 overflow-visible">
