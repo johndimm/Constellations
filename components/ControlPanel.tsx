@@ -191,32 +191,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         >
           <Type size={16} />
         </button>
-        <button
-          onClick={onClear}
-          className={`text-slate-300 hover:text-red-400 p-1.5 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'clear' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-          title="Clear Graph"
-        >
-          <Trash2 size={16} />
-        </button>
       </div>
 
       <div className="h-5 w-px bg-slate-700 shrink-0" />
 
-      <div className="flex items-center gap-0.5 shrink-0">
-        <button
-          onClick={() => {
-            onSetCollapsed(false);
-            setShowHelp(!showHelp);
-            setShowSave(false);
-            setShowLoad(false);
-            setShowShare(false);
-          }}
-          className={`text-slate-300 hover:text-white p-1.5 rounded-md border border-slate-700 bg-slate-800/80 ${helpHover === 'help' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-          title="Help & Info"
-        >
-          <HelpCircle size={16} />
-        </button>
-      </div>
+      {/* Help moved into control panel to free header space */}
     </div>,
     headerActionsHost
   ) : null;
@@ -277,6 +256,18 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               title="Share Graph"
             >
               SHARE
+            </button>
+            <button
+              onClick={() => {
+                setShowHelp(!showHelp);
+                setShowSave(false);
+                setShowLoad(false);
+                setShowShare(false);
+              }}
+              className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-white flex items-center gap-1 ${helpHover === 'help' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+              title="Help & Info"
+            >
+              <HelpCircle size={14} /> HELP
             </button>
           </div>
 
