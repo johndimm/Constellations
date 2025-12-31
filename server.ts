@@ -129,8 +129,16 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
     try {
       const title = n.title || n.id;
 
-      // 1. Prefer exact wiki_id match (case-insensitive title/type)
-      const exactRes = normalizedWikiId
+      // 1. Strongest match: any node with the same wikipedia_id (independent of title/type)
+      const wikiRes = normalizedWikiId
+        ? await client.query(
+          `select id, type, wikipedia_id from nodes where COALESCE(wikipedia_id, '') = $1 limit 1`,
+          [normalizedWikiId]
+        )
+        : { rows: [] as any[] };
+
+      // 2. Prefer exact wiki_id + title/type (backwards compatibility)
+      const exactRes = (normalizedWikiId && wikiRes.rows.length === 0)
         ? await client.query(
           `
             select id, type, wikipedia_id from nodes
@@ -142,8 +150,8 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
         )
         : { rows: [] as any[] };
 
-      // 2. Fallback: any node with same lower(title)/lower(type), prefer one that already has a wiki_id
-      const fuzzyRes = exactRes.rows.length === 0
+      // 3. Fallback: any node with same lower(title)/lower(type), prefer one that already has a wiki_id
+      const fuzzyRes = (wikiRes.rows.length === 0 && exactRes.rows.length === 0)
         ? await client.query(
           `
             select id, type, wikipedia_id from nodes
@@ -155,15 +163,16 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
           `,
           [title, n.type]
         )
-        : exactRes;
+        : { rows: [] as any[] };
 
       let id;
+      const matchRow = wikiRes.rows[0] || exactRes.rows[0] || fuzzyRes.rows[0];
 
-      if (fuzzyRes.rows.length > 0) {
+      if (matchRow) {
         // 2. UPDATE existing node (duplicate found)
-        id = fuzzyRes.rows[0].id;
-        const existingType = fuzzyRes.rows[0].type;
-        const existingWiki = fuzzyRes.rows[0].wikipedia_id || '';
+        id = matchRow.id;
+        const existingType = matchRow.type;
+        const existingWiki = matchRow.wikipedia_id || '';
         // Prefer the more specific type (capitalized like "Movie" over lowercase like "event")
         const typeToKeep = (existingType && existingType !== existingType.toLowerCase()) ? existingType : n.type;
         const wikiToKeep = existingWiki || normalizedWikiId || '';
