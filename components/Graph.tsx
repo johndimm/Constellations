@@ -508,6 +508,24 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 });
             }
 
+            // Safety net: ensure every node has a fixed position to eliminate wandering cards
+            nodes.forEach((node, idx) => {
+                if (!timelinePositionsRef.current.has(node.id)) {
+                    // Place any stragglers near the people row, spaced modestly
+                    const fallbackX = width / 2 - (itemSpacing / 2) + (idx * 40);
+                    const fallbackY = (height / 2) - yOffset - DEFAULT_CARD_SIZE;
+                    lockNodePosition(node, fallbackX, fallbackY);
+                } else {
+                    const locked = timelinePositionsRef.current.get(node.id)!;
+                    node.fx = locked.x;
+                    node.fy = locked.y;
+                    node.x = locked.x;
+                    node.y = locked.y;
+                    node.vx = 0;
+                    node.vy = 0;
+                }
+            });
+
             if (centerForce) centerForce.strength(0.01);
             if (chargeForce) chargeForce.strength(-50); // Reduced charge to minimize movement
             if (linkForce) linkForce.strength(0);
