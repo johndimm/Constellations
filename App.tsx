@@ -1781,24 +1781,24 @@ const App: React.FC = () => {
 
     return (
         <div className="fixed inset-0 bg-slate-900 overflow-hidden">
-            <header className="fixed top-0 left-0 right-0 z-50 min-h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex flex-wrap items-center justify-between px-3 py-2 gap-2">
-                <div className="flex items-center gap-2">
+            <header className="fixed top-0 left-0 right-0 z-50 min-h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex items-center justify-between px-2 sm:px-3 py-2 gap-2 overflow-x-hidden max-w-full">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                     <button
                         onClick={() => setPanelCollapsed(c => !c)}
-                        className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition"
+                        className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition flex-shrink-0"
                         title={panelCollapsed ? "Show controls" : "Hide controls"}
                     >
                         {panelCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
                     </button>
-                    <div className="text-lg font-bold text-red-500">
+                    <div className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap">
                         Constellations
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
                     {selectedNode && (
                         <button
                             onClick={() => { setSidebarCollapsed(c => !c); setSidebarToggleSignal(s => s + 1); }}
-                            className="w-10 h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition"
+                            className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition flex-shrink-0"
                             title="Toggle details"
                         >
                             {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}

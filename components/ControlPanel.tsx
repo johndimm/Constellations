@@ -161,7 +161,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     <>
       {headerActions}
       <div
-        className={`absolute left-0 right-0 mx-auto z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%+1rem)]' : 'translate-x-0'} top-16`}
+        className={`absolute left-0 right-0 mx-auto z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(50vw+34rem+1rem)]' : 'translate-x-0'} top-16`}
         style={{ width: 'calc(100% - 1.5rem)', maxWidth: '34rem' }}
       >
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
