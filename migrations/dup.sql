@@ -1,5 +1,7 @@
-select lower(title), type, wikipedia_id, count(*)
+select lower(title)
+-- , wikipedia_id
+, count(*)
 from nodes
-group by 1, 2,3
+group by 1
 having count(*) > 1
 ;
