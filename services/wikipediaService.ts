@@ -97,7 +97,10 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
 
         if (excludePatterns.some(p => t.includes(p))) return { ...c, score: -1000 };
 
-        if (t.includes('poster') || t.includes('cover')) s += 300;
+        if (t.includes('poster') || t.includes('cover')) {
+          if (context?.toLowerCase() === 'person') s -= 200; // Penalize posters for people
+          else s += 300;
+        }
         if (t.includes('portrait') || t.includes('photo') || t.includes('face') || t.includes('headshot')) s += 200;
         if (t.includes('crop') || t.includes('head')) s += 150;
         if (t.includes('film') || t.includes('movie') || t.includes('tv') || t.includes('series')) s += 80;
@@ -171,6 +174,13 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
   };
 
   try {
+    // If the query looks like a specific Commons file, skip search and go straight to info
+    if (query.toLowerCase().startsWith('file:') || query.toLowerCase().startsWith('image:')) {
+      console.log(`🔍 [ImageSearch] Direct file lookup: "${query}"`);
+      const direct = await fetchImageInfo(query, controller.signal);
+      if (direct) return direct;
+    }
+
     const baseTitle = query.includes('(') ? query.split('(')[0].trim() : query;
     const searchQuery = context ? `${baseTitle} ${context}` : baseTitle;
 

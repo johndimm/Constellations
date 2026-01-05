@@ -18,6 +18,19 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
     },
     plugins: [tailwindcss(), react()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom'],
+            'vendor-d3': ['d3'],
+            'vendor-ai': ['@google/genai'],
+            'vendor-icons': ['lucide-react']
+          }
+        }
+      },
+      chunkSizeWarningLimit: 1000 // Raise limit slightly since we are breaking things up
+    },
     define: {
       'process.env.API_KEY': JSON.stringify(apiKey),
       'process.env.GEMINI_API_KEY': JSON.stringify(apiKey),

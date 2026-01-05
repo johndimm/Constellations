@@ -1,19 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GraphNode } from '../types';
-import { X, ExternalLink } from 'lucide-react';
+import { X, ExternalLink, Search } from 'lucide-react';
 
 interface SidebarProps {
   selectedNode: GraphNode | null;
   onClose: () => void;
   externalToggleSignal?: number;
+  onFindBetterImage?: (nodeId: number) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, externalToggleSignal }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, externalToggleSignal, onFindBetterImage }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFullSummary, setShowFullSummary] = useState(false);
   const userManuallyCollapsedRef = useRef(false);
   const lastToggleSignalRef = useRef<number | undefined>(undefined);
+
+  const isRedundant = (s1?: string, s2?: string) => {
+    if (!s1 || !s2) return false;
+    const clean = (s: string) => s.toLowerCase().replace(/[^\w\s]/g, '').trim();
+    const c1 = clean(s1);
+    const c2 = clean(s2);
+    if (c1 === c2) return true;
+    if (c1.length > 10 && c2.includes(c1)) return true;
+    if (c2.length > 10 && c1.includes(c2)) return true;
+    return false;
+  };
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -84,7 +96,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, externalToggle
                 </div>
               )}
 
-              {selectedNode.description && (
+              {selectedNode.description && !isRedundant(selectedNode.description, selectedNode.wikiSummary) && (
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Description</span>
                   <p className="text-slate-300 text-sm leading-relaxed mt-1 whitespace-pre-wrap">{selectedNode.description}</p>
@@ -117,11 +129,22 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, externalToggle
                   href={`https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(selectedNode.title)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm mb-4"
+                  className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm"
                 >
                   <ExternalLink size={16} />
                   <span>Read on Wikipedia</span>
                 </a>
+                
+                {onFindBetterImage && (
+                  <button
+                    onClick={() => onFindBetterImage(selectedNode.id)}
+                    disabled={selectedNode.fetchingImage}
+                    className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm mb-4 disabled:opacity-50"
+                  >
+                    <Search size={16} />
+                    <span>{selectedNode.fetchingImage ? 'Finding...' : 'Find better photo'}</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

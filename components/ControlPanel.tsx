@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, Download, Upload, Share2, Copy } from 'lucide-react';
+import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, Download, Upload, Share2, Copy, Users } from 'lucide-react';
 
 interface ControlPanelProps {
   searchMode: 'explore' | 'connect';
@@ -32,6 +32,7 @@ interface ControlPanelProps {
   onHelpHoverChange: (value: string | null) => void;
   isCollapsed: boolean;
   onSetCollapsed: (val: boolean) => void;
+  onOpenPeopleBrowser?: () => void;
 }
 
 const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -64,7 +65,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   helpHover,
   onHelpHoverChange,
   isCollapsed,
-  onSetCollapsed
+  onSetCollapsed,
+  onOpenPeopleBrowser
 }) => {
   const [showHelp, setShowHelp] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
@@ -274,6 +276,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 <p className="text-sm text-white">
                   <strong>New here?</strong> Start fast with a ready-made graph:{" "}
                   <a className="text-slate-200 hover:text-white font-semibold" href="/graphs/index.html">/graphs/index.html</a>
+                </p>
+                <p className="text-sm text-white">
+                  <strong>Browse People:</strong> Explore Wikipedia's people database:{" "}
+                  <button 
+                    className="text-slate-200 hover:text-white font-semibold underline" 
+                    onClick={(e) => { e.preventDefault(); if (onOpenPeopleBrowser) onOpenPeopleBrowser(); }}
+                  >
+                    Browse People
+                  </button>
                 </p>
                 <div className="grid gap-2 text-xs text-slate-200">
                   <div className="bg-slate-700/40 rounded-lg p-2 border border-slate-700">

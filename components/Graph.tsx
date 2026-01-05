@@ -15,6 +15,8 @@ interface GraphProps {
     isTextOnly?: boolean;
     searchId?: number;
     selectedNode?: GraphNode | null;
+    expandingNodeId?: number | null;
+    newChildNodeIds?: Set<number>;
     highlightKeepIds?: number[];
     highlightDropIds?: number[];
 }
@@ -38,6 +40,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
     isTextOnly = false,
     searchId = 0,
     selectedNode = null,
+    expandingNodeId = null,
+    newChildNodeIds = new Set<number>(),
     highlightKeepIds = [],
     highlightDropIds = []
 }, ref) => {
@@ -950,13 +954,23 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 baseOpacity = 0.18;
             } else if (hasHighlight) {
                 baseOpacity = isKeep ? 1 : 0.3;
+            } else {
+                // Simple selection/expansion highlighting
+                if (expandingNodeId !== null) {
+                    // Expansion in progress: dim all except expanding node and new children
+                    const isExpanding = expandingNodeId === d.id;
+                    const isNewChild = newChildNodeIds.has(d.id);
+                    if (!isExpanding && !isNewChild) {
+                        baseOpacity = 0.25;
+                    }
+                } else if (effectiveFocused) {
+                    // Selection: dim nodes not connected to selected node
+                    if (!isFocused && !neighborIds.has(d.id)) {
+                        baseOpacity = 0.25;
+                    }
+                }
             }
-
-            // Don't dim nodes that are in the path (keepHighlight) even if they're not focused
-            if (effectiveFocused && !isFocused && !neighborIds.has(d.id) && !isKeep) {
-                baseOpacity *= 0.25;
-            }
-            g.style("opacity", baseOpacity);
+            g.style("opacity", d.isLoading ? 1 : baseOpacity);
 
             const strokeColor = isDrop ? "#f87171" : (isKeep && hasHighlight ? "#22c55e" : (isHovered || isFocused ? "#f59e0b" : "#fff"));
             const strokeWidth = isDrop ? 3.5 : (isKeep && hasHighlight ? 2.5 : (isFocused ? 3 : 2));
@@ -1200,8 +1214,18 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     if (hasHighlight && pathLinkIds.has(d.id)) return 0.9;
                     // Priority 2: Other links when path highlighting is active
                     if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return 0.25;
-                    // Priority 3: Focused node highlighting
-                    if (effectiveFocused) return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? 0.9 : 0.1;
+                    // Priority 3: Expansion/Selection highlighting
+                    if (expandingNodeId !== null) {
+                        const sourceNode = nodes.find(n => n.id === sId);
+                        const targetNode = nodes.find(n => n.id === tId);
+                        const sourceDimmed = sourceNode && sourceNode.id !== expandingNodeId && !newChildNodeIds.has(sourceNode.id);
+                        const targetDimmed = targetNode && targetNode.id !== expandingNodeId && !newChildNodeIds.has(targetNode.id);
+                        if (sourceDimmed || targetDimmed) return 0.25;
+                    } else if (effectiveFocused) {
+                        const isConnected = neighborIds.has(sId) || neighborIds.has(tId);
+                        if (!isConnected) return 0.25;
+                        return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? 0.9 : 0.4;
+                    }
                     return 0.7;
                 })
                 .style("stroke", d => {

@@ -18,6 +18,7 @@ If a section titled "USE THIS VERIFIED INFORMATION FOR ACCURACY" is provided, yo
 Rules:
 1. If the Source is a "Thing" (Movie, TV Show, Event, Paper), return distinct, high-impact **People** involved.
    - For TV Shows and Movies: ALWAYS include the LEAD ACTORS and STARS (main cast), plus director/creator.
+   - For Events/Investigations: Include key participants, investigators, leaders, and primary figures mentioned in historical or news records.
    - **CRITICAL**: Only return people who are ACTUALLY connected to the specific title. Do NOT confuse similar titles or make assumptions.
    - If you're not certain about the exact cast/crew, focus on verified, well-documented connections only.
    - **WEIGHTING RULE**: Prefer specific, niche connections over broad, mass-participant events. A shared obscure paper or indie movie is a "stronger" link than a shared massive event like "World War II" or "The Oscars".
@@ -135,10 +136,10 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
   try {
     const prompt = `${contextualPrompt}${wikiPrompt}${excludePrompt}
       1. Identify the 'year' it occurred/started (integer) if applicable (e.g. release year, event date).
-      2. Find 5-6 key people connected to it:
+      2. Find 8-10 key people connected to it (DO NOT return fewer than 5 unless they are truly the only ones):
          - For TV Shows/Movies: Return the LEAD ACTORS/STARS and director/creator (prioritize main cast).
          - For Academic Papers/Books: Return the primary Authors (Co-authorship).
-         - For Events: Return key participants.`;
+         - For Events/Investigations: Return key participants, investigators, witnesses, figures of interest, or leaders involved.`;
     
     console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
     
@@ -212,9 +213,9 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
 
   const contextPrompt = excludeNodes.length > 0
     ? `The user graph already contains these nodes connected to ${personName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}. 
-       Return 6-8 significant movies, historical events, academic papers, books, or projects that are NOT the ones listed above.
+       Return 8-10 significant movies, historical events, academic papers, books, or projects that are NOT the ones listed above.
        Focus on fresh, distinct connections.`
-    : `List 6-8 DISTINCT, significant movies, historical events, academic papers, books, or projects associated with "${personName}"${wikiIdStr}.
+    : `List 8-10 DISTINCT, significant movies, historical events, academic papers, books, or projects associated with "${personName}"${wikiIdStr} (DO NOT return fewer than 6 unless they are truly the only ones).
        If the person is an academic, list their most cited papers and books. If the person is a criminal or historical figure known for specific acts, list those acts as events.`;
 
   try {
@@ -274,115 +275,48 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
 };
 
 export const fetchConnectionPath = async (start: string, end: string, context?: { startWiki?: string; endWiki?: string }): Promise<PathResponse> => {
+// ... existing code ...
+};
+
+export const findWikipediaTitle = async (name: string, description?: string): Promise<{ title: string; imageHint?: string } | null> => {
   const apiKey = await getApiKey();
-  if (!apiKey) throw new Error("No API key found");
-  console.log(`🧪 [Gemini] fetchConnectionPath start`, {
-    start,
-    end,
-    startWikiPreview: context?.startWiki ? `${context.startWiki.substring(0, 80)}…` : "none",
-    endWikiPreview: context?.endWiki ? `${context.endWiki.substring(0, 80)}…` : "none",
-    timeoutMs: 60000
-  });
+  if (!apiKey) return null;
   const ai = new GoogleGenAI({ apiKey });
-
-  const wikiPrompt = context
-    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:
-       - ${start}: ${context.startWiki || "No extra info"}
-       - ${end}: ${context.endWiki || "No extra info"}\n`
-    : "";
-
-  try {
-    const prompt = `${wikiPrompt}Find a valid connection path between "${start}" and "${end}".
-            CRITICAL: The path MUST contain between 2 and 8 nodes total (including start and end). DO NOT exceed 8 nodes.
-            
-            STRICT RULE: The path MUST follow an alternating sequence (Bipartite structure):
-            - A "Person" MUST connect to a "Thing" (Movie, Paper, Event, Project, Book).
-            - A "Thing" MUST connect to a "Person".
-            - DIRECT connections between two People (e.g. "co-author of") or two Things are FORBIDDEN. You must reveal the hidden internal step (e.g. the specific Paper or Movie they shared).
-            
-            Adjacent entities must be directly connected (e.g. Person A -> Movie X -> Person B -> Event Y -> Person C).
-            
-            WEIGHTING PREFERENCE: 
-            Prioritize "niche" or "exclusive" connections. For example, if two people both worked on a specific obscure research paper, that is a much stronger path link than if they both "participated" in a massive event like "World War II" or "The 2024 Olympics". Prefer the most direct and exclusive links possible.
-            
-            Return the full sequence as an ordered list, starting with "${start}" and ending with "${end}".
-            For 'justification', explain the link to the PREVIOUS node in the chain (keep it brief, one sentence).`;
+  
+  const prompt = `Find the exact English Wikipedia article title for "${name}"${description ? ` described as "${description}"` : ''}.
+    Also, if you know a specific Wikimedia Commons filename for a good portrait of this person/thing, include it.
     
-    console.log(`🤖 [Gemini] fetchConnectionPath Prompt:`, prompt);
-
-    const makeApiCall = () => ai.models.generateContent({
+    Return JSON:
+    {
+      "title": "Exact Wikipedia Title",
+      "imageHint": "Optional filename like 'File:Person Name.jpg' or null"
+    }`;
+    
+  try {
+    const response = await withTimeout(ai.models.generateContent({
       model: "gemini-2.0-flash",
       contents: prompt,
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            path: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  type: { type: Type.STRING },
-                  description: { type: Type.STRING, description: "Short 1-sentence description" },
-                  year: { type: Type.INTEGER },
-                  justification: { type: Type.STRING, description: "Connection to the previous node" }
-                },
-                required: ["id", "type", "description", "justification"]
-              }
-            }
+            title: { type: Type.STRING },
+            imageHint: { type: Type.STRING, nullable: true }
           },
-          required: ["path"]
+          required: ["title"]
         }
       }
-    });
-
-    const response = await withRetry(
-      () => withTimeout(makeApiCall(), 60000, "Pathfinding timed out"),
-      2,
-      800
-    );
+    }), 10000, "Title lookup timed out");
     
-    const rawText = getResponseText(response);
-    const text = cleanJson(rawText);
-    
-    // Truncate for logging if too long
-    const truncatedText = text.length > 5000 ? text.substring(0, 5000) + `... [truncated, total length: ${text.length}]` : text;
-    console.log("fetchConnectionPath response text:", truncatedText);
-    
-    if (!text) return { path: [] };
-    
-    let parsed: PathResponse;
-    try {
-      parsed = JSON.parse(text) as PathResponse;
-    } catch (parseError: any) {
-      console.error("JSON parsing error in pathfinding response:", parseError.message);
-      // Try to recover by finding valid JSON in the response
-      const jsonMatch = text.match(/\{"path":\[.*?\]\}/s);
-      if (jsonMatch) {
-        try {
-          parsed = JSON.parse(jsonMatch[0]) as PathResponse;
-          console.log("Recovered JSON from malformed response");
-        } catch (e) {
-          throw new Error(`Failed to parse pathfinding response: ${parseError.message}`);
-        }
-      } else {
-        throw new Error(`Failed to parse pathfinding response: ${parseError.message}`);
-      }
-    }
-    
-    // Validate and limit path length
-    if (parsed.path && parsed.path.length > 8) {
-      console.warn(`Path too long (${parsed.path.length} nodes), rejecting path`);
-      throw new Error(`Path too long: ${parsed.path.length} nodes (max 8 allowed)`);
-    }
-    
-    return parsed;
-
-  } catch (error) {
-    console.error("Gemini API Error (Pathfinding):", error);
-    throw error;
+    const text = getResponseText(response);
+    const json = JSON.parse(cleanJson(text));
+    return {
+      title: json.title,
+      imageHint: json.imageHint
+    };
+  } catch (e) {
+    console.warn("AI title lookup failed", e);
+    return null;
   }
 };

@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import Graph, { GraphHandle } from './components/Graph';
 import ControlPanel from './components/ControlPanel';
 import Sidebar from './components/Sidebar';
 import NodeContextMenu from './components/NodeContextMenu';
-import { GraphNode, GraphLink } from './types';
-import { fetchConnections, fetchPersonWorks, classifyEntity, fetchConnectionPath } from './services/geminiService';
+import { GraphNode, GraphLink, PathResponse } from './types';
+import { fetchConnections, fetchPersonWorks, classifyEntity, fetchConnectionPath, findWikipediaTitle } from './services/geminiService';
 import { getApiKey } from './services/aiUtils';
 import { fetchWikipediaImage, fetchWikipediaSummary } from './services/wikipediaService';
 import { Key, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react';
+
+const BrowsePeople = lazy(() => import('./components/BrowsePeople'));
+const PeopleBrowserSidebar = lazy(() => import('./components/PeopleBrowserSidebar'));
 
 // Normalize string for deduplication: lower case, remove 'the ', remove punctuation
 const normalizeForDedup = (str: string) => {
@@ -176,12 +179,16 @@ const App: React.FC = () => {
     const [searchId, setSearchId] = useState(0);
     const [deletePreview, setDeletePreview] = useState<{ keepIds: number[], dropIds: number[] } | null>(null);
     const [pathNodeIds, setPathNodeIds] = useState<number[]>([]);
+    const [newlyExpandedNodeIds, setNewlyExpandedNodeIds] = useState<number[]>([]);
+    const [expandingNodeId, setExpandingNodeId] = useState<number | null>(null);
+    const [newChildNodeIds, setNewChildNodeIds] = useState<Set<number>>(new Set());
     const [helpHover, setHelpHover] = useState<string | null>(null);
     const [pendingAutoExpandId, setPendingAutoExpandId] = useState<number | null>(null);
     const [contextMenu, setContextMenu] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
     const [panelCollapsed, setPanelCollapsed] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [sidebarToggleSignal, setSidebarToggleSignal] = useState(0);
+    const [peopleBrowserOpen, setPeopleBrowserOpen] = useState(false);
 
     // Keep selectedNode in sync with latest node data (e.g., wikiSummary, images)
     useEffect(() => {
@@ -335,6 +342,62 @@ const App: React.FC = () => {
         }
     }, [isTextOnly, saveCacheNodeMeta]);
 
+    const handleFindBetterImage = useCallback(async (nodeId: number) => {
+        const node = graphDataRef.current.nodes.find(n => n.id === nodeId);
+        if (!node) return;
+
+        setGraphData(prev => ({
+            ...prev,
+            nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n)
+        }));
+
+        setNotification({ message: `AI is looking for ${node.title}'s correct photo...`, type: 'success' });
+
+        try {
+            const aiSuggestion = await findWikipediaTitle(node.title, node.description);
+            if (aiSuggestion) {
+                const { title: betterTitle, imageHint } = aiSuggestion;
+                console.log(`🤖 AI suggested better Wikipedia title for ${node.title}: "${betterTitle}"`, imageHint ? `(Hint: ${imageHint})` : '');
+                
+                // If AI gave a specific image hint (filename), try that first
+                if (imageHint) {
+                    // fetchWikipediaImage can handle File: titles if we pass it correctly
+                    const url = await fetchWikipediaImage(imageHint, node.type);
+                    if (url) {
+                        setGraphData(prev => ({
+                            ...prev,
+                            nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n)
+                        }));
+                        saveCacheNodeMeta(nodeId, { imageUrl: url });
+                        setNotification({ message: "Better photo found via AI hint!", type: 'success' });
+                        return;
+                    }
+                }
+
+                // Otherwise use the better title
+                const url = await fetchWikipediaImage(betterTitle, node.type);
+                if (url) {
+                    setGraphData(prev => ({
+                        ...prev,
+                        nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n)
+                    }));
+                    saveCacheNodeMeta(nodeId, { imageUrl: url });
+                    setNotification({ message: "Better photo found!", type: 'success' });
+                    return;
+                }
+            }
+            setNotification({ message: "No better photo found.", type: 'error' });
+        } catch (e) {
+            console.error("Find better image failed", e);
+            setNotification({ message: "Failed to find better photo.", type: 'error' });
+        } finally {
+            setGraphData(prev => ({
+                ...prev,
+                nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: false } : n)
+            }));
+        }
+    }, [saveCacheNodeMeta]);
+
     const handleClear = () => {
         setGraphData({ nodes: [], links: [] });
         setSelectedNode(null);
@@ -383,9 +446,9 @@ const App: React.FC = () => {
         }
     }, [cacheEnabled, cacheBaseUrl]);
 
-    const fetchAndExpandNode = useCallback(async (node: GraphNode, isInitial = false, forceMore = false, nodesOverride?: GraphNode[], linksOverride?: GraphLink[]) => {
-        const currentNodes = nodesOverride || nodes;
-        const currentLinks = linksOverride || links;
+    const fetchAndExpandNode = useCallback(async (node: GraphNode, isInitial = false, forceMore = false, nodesOverride?: GraphNode[], linksOverride?: GraphLink[], skipSelection = false, skipExpandingHighlight = false) => {
+        const currentNodes = nodesOverride || graphDataRef.current.nodes;
+        const currentLinks = linksOverride || graphDataRef.current.links;
 
         if (!forceMore && (node.expanded || node.isLoading)) return;
 
@@ -394,10 +457,16 @@ const App: React.FC = () => {
             { id: node.id, title: node.title, type: node.type, forceMore, isInitial }
         );
 
-        setGraphData(prev => ({
-            ...prev,
-            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
-        }));
+        // Don't set expandingNodeId yet - wait until data is ready to display
+        // Maintaining previous expansion highlight until new one is ready
+        
+        setGraphData(prev => {
+            const existingNodeIds = new Set(prev.nodes.map(n => n.id));
+            return {
+                ...prev,
+                nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
+            };
+        });
         // Prevent repeated requests for the same node while a fetch is in flight
         // by marking its image as checked during this operation.
         const markChecked = () => setGraphData(prev => ({
@@ -482,7 +551,8 @@ const App: React.FC = () => {
                             return `${Math.min(n1, n2)}-${Math.max(n1, n2)}`;
                         };
 
-                        const existingLinkKeys = new Set(links.map(l => {
+                        const currentLinksNow = graphDataRef.current.links;
+                        const existingLinkKeys = new Set(currentLinksNow.map(l => {
                             const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
                             const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
                             return getLinkKey(s, t);
@@ -502,7 +572,13 @@ const App: React.FC = () => {
 
 
                             // Otherwise, proceed to add them
-                            let cacheNewNodes = 0;
+                            // Calculate which nodes are new before the state update
+                            const currentNodesNow = graphDataRef.current.nodes;
+                            const existingNodeIdsBefore = new Set(currentNodesNow.map(n => n.id));
+                            const newChildIds: number[] = validCached
+                                .filter(cn => !existingNodeIdsBefore.has(cn.id))
+                                .map(cn => cn.id);
+                            const cacheNewNodes = newChildIds.length;
                             let cacheNewLinks = 0;
 
                             setGraphData(prev => {
@@ -535,7 +611,6 @@ const App: React.FC = () => {
                                         expanded: existing?.expanded || false,
                                         isLoading: false
                                     };
-                                    if (!existingNodeIds.has(cn.id)) cacheNewNodes += 1;
                                     nodeMap.set(cn.id, merged);
                                 });
                                 if (nodeMap.has(node.id)) {
@@ -551,8 +626,22 @@ const App: React.FC = () => {
                                 cacheNewLinks = newLinksToAdd.length;
                                 const combinedLinks = [...prev.links, ...newLinksToAdd];
 
+
                                 return dedupeGraph(updatedNodes, combinedLinks);
                             });
+
+                            // Cache hit: fulfill selection request (data is ready, before building new nodes)
+                            if (!skipSelection) {
+                                setSelectedNode(node);
+                            }
+                            if (!skipExpandingHighlight) {
+                                setExpandingNodeId(node.id);
+                            }
+                            
+                            // Track new child nodes for highlighting - they should be bright
+                            if (!skipExpandingHighlight) {
+                                setNewChildNodeIds(new Set(newChildIds));
+                            }
 
                             // Log after the callback triggers (approximate) or just use our pre-calc
                             console.log(`💾 [Cache] scheduled add of ~${newNodesCount} nodes`);
@@ -570,6 +659,7 @@ const App: React.FC = () => {
                             if (needsWikiFix) fixMissingWiki([node, ...validCached]);
 
                             console.log(`💾 [Cache] preventing fallback to LLM. Returning early.`);
+                            // expandingNodeId was already set above when data was ready
                             setIsProcessing(false);
                             return;
                         }
@@ -612,16 +702,29 @@ const App: React.FC = () => {
                 console.log(`✅ [Expand] Found ${results.length} people for event "${node.title}"`);
             }
 
+            // Fulfill selection request: select node as soon as LLM returns data (BEFORE building new nodes)
+            // This makes it the only bright node, then new children will be bright as they're added
+            if (!skipSelection) {
+                setSelectedNode(node);
+            }
+            if (!skipExpandingHighlight) {
+                setExpandingNodeId(node.id);
+            }
+
             if (results.length === 0) {
                 if (isInitial) {
                     setError(`No connections found for "${node.title}".`);
                     setGraphData({ nodes: [], links: [] });
                     setSelectedNode(null);
+                    setExpandingNodeId(null); // Clear if no results
+                    setNewChildNodeIds(new Set());
                 } else {
                     setGraphData(prev => ({
                         ...prev,
                         nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false } : n)
                     }));
+                    setExpandingNodeId(null); // Clear if no results
+                    setNewChildNodeIds(new Set());
                 }
             } else {
                 // Get Wikipedia info for all results to help disambiguate
@@ -657,8 +760,9 @@ const App: React.FC = () => {
 
                 // Ensure all nodes have IDs and dedupe by normalized title to prevent duplicates (e.g., multiple Marlon Brando nodes).
                 // Use baseDedupeKey for case-insensitive matching regardless of wikipedia_id
+                const currentNodesForDedupe = nodesOverride || graphDataRef.current.nodes;
                 const existingByNorm = new Map<string, GraphNode>(
-                    (nodesOverride || nodes).map(n => [baseDedupeKey(n.title, n.type), n])
+                    currentNodesForDedupe.map(n => [baseDedupeKey(n.title, n.type), n])
                 );
                 const processedNodes = nodesToUse.map(cn => {
                     const norm = baseDedupeKey(cn.title, cn.type);
@@ -675,8 +779,17 @@ const App: React.FC = () => {
                     return { ...cn, id: idToUse };
                 });
 
+                // Calculate which nodes are new before the state update
+                const currentNodesForNewIds = graphDataRef.current.nodes;
+                const existingNodeIdsBefore = new Set(currentNodesForNewIds.map(n => n.id));
+                const newChildIds: number[] = processedNodes
+                    .filter(cn => !existingNodeIdsBefore.has(cn.id))
+                    .map(cn => cn.id);
+
                 setGraphData(prev => {
                     const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
+                    const existingNodeIds = new Set(prev.nodes.map(n => n.id));
+                    
                     processedNodes.forEach(cn => {
                         const meta = cn.meta || {};
                         const existing = nodeMap.get(cn.id);
@@ -713,6 +826,11 @@ const App: React.FC = () => {
                     return dedupeGraph(updatedNodes, [...prev.links, ...newLinksToAdd]);
                 });
 
+                // Track new child nodes for highlighting - they should be bright
+                if (!skipExpandingHighlight) {
+                    setNewChildNodeIds(new Set(newChildIds));
+                }
+
                 processedNodes.forEach((cn, idx) => {
                     if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
                         // mark as checked to avoid duplicate requests while queued
@@ -735,6 +853,7 @@ const App: React.FC = () => {
                     // Center viewport on the expanded node after a brief delay for physics to settle
                     setTimeout(() => {
                         graphRef.current?.centerOnNode(node.id);
+                        // Keep expandingNodeId set so dimming continues (cleared on background click)
                     }, 200);
                 }, 500);
             }
@@ -746,11 +865,15 @@ const App: React.FC = () => {
                 ...prev,
                 nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: false } : n)
             }));
+            // Clear selection and expanding node on error
+            setSelectedNode(null);
+            setExpandingNodeId(null);
+            setNewChildNodeIds(new Set());
         } finally {
             clearTimeout(loadingGuard);
             setIsProcessing(false);
         }
-    }, [nodes, links, loadNodeImage, cacheEnabled, fetchCacheExpansion, saveCacheExpansion, cacheBaseUrl, saveCacheNodeMeta]);
+    }, [loadNodeImage, cacheEnabled, fetchCacheExpansion, saveCacheExpansion, cacheBaseUrl, saveCacheNodeMeta]);
 
     const handleStartSearch = async (term: string, recursiveDepth = 0) => {
         setIsProcessing(true);
@@ -1491,8 +1614,12 @@ const App: React.FC = () => {
 
     const handleExpandLeaves = useCallback(async (node: GraphNode) => {
         try {
+            // Use latest data from ref to avoid closure staleness in the loop
+            const currentLinks = graphDataRef.current.links;
+            const currentNodes = graphDataRef.current.nodes;
+
             // Only expand direct neighbors of the selected node
-            const neighborIds = links.reduce<number[]>((acc, l) => {
+            const neighborIds = currentLinks.reduce<number[]>((acc, l) => {
                 const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
                 const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
                 if (s === node.id) acc.push(t);
@@ -1500,7 +1627,7 @@ const App: React.FC = () => {
                 return acc;
             }, []);
 
-            const neighbors = nodes.filter(n => neighborIds.includes(n.id) && !n.expanded && !n.isLoading);
+            const neighbors = currentNodes.filter(n => neighborIds.includes(n.id) && !n.expanded && !n.isLoading);
 
             if (neighbors.length === 0) {
                 setNotification({ message: "No unexpanded neighbors.", type: 'error' });
@@ -1509,23 +1636,27 @@ const App: React.FC = () => {
 
             setNotification({ message: `Expanding ${neighbors.length} neighbors...`, type: 'success' });
 
-            // Don't change selectedNode during expansion - just expand the nodes
-            // This prevents state conflicts and rendering issues
+            // Sequential expansion: exactly the same as clicking each one in turn.
+            // This ensures each node gets focus, highlight, and viewport centering as it expands.
             for (const targetNode of neighbors) {
                 try {
-                    // Verify node still exists before expanding
-                    const nodeStillExists = nodes.some(n => n.id === targetNode.id);
-                    if (!nodeStillExists) {
-                        console.warn(`Node ${targetNode.id} no longer exists, skipping`);
+                    // Re-verify neighbor state using latest data from ref
+                    const latestNodes = graphDataRef.current.nodes;
+                    const nodeToExpand = latestNodes.find(n => n.id === targetNode.id);
+                    
+                    if (!nodeToExpand || nodeToExpand.expanded || nodeToExpand.isLoading) {
                         continue;
                     }
+
+                    console.log(`🖱️ [Bulk Expand] Triggering expansion for "${nodeToExpand.title}"`);
                     
-                    await fetchAndExpandNode(targetNode);
-                    // Delay to allow physics and state to settle
-                    await new Promise(resolve => setTimeout(resolve, 300));
+                    // Call without skip flags to match manual click behavior exactly
+                    await fetchAndExpandNode(nodeToExpand, false, false, undefined, undefined, false, false);
+                    
+                    // Brief pause between expansions for visual clarity and state settling
+                    await new Promise(resolve => setTimeout(resolve, 600));
                 } catch (e) {
                     console.error(`Failed to expand node ${targetNode.id} (${targetNode.title})`, e);
-                    // Continue with next node instead of crashing
                 }
             }
 
@@ -1535,7 +1666,8 @@ const App: React.FC = () => {
             setError("Error expanding leaf nodes. Please try again.");
             setNotification({ message: "Expansion failed.", type: 'error' });
         }
-    }, [nodes, links, fetchAndExpandNode]);
+    }, [fetchAndExpandNode]);
+
 
     // Auto-expand trigger: when pendingAutoExpandId is set and the node is ready, call handleExpandLeaves
     useEffect(() => {
@@ -1558,11 +1690,15 @@ const App: React.FC = () => {
         }, 500);
     }, [pendingAutoExpandId, nodes, handleExpandLeaves]);
 
-    const handleNodeClick = (node: GraphNode | null) => {
+    const handleNodeClick = useCallback((node: GraphNode | null) => {
         if (!node) {
             setSelectedNode(null);
             setContextMenu(null);
             setPathNodeIds([]); // Clear path highlighting when deselecting
+            setNewlyExpandedNodeIds([]); // Clear expansion highlighting on deselect
+            // Clear expansion highlighting when clicking background
+            setExpandingNodeId(null);
+            setNewChildNodeIds(new Set());
             return;
         }
 
@@ -1573,11 +1709,12 @@ const App: React.FC = () => {
 
         // If in connect mode, auto-fill start/end inputs ONLY if they are empty
         if (searchMode === 'connect') {
-            if (!pathStart) {
-                setPathStart(node.title);
-            } else if (!pathEnd && node.title !== pathStart) {
-                setPathEnd(node.title);
-            }
+            setPathStart(prev => prev || node.title);
+            setPathEnd(prev => {
+                if (prev) return prev;
+                const currentStart = pathStart;
+                return node.title !== currentStart ? node.title : prev;
+            });
         }
 
         // Check if this is a second click on the already selected node
@@ -1591,17 +1728,22 @@ const App: React.FC = () => {
                 y: window.innerHeight / 3
             });
         } else {
-            // First click: select node to highlight connections
-            setSelectedNode(node);
+            // First click: initiate selection request
             setContextMenu(null);
             
-            // Expand node if not already expanded
-            if (!node.expanded && !node.isLoading) {
+            if (node.expanded || node.isLoading) {
+                // Already expanded: fulfill selection request immediately (connections are ready)
+                setSelectedNode(node);
+                setExpandingNodeId(null);
+                setNewChildNodeIds(new Set());
+            } else {
+                // Unexpanded: start expansion, selection will be fulfilled when data returns
+                // Maintaining previous selection/expansion highlight while waiting for data
                 console.log(`🖱️ [UI] node clicked -> expand`, { id: node.id, title: node.title, type: node.type });
                 fetchAndExpandNode(node);
             }
         }
-    };
+    }, [searchMode, pathStart, selectedNode, loadNodeImage, fetchAndExpandNode]);
 
     const handleViewportChange = useCallback((visibleNodes: GraphNode[]) => {
         if (visibleNodes.length <= 15 && !isTextOnly) {
@@ -1766,6 +1908,28 @@ const App: React.FC = () => {
         });
     };
 
+    const [showBrowse, setShowBrowse] = useState(() => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('browse') === 'people';
+    });
+
+    useEffect(() => {
+        const handlePopState = () => {
+            const params = new URLSearchParams(window.location.search);
+            setShowBrowse(params.get('browse') === 'people');
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
+
+    const handleOpenPeopleBrowser = useCallback(() => {
+        const newParams = new URLSearchParams(window.location.search);
+        newParams.set('browse', 'people');
+        const newUrl = window.location.pathname + '?' + newParams.toString();
+        window.history.pushState({ browse: 'people' }, '', newUrl);
+        setShowBrowse(true);
+    }, []);
+
     if (!isKeyReady) {
         return (
             <div className="flex flex-col items-center justify-center w-screen h-screen bg-slate-900 text-white space-y-6">
@@ -1790,14 +1954,20 @@ const App: React.FC = () => {
                     >
                         {panelCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
                     </button>
-                    <a 
-                        href="/"
+                    <button 
+                        onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); setShowBrowse(false); }}
                         className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap hover:text-red-400 transition-colors"
                     >
                         Constellations
-                    </a>
+                    </button>
                 </div>
-                <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+                <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0 mr-2">
+                    <button
+                        onClick={handleOpenPeopleBrowser}
+                        className={`text-sm font-bold uppercase tracking-widest transition-colors ${showBrowse ? 'text-red-500' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        People
+                    </button>
                     {selectedNode && (
                         <button
                             onClick={() => { setSidebarCollapsed(c => !c); setSidebarToggleSignal(s => s + 1); }}
@@ -1809,104 +1979,148 @@ const App: React.FC = () => {
                     )}
                 </div>
             </header>
-            <Graph
-                ref={graphRef}
-                nodes={nodes}
-                links={links}
-                onNodeClick={handleNodeClick}
-                onViewportChange={handleViewportChange}
-                width={dimensions.width}
-                height={dimensions.height}
-                isCompact={isCompact}
-                isTimelineMode={isTimelineMode}
-                isTextOnly={isTextOnly}
-                searchId={searchId}
-                selectedNode={selectedNode}
-                highlightKeepIds={pathNodeIds.length > 0 ? pathNodeIds : (deletePreview?.keepIds)}
-                highlightDropIds={deletePreview?.dropIds}
-            />
 
-            <ControlPanel
-                searchMode={searchMode}
-                setSearchMode={setSearchMode}
-                exploreTerm={exploreTerm}
-                setExploreTerm={setExploreTerm}
-                pathStart={pathStart}
-                setPathStart={setPathStart}
-                pathEnd={pathEnd}
-                setPathEnd={setPathEnd}
-                onSearch={handleStartSearch}
-                onPathSearch={handlePathSearch}
-                onClear={handleClear}
-                isProcessing={isProcessing}
-                isCompact={isCompact}
-                onToggleCompact={() => setIsCompact(!isCompact)}
-                isTimelineMode={isTimelineMode}
-                onToggleTimeline={() => setIsTimelineMode(!isTimelineMode)}
-                isTextOnly={isTextOnly}
-                onToggleTextOnly={() => setIsTextOnly(!isTextOnly)}
-                onPrune={handlePrune}
-                error={error}
-                onSave={handleSaveGraph}
-                onLoad={handleLoadGraph}
-                onDeleteGraph={handleDeleteGraph}
-                onImport={handleImport}
-                savedGraphs={savedGraphs}
-                helpHover={helpHover}
-                onHelpHoverChange={setHelpHover}
-                isCollapsed={panelCollapsed}
-                onSetCollapsed={setPanelCollapsed}
-            />
-            <Sidebar
-                selectedNode={selectedNode}
-                onClose={() => { setSelectedNode(null); setContextMenu(null); setPathNodeIds([]); }}
-                externalToggleSignal={sidebarToggleSignal}
-            />
+            {/* Always mount BrowsePeople to retain state, but hide it based on showBrowse */}
+            <div className={`fixed inset-0 z-40 ${showBrowse ? 'block' : 'hidden'}`}>
+                <Suspense fallback={<div className="flex items-center justify-center h-full bg-slate-900 text-slate-400">Loading People Browser...</div>}>
+                    <BrowsePeople 
+                        baseUrl={window.location.origin} 
+                        exploreTerm={exploreTerm}
+                        onSelect={(name) => {
+                            setExploreTerm(name);
+                            const newParams = new URLSearchParams(window.location.search);
+                            newParams.delete('browse');
+                            const newUrl = window.location.pathname + (newParams.toString() ? '?' + newParams.toString() : '');
+                            window.history.pushState({}, '', newUrl);
+                            setShowBrowse(false);
+                            setTimeout(() => handleStartSearch(name), 100);
+                        }} 
+                    />
+                </Suspense>
+            </div>
 
-            {contextMenu && (
-                <NodeContextMenu
-                    node={contextMenu.node}
-                    x={contextMenu.x}
-                    y={contextMenu.y}
-                    onExpandLeaves={handleExpandLeaves}
-                    onAddMore={handleExpandMore}
-                    onDelete={handleSmartDelete}
-                    onClose={() => setContextMenu(null)}
-                    isProcessing={isProcessing}
+            <div className={showBrowse ? 'hidden' : 'block'}>
+                <Graph
+                    ref={graphRef}
+                    nodes={nodes}
+                    links={links}
+                    onNodeClick={handleNodeClick}
+                    onViewportChange={handleViewportChange}
+                    width={dimensions.width}
+                    height={dimensions.height}
+                    isCompact={isCompact}
+                    isTimelineMode={isTimelineMode}
+                    isTextOnly={isTextOnly}
+                    searchId={searchId}
+                    selectedNode={selectedNode}
+                    expandingNodeId={expandingNodeId}
+                    newChildNodeIds={newChildNodeIds}
                 />
-            )}
 
-            {/* Notification Toast */}
-            {notification && (
-                <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-lg shadow-2xl border border-slate-700 z-50 flex items-center animate-fade-in-up">
-                    <div className={`w-3 h-3 rounded-full mr-3 ${notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                    <span className="font-medium">{notification.message}</span>
-                </div>
-            )}
+                <ControlPanel
+                    searchMode={searchMode}
+                    setSearchMode={setSearchMode}
+                    exploreTerm={exploreTerm}
+                    setExploreTerm={setExploreTerm}
+                    pathStart={pathStart}
+                    setPathStart={setPathStart}
+                    pathEnd={pathEnd}
+                    setPathEnd={setPathEnd}
+                    onSearch={handleStartSearch}
+                    onPathSearch={handlePathSearch}
+                    onClear={handleClear}
+                    isProcessing={isProcessing}
+                    isCompact={isCompact}
+                    onToggleCompact={() => setIsCompact(!isCompact)}
+                    isTimelineMode={isTimelineMode}
+                    onToggleTimeline={() => setIsTimelineMode(!isTimelineMode)}
+                    isTextOnly={isTextOnly}
+                    onToggleTextOnly={() => setIsTextOnly(!isTextOnly)}
+                    onPrune={handlePrune}
+                    error={error}
+                    onSave={handleSaveGraph}
+                    onLoad={handleLoadGraph}
+                    onDeleteGraph={handleDeleteGraph}
+                    onImport={handleImport}
+                    savedGraphs={savedGraphs}
+                    helpHover={helpHover}
+                    onHelpHoverChange={setHelpHover}
+                    isCollapsed={panelCollapsed}
+                    onSetCollapsed={setPanelCollapsed}
+                    onOpenPeopleBrowser={handleOpenPeopleBrowser}
+                />
+                <Sidebar
+                    selectedNode={selectedNode}
+                    onClose={() => { setSelectedNode(null); setContextMenu(null); setPathNodeIds([]); }}
+                    externalToggleSignal={sidebarToggleSignal}
+                    onFindBetterImage={handleFindBetterImage}
+                />
+                <Suspense fallback={null}>
+                    <PeopleBrowserSidebar
+                        isOpen={peopleBrowserOpen}
+                        onClose={() => setPeopleBrowserOpen(false)}
+                        onSelectPerson={(personName) => {
+                            setExploreTerm(personName);
+                            setPeopleBrowserOpen(false);
+                            // Update URL with the selected person (remove browse param, add q param)
+                            const params = new URLSearchParams(window.location.search);
+                            params.delete('browse');
+                            params.set('q', personName);
+                            window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
+                            handleStartSearch(personName, 1);
+                        }}
+                    />
+                </Suspense>
 
-            {/* Confirmation Dialog (no blackout, small floating card) */}
-            {confirmDialog && confirmDialog.isOpen && (
-                <div className="fixed z-50 left-1/2 -translate-x-1/2 bottom-6">
-                    <div className="bg-slate-900/95 text-white px-5 py-4 rounded-xl border border-slate-700 shadow-2xl max-w-sm w-[92vw]">
-                        <h3 className="text-sm font-bold mb-2">Confirm delete</h3>
-                        <p className="text-xs text-slate-300 mb-4">{confirmDialog.message}</p>
-                        <div className="flex justify-end gap-3 text-sm">
-                            <button
-                                onClick={() => { setConfirmDialog(null); setDeletePreview(null); }}
-                                className="px-3 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors font-medium"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={confirmDialog.onConfirm}
-                                className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors font-semibold"
-                            >
-                                Delete
-                            </button>
+                {contextMenu && (
+                    <NodeContextMenu
+                        node={contextMenu.node}
+                        x={contextMenu.x}
+                        y={contextMenu.y}
+                        onExpandLeaves={handleExpandLeaves}
+                        onAddMore={handleExpandMore}
+                        onDelete={handleSmartDelete}
+                        onClose={() => setContextMenu(null)}
+                        isProcessing={isProcessing}
+                    />
+                )}
+
+                {/* Notification Toast */}
+                {notification && (
+                    <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-lg shadow-2xl border border-slate-700 z-50 flex items-center animate-fade-in-up">
+                        <div className={`w-3 h-3 rounded-full mr-3 ${notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                        <span className="font-medium">{notification.message}</span>
+                    </div>
+                )}
+
+                {/* Confirmation Dialog (no blackout, small floating card) */}
+                {confirmDialog && confirmDialog.isOpen && (
+                    <div className="fixed z-50 left-1/2 -translate-x-1/2 bottom-6">
+                        <div className="bg-slate-900/95 text-white px-5 py-4 rounded-xl border border-slate-700 shadow-2xl max-w-sm w-[92vw]">
+                            <h3 className="text-sm font-bold mb-2">Confirm delete</h3>
+                            <p className="text-xs text-slate-300 mb-4">{confirmDialog.message}</p>
+                            <div className="flex justify-end gap-3 text-sm">
+                                <button
+                                    onClick={() => { setConfirmDialog(null); setDeletePreview(null); }}
+                                    className="px-3 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors font-medium"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (confirmDialog.onConfirm) confirmDialog.onConfirm();
+                                        setConfirmDialog(null);
+                                        setDeletePreview(null);
+                                    }}
+                                    className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors font-bold shadow-lg shadow-red-900/20"
+                                >
+                                    Delete
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 };

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start:cache": "tsx server.ts"
+    "start:cache": "tsx server.ts",
+    "fetch:top-bios": "node scripts/fetchTopBiographies.js"
   },
   "dependencies": {
     "@google/genai": "^1.33.0",
