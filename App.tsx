@@ -1773,19 +1773,42 @@ const App: React.FC = () => {
     const [savedGraphs, setSavedGraphs] = useState<string[]>([]);
 
     useEffect(() => {
-        // Load saved graph names on mount
-        const loadSavedNames = () => {
-            const saved = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.startsWith('constellations_graph_')) {
-                    saved.push(key.replace('constellations_graph_', ''));
+        // Load saved graph names on mount from database
+        const loadSavedNames = async () => {
+            if (!cacheEnabled) {
+                // Fallback to local storage if cache is disabled
+                const saved = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('constellations_graph_')) {
+                        saved.push(key.replace('constellations_graph_', ''));
+                    }
                 }
+                setSavedGraphs(saved.sort());
+                return;
             }
-            setSavedGraphs(saved.sort());
+
+            try {
+                const res = await fetch(new URL("/graphs", cacheBaseUrl).toString());
+                if (res.ok) {
+                    const data = await res.json();
+                    setSavedGraphs(data.map((g: any) => g.name));
+                }
+            } catch (e) {
+                console.warn("Failed to fetch saved graphs from database", e);
+                // Fallback to local storage
+                const saved = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('constellations_graph_')) {
+                        saved.push(key.replace('constellations_graph_', ''));
+                    }
+                }
+                setSavedGraphs(saved.sort());
+            }
         };
         loadSavedNames();
-    }, []);
+    }, [cacheEnabled, cacheBaseUrl]);
 
     // Notification & Confirm State
     const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
@@ -1868,9 +1891,32 @@ const App: React.FC = () => {
             isTextOnly,
             date: Date.now()
         };
-        localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(graphData));
-        setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
-        setNotification({ message: `Graph "${name}" saved!`, type: 'success' });
+
+        if (cacheEnabled) {
+            fetch(new URL("/graphs", cacheBaseUrl).toString(), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name, data: graphData })
+            })
+            .then(res => {
+                if (res.ok) {
+                    setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
+                    setNotification({ message: `Graph "${name}" saved to database!`, type: 'success' });
+                } else {
+                    throw new Error("Failed to save to database");
+                }
+            })
+            .catch(err => {
+                console.error("Database save failed, falling back to local storage", err);
+                localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(graphData));
+                setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
+                setNotification({ message: `Graph "${name}" saved locally (database offline).`, type: 'success' });
+            });
+        } else {
+            localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(graphData));
+            setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
+            setNotification({ message: `Graph "${name}" saved!`, type: 'success' });
+        }
     };
 
     const handleImport = (data: any) => {
@@ -1881,9 +1927,25 @@ const App: React.FC = () => {
         applyGraphData(data, "Imported graph");
     };
 
-    const handleLoadGraph = (name: string) => {
+    const handleLoadGraph = async (name: string) => {
+        if (cacheEnabled) {
+            try {
+                const res = await fetch(new URL(`/graphs/${encodeURIComponent(name)}`, cacheBaseUrl).toString());
+                if (res.ok) {
+                    const data = await res.json();
+                    applyGraphData(data, name);
+                    return;
+                }
+            } catch (e) {
+                console.warn("Database load failed, checking local storage", e);
+            }
+        }
+
         const dataStr = localStorage.getItem(`constellations_graph_${name}`);
-        if (!dataStr) return;
+        if (!dataStr) {
+            setNotification({ message: `Graph "${name}" not found.`, type: 'error' });
+            return;
+        }
 
         try {
             const data = JSON.parse(dataStr);
@@ -1899,7 +1961,17 @@ const App: React.FC = () => {
         setConfirmDialog({
             isOpen: true,
             message: `Are you sure you want to delete "${name}"?`,
-            onConfirm: () => {
+            onConfirm: async () => {
+                if (cacheEnabled) {
+                    try {
+                        const res = await fetch(new URL(`/graphs/${encodeURIComponent(name)}`, cacheBaseUrl).toString(), {
+                            method: "DELETE"
+                        });
+                        if (!res.ok) throw new Error("Database delete failed");
+                    } catch (e) {
+                        console.warn("Database delete failed, removing from local storage only", e);
+                    }
+                }
                 localStorage.removeItem(`constellations_graph_${name}`);
                 setSavedGraphs(prev => prev.filter(n => n !== name));
                 setConfirmDialog(null);

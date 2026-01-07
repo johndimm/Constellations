@@ -67,8 +67,18 @@ async function ensureSchema() {
     await client.query("alter table if exists nodes add column if not exists is_person boolean");
     await client.query("update nodes set is_person = (lower(type) = 'person') where is_person is null");
     await client.query("create index if not exists nodes_is_person_idx on nodes(is_person)");
+
+    // Ensure saved_graphs table exists
+    await client.query(`
+      create table if not exists saved_graphs (
+        id serial primary key,
+        name text unique not null,
+        data jsonb not null,
+        updated_at timestamptz default now()
+      )
+    `);
     
-    console.log("Schema migrations applied (image_url, wiki_summary, wikipedia_id defaults, unique index, is_person).");
+    console.log("Schema migrations applied (image_url, wiki_summary, wikipedia_id defaults, unique index, is_person, saved_graphs).");
   } catch (e) {
     console.error("Schema init failed", e);
   } finally {
@@ -460,6 +470,74 @@ app.post("/node", async (req, res) => {
 
     const id = Array.from(idMap.values())[0];
     res.json({ ok: true, id });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Saved Graphs Endpoints
+app.get("/graphs", async (_, res) => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query("select name, updated_at from saved_graphs order by name asc");
+    res.json(result.rows);
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.get("/graphs/:name", async (req, res) => {
+  const { name } = req.params;
+  const client = await pool.connect();
+  try {
+    const result = await client.query("select data from saved_graphs where name = $1", [name]);
+    if (result.rowCount === 0) return res.status(404).json({ error: "Graph not found" });
+    res.json(result.rows[0].data);
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/graphs", async (req, res) => {
+  const { name, data } = req.body as { name: string; data: any };
+  if (!name || !data) return res.status(400).json({ error: "name and data required" });
+
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `
+      insert into saved_graphs (name, data, updated_at)
+      values ($1, $2, now())
+      on conflict (name) do update
+      set data = excluded.data, updated_at = now()
+      `,
+      [name, data]
+    );
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete("/graphs/:name", async (req, res) => {
+  const { name } = req.params;
+  const client = await pool.connect();
+  try {
+    const result = await client.query("delete from saved_graphs where name = $1", [name]);
+    if (result.rowCount === 0) return res.status(404).json({ error: "Graph not found" });
+    res.json({ ok: true });
   } catch (e: any) {
     console.error(e);
     res.status(500).json({ error: e.message });
