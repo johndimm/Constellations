@@ -5,11 +5,12 @@ import { X, ExternalLink, Search } from 'lucide-react';
 interface SidebarProps {
   selectedNode: GraphNode | null;
   onClose: () => void;
+  onCollapseChange?: (collapsed: boolean) => void;
   externalToggleSignal?: number;
   onFindBetterImage?: (nodeId: number) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, externalToggleSignal, onFindBetterImage }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onCollapseChange, externalToggleSignal, onFindBetterImage }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFullSummary, setShowFullSummary] = useState(false);
@@ -32,6 +33,12 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, externalToggle
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (onCollapseChange) {
+      onCollapseChange(isCollapsed);
+    }
+  }, [isCollapsed, onCollapseChange]);
 
   // Auto-expand logic: Only auto-expand on desktop if user hasn't manually collapsed it
   // On mobile, keep it collapsed so it doesn't block the graph.

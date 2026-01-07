@@ -2084,7 +2084,7 @@ const App: React.FC = () => {
                             className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition flex-shrink-0"
                             title="Toggle details"
                         >
-                            {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+                            {sidebarCollapsed ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
                         </button>
                     )}
                 </div>
@@ -2164,6 +2164,7 @@ const App: React.FC = () => {
                 <Sidebar
                     selectedNode={selectedNode}
                     onClose={() => { setSelectedNode(null); setContextMenu(null); setPathNodeIds([]); }}
+                    onCollapseChange={setSidebarCollapsed}
                     externalToggleSignal={sidebarToggleSignal}
                     onFindBetterImage={handleFindBetterImage}
                 />
