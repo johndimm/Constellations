@@ -2015,6 +2015,8 @@ const App: React.FC = () => {
                     selectedNode={selectedNode}
                     expandingNodeId={expandingNodeId}
                     newChildNodeIds={newChildNodeIds}
+                    highlightKeepIds={deletePreview ? deletePreview.keepIds : pathNodeIds}
+                    highlightDropIds={deletePreview ? deletePreview.dropIds : []}
                 />
 
                 <ControlPanel

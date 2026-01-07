@@ -972,8 +972,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             }
             g.style("opacity", d.isLoading ? 1 : baseOpacity);
 
-            const strokeColor = isDrop ? "#f87171" : (isKeep && hasHighlight ? "#22c55e" : (isHovered || isFocused ? "#f59e0b" : "#fff"));
-            const strokeWidth = isDrop ? 3.5 : (isKeep && hasHighlight ? 2.5 : (isFocused ? 3 : 2));
+            const isPathHighlight = hasHighlight && dropHighlight.size === 0;
+            const strokeColor = isDrop 
+                ? "#f87171" 
+                : (isKeep && hasHighlight 
+                    ? (isPathHighlight ? "#f59e0b" : "#22c55e") 
+                    : (isHovered || isFocused ? "#f59e0b" : "#fff"));
+            const strokeWidth = isDrop ? 3.5 : (isKeep && hasHighlight ? (isPathHighlight ? 3.5 : 2.5) : (isFocused ? 3 : 2));
 
             if (d.imageChecked && !d.imageUrl) color = '#64748b';
 
@@ -1233,7 +1238,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
                     if (dropHighlight.has(sId) || dropHighlight.has(tId)) return "#f87171";
                     // Priority 1: Path highlighting - only highlight links that are actually in the path sequence
-                    if (hasHighlight && pathLinkIds.has(d.id)) return "#f97316";
+                    if (hasHighlight && pathLinkIds.has(d.id)) return "#f59e0b";
                     // Priority 2: Other links when path highlighting is active
                     if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return "#94a3b8";
                     // Priority 3: Focused node highlighting
@@ -1242,7 +1247,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 })
                 .style("stroke-width", d => {
                     // Make path links thicker - only for links actually in the path sequence
-                    if (hasHighlight && pathLinkIds.has(d.id)) return 3;
+                    if (hasHighlight && pathLinkIds.has(d.id)) return 4;
                     return 2;
                 });
         }
