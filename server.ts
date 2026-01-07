@@ -121,6 +121,13 @@ create table if not exists edges (
 create index if not exists edges_person_idx on edges (person_id);
 create index if not exists edges_event_idx on edges (event_id);
 create unique index if not exists nodes_title_ltype_wiki_idx on nodes (lower(title), lower(type), wikipedia_id);
+
+create table if not exists saved_graphs (
+  id serial primary key,
+  name text unique not null,
+  data jsonb not null,
+  updated_at timestamptz default now()
+);
 `;
 
 // Upsert nodes batch and return mapping of (title, type, wikipedia_id) -> id
@@ -263,6 +270,7 @@ app.post("/init", async (_, res) => {
   try {
     await client.query("drop table if exists edges cascade");
     await client.query("drop table if exists nodes cascade");
+    await client.query("drop table if exists saved_graphs cascade");
     await client.query(initSql);
     res.json({ ok: true });
   } catch (e: any) {

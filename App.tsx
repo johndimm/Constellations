@@ -1461,12 +1461,50 @@ const App: React.FC = () => {
 
             if (query && isKeyReady) {
                 setExploreTerm(query);
-                handleStartSearch(query, 1);
+                // First check database for a saved graph matching this query
+                let foundInDb = false;
+                if (cacheEnabled) {
+                    try {
+                        const res = await fetch(new URL(`/graphs/${encodeURIComponent(query)}`, cacheBaseUrl).toString());
+                        if (res.ok) {
+                            const data = await res.json();
+                            console.log(`💾 [UI] Found saved graph in database for "${query}"`);
+                            applyGraphData(data, query);
+                            foundInDb = true;
+                        }
+                    } catch (e) {
+                        console.warn("Database check for query failed", e);
+                    }
+                }
+                
+                if (!foundInDb) {
+                    handleStartSearch(query, 1);
+                }
             } else if (start && end && isKeyReady) {
                 setPathStart(start);
                 setPathEnd(end);
                 setSearchMode('connect');
-                handlePathSearch(start, end);
+
+                // First check database for a saved graph matching this path
+                const graphName = `${start}_to_${end}`;
+                let foundInDb = false;
+                if (cacheEnabled) {
+                    try {
+                        const res = await fetch(new URL(`/graphs/${encodeURIComponent(graphName)}`, cacheBaseUrl).toString());
+                        if (res.ok) {
+                            const data = await res.json();
+                            console.log(`💾 [UI] Found saved graph in database for "${graphName}"`);
+                            applyGraphData(data, graphName);
+                            foundInDb = true;
+                        }
+                    } catch (e) {
+                        console.warn("Database check for path failed", e);
+                    }
+                }
+
+                if (!foundInDb) {
+                    handlePathSearch(start, end);
+                }
             }
         };
         checkParams();

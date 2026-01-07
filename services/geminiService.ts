@@ -292,16 +292,25 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     ${wikiPrompt}
     
     Your goal is to find the most direct and historically significant connection path.
-    1. Identify a sequence of 1-4 intermediary entities (people, projects, organizations, or events) that link "${start}" to "${end}".
-    2. Each step must be a direct and verifiable collaboration, affiliation, or relationship.
-    3. For academic or research institutions, consider shared researchers, visiting professors, joint conferences, or shared technology.
-    4. The path must be a continuous chain where each node is connected to the next.
     
+    CRITICAL RULES:
+    1. The path must ALTERNATE between "Person" and "Thing" (Movie, TV Show, Project, Organization, Event, Book, Paper).
+    2. A "Person" MUST NOT be connected directly to another "Person".
+    3. A "Thing" MUST NOT be connected directly to another "Thing".
+    4. Each step must be a direct and verifiable collaboration, affiliation, or relationship.
+    5. The path must be a continuous chain where each node is connected to the next.
+    
+    Example valid path:
+    Person (Isaac Asimov) -> Thing (Star Trek) -> Person (Gene Roddenberry)
+    
+    Identify a sequence of 1-4 intermediary entities to link "${start}" to "${end}".
+
     Return JSON:
     {
       "path": [
-        { "id": "${start}", "type": "Organization/Person/etc", "description": "Short bio", "justification": "Start node" },
-        { "id": "Intermediary 1", "type": "...", "description": "...", "justification": "Relationship to previous step" },
+        { "id": "${start}", "type": "Person/Organization/etc", "description": "Short bio", "justification": "Start node" },
+        { "id": "Intermediary 1 (A Thing if Start is Person, Person if Start is Thing)", "type": "...", "description": "...", "justification": "Relationship to previous step" },
+        { "id": "Intermediary 2 (A Person if Prev is Thing, Thing if Prev is Person)", "type": "...", "description": "...", "justification": "Relationship to previous step" },
         { "id": "${end}", "type": "...", "description": "...", "justification": "Relationship to previous step" }
       ]
     }`;
