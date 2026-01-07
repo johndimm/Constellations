@@ -6,7 +6,7 @@ export { getApiKey, getResponseText, cleanJson, withTimeout, withRetry } from ".
 
 const SYSTEM_INSTRUCTION = `
 You are a collaboration graph generator.
-Your goal is to build a graph where Nodes are "Things" (Events, Movies, TV Shows, Projects, Academic Papers, Books) AND "People".
+Your goal is to build a graph where Nodes are "Things" (Events, Movies, TV Shows, Projects, Academic Papers, Books, Organizations, Research Centers) AND "People".
 
 CRITICAL ACCURACY RULE:
 If a section titled "USE THIS VERIFIED INFORMATION FOR ACCURACY" is provided, you MUST:
@@ -16,15 +16,16 @@ If a section titled "USE THIS VERIFIED INFORMATION FOR ACCURACY" is provided, yo
 4. If the text says "Starring X and Y", X and Y MUST be in your "people" array.
 
 Rules:
-1. If the Source is a "Thing" (Movie, TV Show, Event, Paper), return distinct, high-impact **People** involved.
+1. If the Source is a "Thing" (Movie, TV Show, Event, Paper, Project, Organization), return distinct, high-impact **People** involved.
    - For TV Shows and Movies: ALWAYS include the LEAD ACTORS and STARS (main cast), plus director/creator.
+   - For Organizations/Research Centers: Include founders, directors, and famous members or researchers.
    - For Events/Investigations: Include key participants, investigators, leaders, and primary figures mentioned in historical or news records.
    - **CRITICAL**: Only return people who are ACTUALLY connected to the specific title. Do NOT confuse similar titles or make assumptions.
    - If you're not certain about the exact cast/crew, focus on verified, well-documented connections only.
    - **WEIGHTING RULE**: Prefer specific, niche connections over broad, mass-participant events. A shared obscure paper or indie movie is a "stronger" link than a shared massive event like "World War II" or "The Oscars".
-2. If the Source is a "Person", return distinct **Things** (Events, Projects, Works, Crimes, Battles, Academic Papers, Books) they are famous for with years.
+2. If the Source is a "Person", return distinct **Things** (Events, Projects, Works, Organizations, Academic Papers, Books) they are famous for with years.
    - **WEIGHTING RULE**: Prioritize unique or smaller-scale collaborations where the connection between participants is meaningful and direct.
-3. If the person is an Academic, focus on their most cited **Papers** and **Books**.
+3. If the person is an Academic, focus on their most cited **Papers**, **Books**, and **Research Centers** they worked at.
 4. If the source is an Academic Paper or Book, return the **Authors** (Co-authorship).
 5. **Crucial**: Entities must be SPECIFIC named entities.
 6. **Formatting**: Omit leading "The" from Event/Project names unless part of a proper title (e.g., use "Great Depression" instead of "The Great Depression").
@@ -275,7 +276,100 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
 };
 
 export const fetchConnectionPath = async (start: string, end: string, context?: { startWiki?: string; endWiki?: string }): Promise<PathResponse> => {
-// ... existing code ...
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    console.error("❌ [Gemini] fetchConnectionPath: No API key found");
+    throw new Error("No API key found");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  
+  const wikiPrompt = (context?.startWiki || context?.endWiki)
+    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${context?.startWiki ? `[${start}]: ${context.startWiki}\n` : ''}${context?.endWiki ? `[${end}]: ${context.endWiki}\n` : ''}`
+    : "";
+
+  const prompt = `Find a connection path between "${start}" and "${end}".
+    ${wikiPrompt}
+    
+    Your goal is to find the most direct and historically significant connection path.
+    1. Identify a sequence of 1-4 intermediary entities (people, projects, organizations, or events) that link "${start}" to "${end}".
+    2. Each step must be a direct and verifiable collaboration, affiliation, or relationship.
+    3. For academic or research institutions, consider shared researchers, visiting professors, joint conferences, or shared technology.
+    4. The path must be a continuous chain where each node is connected to the next.
+    
+    Return JSON:
+    {
+      "path": [
+        { "id": "${start}", "type": "Organization/Person/etc", "description": "Short bio", "justification": "Start node" },
+        { "id": "Intermediary 1", "type": "...", "description": "...", "justification": "Relationship to previous step" },
+        { "id": "${end}", "type": "...", "description": "...", "justification": "Relationship to previous step" }
+      ]
+    }`;
+
+  try {
+    const response = await withTimeout(ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            path: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  type: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  justification: { type: Type.STRING, description: "Relationship to the PREVIOUS node in the chain" },
+                  year: { type: Type.INTEGER, nullable: true }
+                },
+                required: ["id", "type", "description", "justification"]
+              }
+            }
+          },
+          required: ["path"]
+        }
+      }
+    }), 45000, "Pathfinding timed out");
+
+    const text = getResponseText(response);
+    const json = JSON.parse(cleanJson(text));
+    
+    // Ensure the path starts with the start node and ends with the end node
+    if (json.path && json.path.length > 0) {
+      const first = json.path[0].id.toLowerCase();
+      const last = json.path[json.path.length - 1].id.toLowerCase();
+      const startLow = start.toLowerCase();
+      const endLow = end.toLowerCase();
+
+      // If AI didn't include start/end nodes, prepend/append them
+      if (!first.includes(startLow) && !startLow.includes(first)) {
+        json.path.unshift({
+          id: start,
+          type: "Start",
+          description: context?.startWiki?.substring(0, 100) || "Start node",
+          justification: "Start of path"
+        });
+      }
+      if (!last.includes(endLow) && !endLow.includes(last)) {
+        json.path.push({
+          id: end,
+          type: "End",
+          description: context?.endWiki?.substring(0, 100) || "End node",
+          justification: "Destination"
+        });
+      }
+    }
+
+    return json as PathResponse;
+  } catch (error) {
+    console.error("Gemini Pathfinding Error:", error);
+    throw error;
+  }
 };
 
 export const findWikipediaTitle = async (name: string, description?: string): Promise<{ title: string; imageHint?: string } | null> => {

@@ -515,11 +515,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         {name}
                       </button>
                       <button
-                        onClick={() => onDeleteGraph(name)}
-                        className="text-slate-400 hover:text-red-400 transition-colors p-1"
+                        onClick={(e) => { 
+                          e.stopPropagation();
+                          onDeleteGraph(name); 
+                          setShowLoad(false); 
+                        }}
+                        className="text-slate-400 hover:text-red-400 transition-colors p-1.5 rounded-md hover:bg-slate-800"
                         title="Delete Graph"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   ))}

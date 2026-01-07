@@ -2093,16 +2093,20 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {/* Confirmation Dialog (no blackout, small floating card) */}
+                {/* Confirmation Dialog (blackout overlay + floating card) */}
                 {confirmDialog && confirmDialog.isOpen && (
-                    <div className="fixed z-50 left-1/2 -translate-x-1/2 bottom-6">
-                        <div className="bg-slate-900/95 text-white px-5 py-4 rounded-xl border border-slate-700 shadow-2xl max-w-sm w-[92vw]">
-                            <h3 className="text-sm font-bold mb-2">Confirm delete</h3>
-                            <p className="text-xs text-slate-300 mb-4">{confirmDialog.message}</p>
+                    <div className="fixed inset-0 z-[100] flex items-end justify-center pb-20 sm:items-center sm:pb-0 px-4">
+                        <div 
+                            className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm animate-fade-in"
+                            onClick={() => { setConfirmDialog(null); setDeletePreview(null); }}
+                        ></div>
+                        <div className="bg-slate-900 text-white px-6 py-5 rounded-2xl border border-slate-700 shadow-2xl max-w-sm w-full relative animate-scale-in">
+                            <h3 className="text-lg font-bold mb-2">Confirm Delete</h3>
+                            <p className="text-sm text-slate-300 mb-6">{confirmDialog.message}</p>
                             <div className="flex justify-end gap-3 text-sm">
                                 <button
                                     onClick={() => { setConfirmDialog(null); setDeletePreview(null); }}
-                                    className="px-3 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors font-medium"
+                                    className="px-4 py-2 rounded-xl text-slate-300 hover:bg-slate-800 transition-colors font-medium"
                                 >
                                     Cancel
                                 </button>
@@ -2112,7 +2116,7 @@ const App: React.FC = () => {
                                         setConfirmDialog(null);
                                         setDeletePreview(null);
                                     }}
-                                    className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors font-bold shadow-lg shadow-red-900/20"
+                                    className="px-6 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white transition-colors font-bold shadow-lg shadow-red-900/20"
                                 >
                                     Delete
                                 </button>
