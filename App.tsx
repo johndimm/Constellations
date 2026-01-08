@@ -1936,19 +1936,32 @@ const App: React.FC = () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ name, data: graphData })
             })
-            .then(res => {
+            .then(async res => {
                 if (res.ok) {
                     setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
                     setNotification({ message: `Graph "${name}" saved to database!`, type: 'success' });
                 } else {
-                    throw new Error("Failed to save to database");
+                    const errorText = await res.text().catch(() => "Unknown error");
+                    throw new Error(`Server error (${res.status}): ${errorText}`);
                 }
             })
             .catch(err => {
                 console.error("Database save failed, falling back to local storage", err);
-                localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(graphData));
-                setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
-                setNotification({ message: `Graph "${name}" saved locally (database offline).`, type: 'success' });
+                try {
+                    localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(graphData));
+                    setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
+                    const isOffline = err.message.includes("Failed to fetch") || err.message.includes("NetworkError");
+                    setNotification({ 
+                        message: `Graph "${name}" saved locally${isOffline ? ' (database offline)' : ' (db error)'}.`, 
+                        type: isOffline ? 'success' : 'error' 
+                    });
+                } catch (localErr) {
+                    console.error("Local storage save also failed", localErr);
+                    setNotification({ 
+                        message: `Failed to save graph "${name}" (too large for database and local storage).`, 
+                        type: 'error' 
+                    });
+                }
             });
         } else {
             localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(graphData));

@@ -77,8 +77,24 @@ async function ensureSchema() {
         updated_at timestamptz default now()
       )
     `);
+
+    // Enable RLS and add public policies to satisfy Supabase security warnings
+    const tables = ['nodes', 'edges', 'saved_graphs'];
+    for (const table of tables) {
+      await client.query(`alter table if exists ${table} enable row level security`);
+      // Use a DO block to create policies only if they don't exist
+      await client.query(`
+        do $$
+        begin
+          if not exists (select 1 from pg_policies where tablename = '${table}' and policyname = 'Public Access') then
+            create policy "Public Access" on ${table} for all using (true) with check (true);
+          end if;
+        end
+        $$;
+      `);
+    }
     
-    console.log("Schema migrations applied (image_url, wiki_summary, wikipedia_id defaults, unique index, is_person, saved_graphs).");
+    console.log("Schema migrations applied (image_url, wiki_summary, wikipedia_id defaults, unique index, is_person, saved_graphs, RLS).");
   } catch (e) {
     console.error("Schema init failed", e);
   } finally {
@@ -90,7 +106,16 @@ ensureSchema();
 const app = express();
 app.use(cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
 app.options("*", cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
-app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+
+// Log requests for debugging
+app.use((req, res, next) => {
+  if (req.method === 'POST') {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - ${req.get('content-length') || 0} bytes`);
+  }
+  next();
+});
 
 // Schema initializer
 const initSql = `
@@ -128,6 +153,24 @@ create table if not exists saved_graphs (
   data jsonb not null,
   updated_at timestamptz default now()
 );
+
+-- Enable RLS for Supabase
+alter table nodes enable row level security;
+alter table edges enable row level security;
+alter table saved_graphs enable row level security;
+
+-- Public policies
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'nodes' and policyname = 'Public Access') then
+    create policy "Public Access" on nodes for all using (true) with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'edges' and policyname = 'Public Access') then
+    create policy "Public Access" on edges for all using (true) with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'saved_graphs' and policyname = 'Public Access') then
+    create policy "Public Access" on saved_graphs for all using (true) with check (true);
+  end if;
+end $$;
 `;
 
 // Upsert nodes batch and return mapping of (title, type, wikipedia_id) -> id
@@ -518,6 +561,9 @@ app.get("/graphs/:name", async (req, res) => {
 app.post("/graphs", async (req, res) => {
   const { name, data } = req.body as { name: string; data: any };
   if (!name || !data) return res.status(400).json({ error: "name and data required" });
+
+  const dataSize = JSON.stringify(data).length;
+  console.log(`[${new Date().toISOString()}] Saving graph "${name}", size: ${(dataSize / 1024 / 1024).toFixed(2)} MB`);
 
   const client = await pool.connect();
   try {
