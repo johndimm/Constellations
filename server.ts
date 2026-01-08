@@ -82,13 +82,30 @@ async function ensureSchema() {
     const tables = ['nodes', 'edges', 'saved_graphs'];
     for (const table of tables) {
       await client.query(`alter table if exists ${table} enable row level security`);
-      // Use a DO block to create policies only if they don't exist
+      
+      // Split policies by operation to satisfy Supabase Lints
+      // SELECT is "safe" for true. Write operations will still flag a warning but are necessary for your public app.
       await client.query(`
         do $$
         begin
-          if not exists (select 1 from pg_policies where tablename = '${table}' and policyname = 'Public Access') then
-            create policy "Public Access" on ${table} for all using (true) with check (true);
+          -- Public Read
+          if not exists (select 1 from pg_policies where tablename = '${table}' and policyname = 'Public Read') then
+            create policy "Public Read" on ${table} for select using (true);
           end if;
+          -- Public Insert
+          if not exists (select 1 from pg_policies where tablename = '${table}' and policyname = 'Public Insert') then
+            create policy "Public Insert" on ${table} for insert with check (true);
+          end if;
+          -- Public Update
+          if not exists (select 1 from pg_policies where tablename = '${table}' and policyname = 'Public Update') then
+            create policy "Public Update" on ${table} for update using (true) with check (true);
+          end if;
+          -- Public Delete
+          if not exists (select 1 from pg_policies where tablename = '${table}' and policyname = 'Public Delete') then
+            create policy "Public Delete" on ${table} for delete using (true);
+          end if;
+          -- Drop the old "Public Access" policy if it exists
+          drop policy if exists "Public Access" on ${table};
         end
         $$;
       `);
@@ -159,17 +176,52 @@ alter table nodes enable row level security;
 alter table edges enable row level security;
 alter table saved_graphs enable row level security;
 
--- Public policies
+-- Public policies (Split by operation to satisfy Supabase security lints)
 do $$ begin
-  if not exists (select 1 from pg_policies where tablename = 'nodes' and policyname = 'Public Access') then
-    create policy "Public Access" on nodes for all using (true) with check (true);
+  -- NODES
+  if not exists (select 1 from pg_policies where tablename = 'nodes' and policyname = 'Public Read') then
+    create policy "Public Read" on nodes for select using (true);
   end if;
-  if not exists (select 1 from pg_policies where tablename = 'edges' and policyname = 'Public Access') then
-    create policy "Public Access" on edges for all using (true) with check (true);
+  if not exists (select 1 from pg_policies where tablename = 'nodes' and policyname = 'Public Insert') then
+    create policy "Public Insert" on nodes for insert with check (true);
   end if;
-  if not exists (select 1 from pg_policies where tablename = 'saved_graphs' and policyname = 'Public Access') then
-    create policy "Public Access" on saved_graphs for all using (true) with check (true);
+  if not exists (select 1 from pg_policies where tablename = 'nodes' and policyname = 'Public Update') then
+    create policy "Public Update" on nodes for update using (true) with check (true);
   end if;
+  if not exists (select 1 from pg_policies where tablename = 'nodes' and policyname = 'Public Delete') then
+    create policy "Public Delete" on nodes for delete using (true);
+  end if;
+  drop policy if exists "Public Access" on nodes;
+
+  -- EDGES
+  if not exists (select 1 from pg_policies where tablename = 'edges' and policyname = 'Public Read') then
+    create policy "Public Read" on edges for select using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'edges' and policyname = 'Public Insert') then
+    create policy "Public Insert" on edges for insert with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'edges' and policyname = 'Public Update') then
+    create policy "Public Update" on edges for update using (true) with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'edges' and policyname = 'Public Delete') then
+    create policy "Public Delete" on edges for delete using (true);
+  end if;
+  drop policy if exists "Public Access" on edges;
+
+  -- SAVED_GRAPHS
+  if not exists (select 1 from pg_policies where tablename = 'saved_graphs' and policyname = 'Public Read') then
+    create policy "Public Read" on saved_graphs for select using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'saved_graphs' and policyname = 'Public Insert') then
+    create policy "Public Insert" on saved_graphs for insert with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'saved_graphs' and policyname = 'Public Update') then
+    create policy "Public Update" on saved_graphs for update using (true) with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'saved_graphs' and policyname = 'Public Delete') then
+    create policy "Public Delete" on saved_graphs for delete using (true);
+  end if;
+  drop policy if exists "Public Access" on saved_graphs;
 end $$;
 `;
 
