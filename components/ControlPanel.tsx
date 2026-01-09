@@ -180,7 +180,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   defaultName = `Graph ${new Date().toLocaleTimeString()}`;
                 }
                 setSaveName(defaultName);
-                setShowSave(true);
+                setShowSave(!showSave);
                 setShowLoad(false);
                 setShowShare(false);
                 setShowHelp(false);
@@ -193,7 +193,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             </button>
             <button
               onClick={() => {
-                setShowLoad(true);
+                setShowLoad(!showLoad);
                 setShowSave(false);
                 setShowShare(false);
                 setShowHelp(false);
@@ -273,10 +273,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 <button onClick={() => { setShowHelp(false); onHelpHoverChange(null); }}><X size={14} className="text-slate-400" /></button>
               </div>
               <div className="space-y-3 text-xs text-slate-300">
-                <p className="text-sm text-white">
-                  <strong>New here?</strong> Start fast with a ready-made graph:{" "}
-                  <a className="text-slate-200 hover:text-white font-semibold" href="/graphs/index.html">/graphs/index.html</a>
-                </p>
                 <p className="text-sm text-white">
                   <strong>Browse People:</strong> Explore Wikipedia's people database:{" "}
                   <button 
