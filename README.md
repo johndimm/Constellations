@@ -7,7 +7,9 @@
 
 **[Live Demo](https://constellations-delta.vercel.app/)** | **[LinkedIn Post](https://www.linkedin.com/feed/update/urn:li:activity:7409328608910946304/)**
 
-![Demo of Constellations](public/demo.mp4)
+<div align="center">
+  <video src="public/demo.mp4" width="100%" controls autoplay muted></video>
+</div>
 
 ## The Original Prompt
 
