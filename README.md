@@ -8,11 +8,7 @@
 **[Live Demo](https://constellations-delta.vercel.app/)** | **[LinkedIn Post](https://www.linkedin.com/feed/update/urn:li:activity:7409328608910946304/)**
 
 <div align="center">
-
-
-https://github.com/user-attachments/assets/8c9fb0b0-967e-4285-a71c-c922de8b245a
-
-
+<video src="https://github.com/user-attachments/assets/8c9fb0b0-967e-4285-a71c-c922de8b245a" width="100%" controls autoplay muted></video>
 </div>
 
 ## The Original Prompt
