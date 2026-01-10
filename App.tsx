@@ -486,6 +486,23 @@ const App: React.FC = () => {
         try {
             const nodeUpdates = new Map<number, Partial<GraphNode>>();
 
+            // 1. Ensure node has classification info
+            let currentIsAtomic = node.is_atomic ?? node.is_person;
+            let currentType = node.type;
+            if (!node.classification_reasoning) {
+                console.log(`🧠 [Expand] Classifying node "${node.title}" before expansion...`);
+                    const classification = await classifyEntity(node.title);
+                    currentIsAtomic = classification.isAtomic;
+                    currentType = classification.type;
+                    nodeUpdates.set(node.id, {
+                        classification_reasoning: classification.reasoning,
+                        atomic_type: classification.atomicType,
+                        composite_type: classification.compositeType,
+                        is_atomic: classification.isAtomic,
+                        type: classification.type
+                    });
+            }
+
             const fixMissingWiki = (targets: any[]) => {
                 targets.forEach((cn, idx) => {
                     const hasWikiId = !!(cn.wikipedia_id && String(cn.wikipedia_id).trim());
@@ -687,19 +704,35 @@ const App: React.FC = () => {
             console.log(`📄 [Expand] wiki summary for "${node.title}": ${wiki.extract ? wiki.extract.substring(0, 120) + '…' : 'none'} (pageid=${wiki.pageid || 'n/a'})`);
 
             let results: any[] = [];
-            const isPerson = node.is_person ?? node.type.toLowerCase() === 'person';
+            const isPerson = currentIsAtomic ?? currentType.toLowerCase() === 'person';
 
-            console.log(`📡 [Expand] Expanding ${node.type}: "${node.title}" (ID: ${node.id}, WikiID: ${node.wikipedia_id || 'none'})`);
+            console.log(`📡 [Expand] Expanding ${currentType}: "${node.title}" (ID: ${node.id}, WikiID: ${node.wikipedia_id || 'none'})`);
 
             if (isPerson) {
                 const data = await fetchPersonWorks(node.title, neighborNames, wiki.extract || undefined, node.wikipedia_id);
-                results = (data.works || []).map(w => ({ title: w.entity, type: w.type, description: w.description, year: w.year, role: w.role }));
-                console.log(`✅ [Expand] Found ${results.length} works for person "${node.title}"`);
+                results = (data.works || []).map(w => ({ 
+                    title: w.entity, 
+                    type: w.type, 
+                    description: w.description, 
+                    year: w.year ?? undefined, 
+                    role: w.role ?? undefined,
+                    is_atomic: false // Results of expanding an Atomic are always Composites (Cards)
+                }));
+                console.log(`✅ [Expand] Found ${results.length} connections for atomic "${node.title}"`);
             } else {
                 const data = await fetchConnections(node.title, undefined, neighborNames, wiki.extract || undefined, node.wikipedia_id);
                 if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
-                results = (data.people || []).map(p => ({ title: p.name, type: 'Person', description: p.description, role: p.role }));
-                console.log(`✅ [Expand] Found ${results.length} people for event "${node.title}"`);
+                
+                // Use the atomic type identified during classification if available, else default to 'Person'
+                const atomicTypeToUse = node.atomic_type || 'Person';
+                results = (data.people || []).map(p => ({ 
+                    title: p.name, 
+                    type: atomicTypeToUse, 
+                    description: p.description, 
+                    role: p.role,
+                    is_atomic: true // Force circle UI for all atomic components
+                }));
+                console.log(`✅ [Expand] Found ${results.length} atomic components for composite "${node.title}"`);
             }
 
             // Fulfill selection request: select node as soon as LLM returns data (BEFORE building new nodes)
@@ -885,8 +918,9 @@ const App: React.FC = () => {
             console.log(`🔎 Starting search for: "${term}"`);
 
             // 1. Classify
-            const { type, description: geminiDescription } = await classifyEntity(term);
-            console.log(`Type: ${type}`);
+            const classification = await classifyEntity(term);
+            const { type, description: geminiDescription, isAtomic, atomicType, compositeType, reasoning } = classification;
+            console.log(`Type: ${type}, Atomic: ${isAtomic}, Pair: ${atomicType}/${compositeType}`);
 
             // 2. Get Wikipedia metadata
             const wiki = await fetchWikipediaSummary(term);
@@ -904,7 +938,13 @@ const App: React.FC = () => {
                             title: term.trim(),
                             type,
                             description: wiki.extract || geminiDescription || '',
-                            wikipedia_id: wiki.pageid?.toString()
+                            wikipedia_id: wiki.pageid?.toString(),
+                            is_atomic: isAtomic, // sending the atomic flag
+                            meta: {
+                                classification_reasoning: reasoning,
+                                atomic_type: atomicType,
+                                composite_type: compositeType
+                            }
                         })
                     });
                     if (res.ok) {
@@ -925,12 +965,16 @@ const App: React.FC = () => {
                 id: nodeId,
                 title: term.trim(),
                 type: type,
+                is_atomic: isAtomic,
                 wikipedia_id: wiki.pageid?.toString(),
                 description: wiki.extract || geminiDescription || '',
                 x: dimensions.width / 2,
                 y: dimensions.height / 2,
                 expanded: false,
-                wikiSummary: wiki.extract || undefined
+                wikiSummary: wiki.extract || undefined,
+                classification_reasoning: reasoning,
+                atomic_type: atomicType,
+                composite_type: compositeType
             };
 
             setGraphData({
@@ -1022,26 +1066,34 @@ const App: React.FC = () => {
                 id: startNodeData.id,
                 title: start.trim(),
                 type: startC.type,
+                is_atomic: startC.isAtomic,
                 wikipedia_id: startWiki.pageid?.toString(),
                 description: startWiki.extract || startC.description || 'Start of path discovery.',
                 x: dimensions.width / 4,
                 y: dimensions.height / 2,
                 fx: dimensions.width / 4, // Fix position during path discovery
                 fy: dimensions.height / 2,
-                expanded: false
+                expanded: false,
+                classification_reasoning: startC.reasoning,
+                atomic_type: startC.atomicType,
+                composite_type: startC.compositeType
             };
 
             const endNode: GraphNode = {
                 id: endNodeData.id,
                 title: end.trim(),
                 type: endC.type,
+                is_atomic: endC.isAtomic,
                 wikipedia_id: endWiki.pageid?.toString(),
                 description: endWiki.extract || endC.description || 'Destination of path discovery.',
                 x: (dimensions.width / 4) * 3,
                 y: dimensions.height / 2,
                 fx: (dimensions.width / 4) * 3, // Fix position during path discovery
                 fy: dimensions.height / 2,
-                expanded: false
+                expanded: false,
+                classification_reasoning: endC.reasoning,
+                atomic_type: endC.atomicType,
+                composite_type: endC.compositeType
             };
 
             setGraphData({
@@ -1220,7 +1272,8 @@ const App: React.FC = () => {
                                 year: dbNode.year || undefined,
                                 imageUrl: dbNode.imageUrl || dbNode.image_url,
                                 wikiSummary: dbNode.wikiSummary || dbNode.wiki_summary,
-                                is_person: dbNode.is_person ?? (dbNode.type?.toLowerCase() === 'person'),
+                                is_person: dbNode.is_atomic ?? dbNode.is_person ?? (dbNode.type?.toLowerCase() === 'person'),
+                                is_atomic: dbNode.is_atomic ?? dbNode.is_person ?? (dbNode.type?.toLowerCase() === 'person'),
                                 x: nodeX,
                                 y: nodeY,
                                 fx: nodeX, // Fix position during path discovery to prevent flying off screen

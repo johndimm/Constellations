@@ -1,6 +1,6 @@
 # 🌌 Constellations
 
-**Dynamic, AI-powered knowledge graphs of people and events.**
+**Universal, AI-powered bipartite knowledge graphs.**
 
 [![Hacker News](https://img.shields.io/badge/Hacker%20News-Show%20HN-orange)](https://news.ycombinator.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -11,21 +11,29 @@
 <video src="https://github.com/user-attachments/assets/8c9fb0b0-967e-4285-a71c-c922de8b245a" width="100%" autoplay muted controls playsinline></video>
 </div>
 
-## The Original Prompt
+## The Evolution: From History to Everything
 
-> I want to generate collaboration graphs of world history. The edges are people who have wikipedia pages. The nodes are things that bring people together: one-on-one meetings, projects, movies, battles, schools, and so on. I want to start with some node, like the movie Godfather, and follow the careers of the people who collaborated on it to other nodes. I want to see it as a graph and be able to wander around in the space.
+Originally designed to map world history, **Constellations** has evolved into a **Universal Bipartite Explorer**. It uses LLMs to identify the fundamental "Atomic" building blocks and the "Composite" collections that connect them in any domain.
+
+### Supported Bipartite Pairs:
+- **History**: Person (Atomic) ↔ Event/Project (Composite)
+- **Cinema**: Actor/Director (Atomic) ↔ Movie/TV Show (Composite)
+- **Sports**: Player (Atomic) ↔ Team (Composite)
+- **Culinary**: Ingredient (Atomic) ↔ Recipe (Composite)
+- **Medicine**: Symptom (Atomic) ↔ Disease (Composite)
+- **Academia**: Researcher (Atomic) ↔ Paper/Grant (Composite)
 
 ## Philosophy & Design
 
-The core idea was to be lazy: create collaboration graphs on the fly with **zero pre-computed database**. The whole graph exists nowhere until you start exploring. It constructs a local neighborhood around a given node using live LLM queries and expands outward from there.
+The core idea is to create collaboration graphs on the fly with **zero pre-computed database**. The graph constructs a local neighborhood around a given node using live LLM queries and expands outward.
 
 ### The Bipartite Realization
-Early in development, I realized that people are **nodes**, not edges. 
-- A **Person** is a hub of events.
-- An **Event** (defined as anything involving at least 2 people) is a hub of persons.
-- **Edges** only connect people with the events they participated in. 
+The app strictly follows a bipartite structure:
+- **Atomic Nodes** (Circles): Fundamental entities (People, Ingredients, Symptoms).
+- **Composite Nodes** (Cards): Collections or events that bring Atomics together (Movies, Recipes, Diseases).
+- **Edges**: Only connect Atomics to the Composites they belong to.
 
-There are strictly **no people-to-people or event-to-event connections**. This structure prevents the "hallucinated friendships" common in flat LLM queries and forces a historical logic onto the graph.
+This prevents "hallucinated connections" and forces a logical structure onto the space. The AI even explains its classification reasoning in the sidebar for every node.
 
 ![The Godfather and Marlon Brando](public/godfather-brando.png)
 

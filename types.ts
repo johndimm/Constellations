@@ -4,7 +4,8 @@ export interface GraphNode extends SimulationNodeDatum {
   id: number; // Sequential serial ID
   title: string; // The name of the event/project/thing/person
   type: string; // Original detailed type: 'Person', 'Movie', 'Battle', etc. (preserved)
-  is_person?: boolean; // True for person nodes, false for event nodes
+  is_atomic?: boolean; // True for atomic nodes, false for composite nodes
+  is_person?: boolean; // DEPRECATED: use is_atomic
   wikipedia_id?: string;
   description?: string;
   imageUrl?: string | null; // URL for the node image
@@ -14,6 +15,9 @@ export interface GraphNode extends SimulationNodeDatum {
   fetchingImage?: boolean; // State for fetching image
   imageChecked?: boolean; // Whether we have already attempted to fetch an image
   wikiSummary?: string; // Cached Wikipedia summary for richer sidebar context
+  classification_reasoning?: string; // AI explanation of atomic/composite status
+  atomic_type?: string; // e.g. "Symptom"
+  composite_type?: string; // e.g. "Disease"
   // D3 Simulation properties explicitly defined to ensure access
   x?: number;
   y?: number;

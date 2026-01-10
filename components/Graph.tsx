@@ -97,7 +97,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
     // Calculate dynamic dimensions for nodes
     const getNodeDimensions = (node: GraphNode, isTimeline: boolean, textOnly: boolean): { w: number, h: number, r: number, type: string } => {
-        const isPersonNode = node.is_person ?? node.type.toLowerCase() === 'person';
+        const isPersonNode = node.is_atomic ?? node.is_person ?? node.type.toLowerCase() === 'person';
         if (isPersonNode) {
             if (isTimeline) {
                 // Larger size in timeline mode (2x)

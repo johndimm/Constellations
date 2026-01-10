@@ -39,35 +39,51 @@ Return strict JSON.
 const GEMINI_TIMEOUT_MS = 60000; // 60 seconds for heavier graph expansions
 const CLASSIFY_TIMEOUT_MS = 15000; // 15 seconds for classification
 
-export const classifyEntity = async (term: string): Promise<{ type: string; description: string }> => {
+export const classifyEntity = async (term: string): Promise<{ 
+  type: string; 
+  description: string; 
+  isAtomic: boolean;
+  atomicType?: string;
+  compositeType?: string;
+  reasoning?: string;
+}> => {
   const normalized = term.trim().toLowerCase();
   // Heuristic override: prefer the historical program over the movie
   if (normalized === 'the manhattan project' || normalized === 'manhattan project') {
     return {
-      type: 'Event',
-      description: 'World War II research and development program that produced the first nuclear weapons.'
+      type: 'Project',
+      description: 'World War II research and development program that produced the first nuclear weapons.',
+      isAtomic: false,
+      atomicType: 'Person',
+      compositeType: 'Project',
+      reasoning: 'The Manhattan Project is a composite research program (Project) involving many scientists (Atomic).'
     };
   }
 
   const apiKey = await getApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] classifyEntity: No API key found");
-    return { type: 'Event', description: '' };
+    return { type: 'Event', description: '', isAtomic: false };
   }
   console.log(`🧪 [Gemini] classify start`, { term, timeoutMs: CLASSIFY_TIMEOUT_MS });
   const ai = new GoogleGenAI({ apiKey });
 
   try {
-    const prompt = `Classify "${term}".
-      Return JSON with a "type" field.
-      If it is a specific Person (real, fictional, alias, criminal identity, e.g. "Zodiac Killer", "Jack the Ripper"), type = "Person".
-      If it is a Movie, return type = "Movie".
-      If it is a TV Show or TV Series, return type = "TV Show".
-      If it is a Book, return type = "Book".
-      If it is an Academic Paper, return type = "Academic Paper".
-      If it is a Battle or War, return type = "Battle" or "War".
-      If it is an Organization or Company, return type = "Organization" or "Company".
-      For other Events, Projects, Places, or generic Concepts, return an appropriate specific type name.`;
+    const prompt = `Classify "${term}". 
+      Determine if it is "Atomic" (a fundamental building block like a person, ingredient, or symptom) 
+      or "Composite" (a collection or event like a movie, recipe, or disease).
+      
+      Identify the relevant Bipartite Pair this belongs to (e.g. Actor/Movie, Ingredient/Recipe, Symptom/Disease).
+      
+      Return JSON:
+      {
+        "type": "Specific Type (e.g. Symptom)",
+        "description": "Short 1-sentence description",
+        "isAtomic": true/false,
+        "atomicType": "What the atomic side of the pair is called (e.g. Symptom)",
+        "compositeType": "What the composite side of the pair is called (e.g. Disease)",
+        "reasoning": "Brief explanation of why it is atomic or composite in this bipartite context"
+      }`;
     
     console.log("🤖 [Gemini] Classify Prompt:", prompt);
 
@@ -80,9 +96,13 @@ export const classifyEntity = async (term: string): Promise<{ type: string; desc
           type: Type.OBJECT,
           properties: {
             type: { type: Type.STRING },
-            description: { type: Type.STRING, description: "Short 1-sentence description" }
+            description: { type: Type.STRING, description: "Short 1-sentence description" },
+            isAtomic: { type: Type.BOOLEAN },
+            atomicType: { type: Type.STRING },
+            compositeType: { type: Type.STRING },
+            reasoning: { type: Type.STRING }
           },
-          required: ["type", "description"]
+          required: ["type", "description", "isAtomic", "atomicType", "compositeType", "reasoning"]
         }
       }
     });
@@ -95,15 +115,20 @@ export const classifyEntity = async (term: string): Promise<{ type: string; desc
     
     const rawText = getResponseText(response);
     const text = cleanJson(rawText);
-    const truncatedText = text.length > 200 ? text.substring(0, 200) + "..." : text;
-    console.log("Classify response text:", truncatedText);
-    if (!text) return { type: 'Event', description: '' };
+    console.log("Classify response text:", text);
+    if (!text) return { type: 'Event', description: '', isAtomic: false };
     const json = JSON.parse(text);
-    // Return the detailed type as-is (server will compute is_person)
-    return { type: json.type || 'Event', description: json.description || '' };
+    return { 
+      type: json.type || 'Event', 
+      description: json.description || '', 
+      isAtomic: !!json.isAtomic,
+      atomicType: json.atomicType,
+      compositeType: json.compositeType,
+      reasoning: json.reasoning
+    };
   } catch (error) {
     console.warn("Classification failed, defaulting to Event:", error);
-    return { type: 'Event', description: '' };
+    return { type: 'Event', description: '', isAtomic: false };
   }
 };
 
@@ -113,12 +138,7 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
     console.error("❌ [Gemini] fetchConnections: No API key found");
     throw new Error("No API key found");
   }
-  console.log(`🧪 [Gemini] fetchConnections start`, {
-    nodeName,
-    wikiContextPreview: wikiContext ? `${wikiContext.substring(0, 80)}…` : "none",
-    hasExclude: excludeNodes.length > 0,
-    timeoutMs: GEMINI_TIMEOUT_MS
-  });
+  
   const ai = new GoogleGenAI({ apiKey });
 
   const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
@@ -136,11 +156,15 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
 
   try {
     const prompt = `${contextualPrompt}${wikiPrompt}${excludePrompt}
-      1. Identify the 'year' it occurred/started (integer) if applicable (e.g. release year, event date).
-      2. Find 8-10 key people connected to it (DO NOT return fewer than 5 unless they are truly the only ones):
-         - For TV Shows/Movies: Return the LEAD ACTORS/STARS and director/creator (prioritize main cast).
-         - For Academic Papers/Books: Return the primary Authors (Co-authorship).
-         - For Events/Investigations: Return key participants, investigators, witnesses, figures of interest, or leaders involved.`;
+      This is a COMPOSITE entity. 
+      Return 8-10 key ATOMIC entities (building blocks, participants, ingredients, etc.) that make up this composite.
+      
+      Examples:
+      - If Movie: Return lead actors/director.
+      - If Team: Return key players.
+      - If Recipe: Return ingredients.
+      - If Disease: Return symptoms.
+      - If Event: Return primary figures.`;
     
     console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
     
@@ -180,12 +204,9 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
 
     const rawText = getResponseText(response);
     const text = cleanJson(rawText);
-    const truncatedText = text.length > 200 ? text.substring(0, 200) + "..." : text;
-    console.log("fetchConnections response text:", truncatedText);
     if (!text) return { people: [] };
 
     const parsed = JSON.parse(text) as GeminiResponse;
-    console.log(`✅ [Gemini] Found ${parsed.people ? parsed.people.length : 0} people for "${nodeName}":`, (parsed.people || []).map(p => `${p.name} (${p.role})`));
     return parsed;
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -193,18 +214,13 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
   }
 };
 
-export const fetchPersonWorks = async (personName: string, excludeNodes: string[] = [], wikiContext?: string, wikipediaId?: string): Promise<PersonWorksResponse> => {
+export const fetchPersonWorks = async (nodeName: string, excludeNodes: string[] = [], wikiContext?: string, wikipediaId?: string): Promise<PersonWorksResponse> => {
   const apiKey = await getApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] fetchPersonWorks: No API key found");
     throw new Error("No API key found");
   }
-  console.log(`🧪 [Gemini] fetchPersonWorks start`, {
-    personName,
-    wikiContextPreview: wikiContext ? `${wikiContext.substring(0, 80)}…` : "none",
-    hasExclude: excludeNodes.length > 0,
-    timeoutMs: GEMINI_TIMEOUT_MS
-  });
+  
   const ai = new GoogleGenAI({ apiKey });
 
   const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
@@ -213,18 +229,24 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
     : "";
 
   const contextPrompt = excludeNodes.length > 0
-    ? `The user graph already contains these nodes connected to ${personName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}. 
-       Return 8-10 significant movies, historical events, academic papers, books, or projects that are NOT the ones listed above.
-       Focus on fresh, distinct connections.`
-    : `List 8-10 DISTINCT, significant movies, historical events, academic papers, books, or projects associated with "${personName}"${wikiIdStr} (DO NOT return fewer than 6 unless they are truly the only ones).
-       If the person is an academic, list their most cited papers and books. If the person is a criminal or historical figure known for specific acts, list those acts as events.`;
+    ? `The user graph already contains these nodes connected to ${nodeName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}. 
+       Return 8-10 NEW significant COMPOSITE entities.`
+    : `List 8-10 DISTINCT, significant COMPOSITE entities that this ATOMIC entity "${nodeName}"${wikiIdStr} belongs to or is part of.
+       
+       CRITICAL: A COMPOSITE entity must be a named organization, team, project, or work. 
+       DO NOT return descriptive phrases, facts, or achievements (e.g., do NOT return "Scoring Record" or "Best Defense").
+       
+       Examples:
+       - For a Player: Return their specific Teams (e.g., "Miami Heat").
+       - For an Actor: Return their Movies.
+       - For an Ingredient: Return specific Recipes.
+       - For a Symptom: Return specific Diseases.`;
 
   try {
     const prompt = `${wikiPrompt}${contextPrompt}
-      Ensure each entry is a different entity. Do NOT duplicate entities.
-      Include specific year. Sort by year.`;
+      Ensure each entry is a different entity. Sort by year if applicable.`;
     
-    console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${personName}":`, prompt);
+    console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
 
     const makeApiCall = () => ai.models.generateContent({
       model: "gemini-2.0-flash",
@@ -243,10 +265,10 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
                   entity: { type: Type.STRING },
                   type: { type: Type.STRING },
                   description: { type: Type.STRING, description: "Short 1-sentence description" },
-                  role: { type: Type.STRING },
-                  year: { type: Type.INTEGER }
+                  role: { type: Type.STRING, nullable: true },
+                  year: { type: Type.INTEGER, nullable: true }
                 },
-                required: ["entity", "type", "description", "role", "year"]
+                required: ["entity", "type", "description"]
               }
             }
           },
@@ -263,11 +285,8 @@ export const fetchPersonWorks = async (personName: string, excludeNodes: string[
 
     const rawText = getResponseText(response);
     const text = cleanJson(rawText);
-    const truncatedText = text.length > 200 ? text.substring(0, 200) + "..." : text;
-    console.log("fetchPersonWorks response text:", truncatedText);
     if (!text) return { works: [] };
     const parsed = JSON.parse(text) as PersonWorksResponse;
-    console.log(`✅ [Gemini] Found ${parsed.works ? parsed.works.length : 0} works for "${personName}":`, (parsed.works || []).map(w => `${w.entity} (${w.year})`));
     return parsed;
   } catch (error) {
     console.error("Gemini API Error (Person Works):", error);

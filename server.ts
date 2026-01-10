@@ -63,10 +63,26 @@ async function ensureSchema() {
     await client.query("create unique index if not exists nodes_title_ltype_wiki_idx on nodes (lower(title), lower(type), wikipedia_id)");
     await client.query("create unique index if not exists nodes_title_ltype_blank_wiki_uidx on nodes (lower(title), lower(type)) where (wikipedia_id is null or wikipedia_id = '')");
     
-    // Add is_person column for app logic (boolean), preserving original type
-    await client.query("alter table if exists nodes add column if not exists is_person boolean");
-    await client.query("update nodes set is_person = (lower(type) = 'person') where is_person is null");
-    await client.query("create index if not exists nodes_is_person_idx on nodes(is_person)");
+    // Add is_atomic column for app logic (boolean), preserving original type
+    await client.query("alter table if exists nodes add column if not exists is_atomic boolean");
+    // Migration: copy data from is_person if it exists, then drop is_person
+    const hasIsPerson = await client.query("select column_name from information_schema.columns where table_name = 'nodes' and column_name = 'is_person'");
+    if (hasIsPerson.rowCount && hasIsPerson.rowCount > 0) {
+      await client.query("update nodes set is_atomic = is_person where is_atomic is null");
+      await client.query("alter table nodes drop column is_person");
+    }
+    await client.query("update nodes set is_atomic = (lower(type) = 'person') where is_atomic is null");
+    await client.query("create index if not exists nodes_is_atomic_idx on nodes(is_atomic)");
+
+    // Migrate edges table: rename person_id to atomic_id and event_id to composite_id
+    const hasPersonId = await client.query("select column_name from information_schema.columns where table_name = 'edges' and column_name = 'person_id'");
+    if (hasPersonId.rowCount && hasPersonId.rowCount > 0) {
+      await client.query("alter table edges rename column person_id to atomic_id");
+    }
+    const hasEventId = await client.query("select column_name from information_schema.columns where table_name = 'edges' and column_name = 'event_id'");
+    if (hasEventId.rowCount && hasEventId.rowCount > 0) {
+      await client.query("alter table edges rename column event_id to composite_id");
+    }
 
     // Ensure saved_graphs table exists
     await client.query(`
@@ -140,7 +156,7 @@ create table if not exists nodes (
   id serial primary key,
   title text not null,
   type text not null,
-  is_person boolean,
+  is_atomic boolean,
   wikipedia_id text not null default '',
   description text,
   year int,
@@ -153,15 +169,15 @@ create table if not exists nodes (
 
 create table if not exists edges (
   id serial primary key,
-  person_id int not null references nodes(id) on delete cascade,
-  event_id int not null references nodes(id) on delete cascade,
+  atomic_id int not null references nodes(id) on delete cascade,
+  composite_id int not null references nodes(id) on delete cascade,
   label text,
   updated_at timestamptz default now(),
-  unique(person_id, event_id)
+  unique(atomic_id, composite_id)
 );
 
-create index if not exists edges_person_idx on edges (person_id);
-create index if not exists edges_event_idx on edges (event_id);
+create index if not exists edges_atomic_idx on edges (atomic_id);
+create index if not exists edges_composite_idx on edges (composite_id);
 create unique index if not exists nodes_title_ltype_wiki_idx on nodes (lower(title), lower(type), wikipedia_id);
 
 create table if not exists saved_graphs (
@@ -288,6 +304,10 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
         // Prefer the more specific type (capitalized like "Movie" over lowercase like "event")
         const typeToKeep = (existingType && existingType !== existingType.toLowerCase()) ? existingType : n.type;
         const wikiToKeep = existingWiki || normalizedWikiId || '';
+        
+        // Use provided is_atomic flag, or default to checking type for legacy data
+        const isAtomicToKeep = n.is_atomic !== undefined ? !!n.is_atomic : (n.is_person !== undefined ? !!n.is_person : (typeToKeep && typeToKeep.toLowerCase() === 'person'));
+
         const updateSql = `
                 update nodes set
                   type = $1,
@@ -297,7 +317,7 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
                   image_url = coalesce($5, image_url),
                   wiki_summary = coalesce($6, wiki_summary),
                   wikipedia_id = $8,
-                  is_person = (lower($1) = 'person'),
+                  is_atomic = $9,
                   updated_at = now()
                 where id = $7
              `;
@@ -309,13 +329,15 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
           imageUrl,
           wikiSummary,
           id,
-          wikiToKeep
+          wikiToKeep,
+          isAtomicToKeep
         ]);
       } else {
         // 3. INSERT new
+        const isAtomic = n.is_atomic !== undefined ? !!n.is_atomic : (n.is_person !== undefined ? !!n.is_person : (n.type && n.type.toLowerCase() === 'person'));
         const insertSql = `
-               insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary, is_person)
-               values ($1, $2, $3, $4, $5, $6, $7, $8, lower($2) = 'person')
+               insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary, is_atomic)
+               values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                returning id
              `;
         const insertRes = await client.query(insertSql, [
@@ -326,7 +348,8 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
           meta,
           normalizedWikiId,
           imageUrl,
-          wikiSummary
+          wikiSummary,
+          isAtomic
         ]);
         id = insertRes.rows[0].id;
       }
@@ -345,15 +368,15 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
   return idMap;
 }
 
-async function upsertEdge(client: pg.PoolClient, personId: number, eventId: number, label?: string) {
+async function upsertEdge(client: pg.PoolClient, atomicId: number, compositeId: number, label?: string) {
   await client.query(
     `
-      insert into edges (person_id, event_id, label)
+      insert into edges (atomic_id, composite_id, label)
       values ($1, $2, $3)
-      on conflict (person_id, event_id) do update
+      on conflict (atomic_id, composite_id) do update
       set label = coalesce(excluded.label, edges.label), updated_at = now();
     `,
-    [personId, eventId, label || null]
+    [atomicId, compositeId, label || null]
   );
 }
 
@@ -399,16 +422,16 @@ app.get("/path", async (req, res) => {
       
       if (path.length > maxD) continue; // Skip paths that exceed max depth
 
-      // Get node type to know if we need person or event neighbors
-      const nodeRes = await client.query("select is_person from nodes where id = $1", [nodeId]);
+      // Get node type to know if we need atomic or composite neighbors
+      const nodeRes = await client.query("select is_atomic from nodes where id = $1", [nodeId]);
       if (nodeRes.rows.length === 0) continue;
-      const isPerson = nodeRes.rows[0].is_person ?? false;
+      const isAtomic = nodeRes.rows[0].is_atomic ?? false;
 
-      // Get neighbors: if current node is person, get events; if event, get people
+      // Get neighbors: if current node is atomic, get composites; if composite, get atomics
       const neighborsRes = await client.query(
-        isPerson
-          ? `select event_id as neighbor_id from edges where person_id = $1`
-          : `select person_id as neighbor_id from edges where event_id = $1`,
+        isAtomic
+          ? `select composite_id as neighbor_id from edges where atomic_id = $1`
+          : `select atomic_id as neighbor_id from edges where composite_id = $1`,
         [nodeId]
       );
 
@@ -437,7 +460,7 @@ app.get("/path", async (req, res) => {
               meta: mergedMeta,
               imageUrl: node.image_url,
               wikiSummary: node.wiki_summary,
-              is_person: node.is_person ?? (node.type?.toLowerCase() === 'person')
+              is_atomic: node.is_atomic ?? (node.type?.toLowerCase() === 'person')
             };
           }).filter((n): n is NonNullable<typeof n> => n !== null);
 
@@ -475,8 +498,8 @@ app.get("/expansion", async (req, res) => {
     const result = await client.query(
       `
       select n.* from nodes n
-      join edges e on (e.person_id = n.id or e.event_id = n.id)
-      where (e.person_id = $1 or e.event_id = $1) and n.id != $1
+      join edges e on (e.atomic_id = n.id or e.composite_id = n.id)
+      where (e.atomic_id = $1 or e.composite_id = $1) and n.id != $1
       `,
       [id]
     );
@@ -490,7 +513,14 @@ app.get("/expansion", async (req, res) => {
           const mergedMeta = { ...m };
           if (!mergedMeta.imageUrl && r.image_url) mergedMeta.imageUrl = r.image_url;
           if (!mergedMeta.wikiSummary && r.wiki_summary) mergedMeta.wikiSummary = r.wiki_summary;
-          return { ...r, meta: mergedMeta, imageUrl: r.image_url, wikiSummary: r.wiki_summary, is_person: r.is_person ?? (r.type?.toLowerCase() === 'person') };
+          return { 
+            ...r, 
+            meta: mergedMeta, 
+            imageUrl: r.image_url, 
+            wikiSummary: r.wiki_summary, 
+            is_atomic: r.is_atomic ?? (r.type?.toLowerCase() === 'person'),
+            is_person: r.is_atomic ?? (r.type?.toLowerCase() === 'person') 
+          };
         })
       });
     }
@@ -517,10 +547,10 @@ app.post("/expansion", async (req, res) => {
   try {
     await client.query("begin");
 
-    // 1. Get source node is_person to know if it's a person or event
-    const sourceRes = await client.query("select is_person, type from nodes where id = $1", [sourceId]);
+    // 1. Get source node is_atomic to know if it's an atomic or composite
+    const sourceRes = await client.query("select is_atomic, type from nodes where id = $1", [sourceId]);
     if (sourceRes.rowCount === 0) throw new Error("Source node not found");
-    const sourceIsPerson = sourceRes.rows[0].is_person ?? (sourceRes.rows[0].type?.toLowerCase() === 'person');
+    const sourceIsAtomic = sourceRes.rows[0].is_atomic ?? (sourceRes.rows[0].type?.toLowerCase() === 'person');
 
     // 2. Upsert target nodes
     const idMap = await upsertNodes(client, nodes);
@@ -529,18 +559,18 @@ app.post("/expansion", async (req, res) => {
     for (const [key, targetId] of idMap.entries()) {
       const [title, type, wikiId] = key.split("|");
 
-      let personId, eventId;
-      if (sourceIsPerson) {
-        // Source is a person, so source -> target is person -> event
-        personId = sourceId;
-        eventId = targetId;
+      let atomicId, compositeId;
+      if (sourceIsAtomic) {
+        // Source is an atomic, so source -> target is atomic -> composite
+        atomicId = sourceId;
+        compositeId = targetId;
       } else {
-        // Source is an event, so target -> source is person -> event
-        personId = targetId;
-        eventId = sourceId;
+        // Source is a composite, so target -> source is atomic -> composite
+        atomicId = targetId;
+        compositeId = sourceId;
       }
 
-      await upsertEdge(client, personId, eventId);
+      await upsertEdge(client, atomicId, compositeId);
     }
 
     await client.query("commit");

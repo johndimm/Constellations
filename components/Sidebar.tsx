@@ -76,7 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onCollapseChan
   if (!selectedNode) return null;
 
   const nonPersonTypes = ['Movie', 'Event', 'Battle', 'Project', 'Company', 'Organization', 'Album', 'Song', 'Book', 'War', 'Treaty', 'Administration'];
-  const isPerson = selectedNode.is_person ?? selectedNode.type.toLowerCase() === 'person';
+  const isPerson = selectedNode.is_atomic ?? selectedNode.is_person ?? selectedNode.type.toLowerCase() === 'person';
 
   // Unified side panel styling - slides right on both mobile and desktop
   const panelClasses = `fixed top-16 right-3 sm:right-4 z-50 transition-transform duration-300 ease-in-out ${isCollapsed ? 'translate-x-[calc(100%+2rem)]' : 'translate-x-0'}`;
@@ -95,6 +95,25 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onCollapseChan
             </div>
 
             <div className="space-y-4 overflow-y-auto pr-1">
+              {/* AI Classification Info */}
+              {(selectedNode.atomic_type || selectedNode.composite_type) && (
+                <div className="p-3 bg-blue-900/20 rounded-lg border border-blue-500/20">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-blue-400 px-1.5 py-0.5 bg-blue-500/10 rounded">
+                      AI Classification
+                    </span>
+                  </div>
+                  <div className="text-xs font-semibold text-blue-200 mb-2">
+                    {selectedNode.atomic_type} ↔ {selectedNode.composite_type}
+                  </div>
+                  {selectedNode.classification_reasoning && (
+                    <p className="text-[11px] text-blue-300 italic leading-relaxed">
+                      "{selectedNode.classification_reasoning}"
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Display type for events only (not for persons) */}
               {!isPerson && selectedNode.type && (
                 <div>
