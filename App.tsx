@@ -489,18 +489,25 @@ const App: React.FC = () => {
             // 1. Ensure node has classification info
             let currentIsAtomic = node.is_atomic ?? node.is_person;
             let currentType = node.type;
+            let currentAtomicType = node.atomic_type;
+            let currentCompositeType = node.composite_type;
+
             if (!node.classification_reasoning) {
                 console.log(`🧠 [Expand] Classifying node "${node.title}" before expansion...`);
-                    const classification = await classifyEntity(node.title);
-                    currentIsAtomic = classification.isAtomic;
-                    currentType = classification.type;
-                    nodeUpdates.set(node.id, {
-                        classification_reasoning: classification.reasoning,
-                        atomic_type: classification.atomicType,
-                        composite_type: classification.compositeType,
-                        is_atomic: classification.isAtomic,
-                        type: classification.type
-                    });
+                // Use existing summary for context if available
+                const classification = await classifyEntity(node.title, node.wikiSummary);
+                currentIsAtomic = classification.isAtomic;
+                currentType = classification.type;
+                currentAtomicType = classification.atomicType;
+                currentCompositeType = classification.compositeType;
+
+                nodeUpdates.set(node.id, {
+                    classification_reasoning: classification.reasoning,
+                    atomic_type: classification.atomicType,
+                    composite_type: classification.compositeType,
+                    is_atomic: classification.isAtomic,
+                    type: classification.type
+                });
             }
 
             const fixMissingWiki = (targets: any[]) => {
@@ -709,7 +716,7 @@ const App: React.FC = () => {
             console.log(`📡 [Expand] Expanding ${currentType}: "${node.title}" (ID: ${node.id}, WikiID: ${node.wikipedia_id || 'none'})`);
 
             if (isPerson) {
-                const data = await fetchPersonWorks(node.title, neighborNames, wiki.extract || undefined, node.wikipedia_id);
+                const data = await fetchPersonWorks(node.title, neighborNames, wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 results = (data.works || []).map(w => ({ 
                     title: w.entity, 
                     type: w.type, 
@@ -720,11 +727,11 @@ const App: React.FC = () => {
                 }));
                 console.log(`✅ [Expand] Found ${results.length} connections for atomic "${node.title}"`);
             } else {
-                const data = await fetchConnections(node.title, undefined, neighborNames, wiki.extract || undefined, node.wikipedia_id);
+                const data = await fetchConnections(node.title, undefined, neighborNames, wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
                 
                 // Use the atomic type identified during classification if available, else default to 'Person'
-                const atomicTypeToUse = node.atomic_type || 'Person';
+                const atomicTypeToUse = currentAtomicType || 'Person';
                 results = (data.people || []).map(p => ({ 
                     title: p.name, 
                     type: atomicTypeToUse, 
@@ -917,15 +924,15 @@ const App: React.FC = () => {
         try {
             console.log(`🔎 Starting search for: "${term}"`);
 
-            // 1. Classify
-            const classification = await classifyEntity(term);
-            const { type, description: geminiDescription, isAtomic, atomicType, compositeType, reasoning } = classification;
-            console.log(`Type: ${type}, Atomic: ${isAtomic}, Pair: ${atomicType}/${compositeType}`);
-
-            // 2. Get Wikipedia metadata
+            // 1. Get Wikipedia metadata first to provide context for classification
             const wiki = await fetchWikipediaSummary(term);
             const truncatedWiki = wiki.extract ? (wiki.extract.length > 100 ? wiki.extract.substring(0, 100) + "..." : wiki.extract) : "none";
             console.log(`Wiki summary: "${truncatedWiki}"`);
+
+            // 2. Classify with context
+            const classification = await classifyEntity(term, wiki.extract || undefined);
+            const { type, description: geminiDescription, isAtomic, atomicType, compositeType, reasoning } = classification;
+            console.log(`Type: ${type}, Atomic: ${isAtomic}, Pair: ${atomicType}/${compositeType}`);
 
             // 3. Upsert to DB to get serial ID
             let nodeId: number = -1;
@@ -1020,15 +1027,16 @@ const App: React.FC = () => {
         try {
             console.log(`🛤️ Finding path from "${start}" to "${end}"`);
 
-            // 1. Classify and Upsert endpoints
-            const [startC, endC] = await Promise.all([
-                classifyEntity(start),
-                classifyEntity(end)
-            ]);
-
+            // 1. Get Wikipedia summaries first for context
             const [startWiki, endWiki] = await Promise.all([
                 fetchWikipediaSummary(start),
                 fetchWikipediaSummary(end)
+            ]);
+
+            // 2. Classify and Upsert endpoints with context
+            const [startC, endC] = await Promise.all([
+                classifyEntity(start, startWiki.extract || undefined),
+                classifyEntity(end, endWiki.extract || undefined)
             ]);
 
             const upsertNodeLocal = async (title: string, type: string, description: string, wiki: any) => {

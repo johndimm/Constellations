@@ -5,32 +5,30 @@ import { getApiKey, getResponseText, cleanJson, withTimeout, withRetry } from ".
 export { getApiKey, getResponseText, cleanJson, withTimeout, withRetry } from "./aiUtils";
 
 const SYSTEM_INSTRUCTION = `
-You are a collaboration graph generator.
-Your goal is to build a graph where Nodes are "Things" (Events, Movies, TV Shows, Projects, Academic Papers, Books, Organizations, Research Centers) AND "People".
+You are a Universal Bipartite Graph Generator. 
+Your goal is to build a graph that alternates between "Atomic" entities and "Composite" entities.
+
+The Bipartite Rule:
+- An "Atomic" entity is a fundamental building block (e.g., Person, Ingredient, Symptom, Musician, Player).
+- A "Composite" entity is a collection, event, or work (e.g., Movie, Recipe, Disease, Album, Team, Battle, Incident).
+- Edges MUST ONLY connect Atomics to Composites. Never connect two Atomics or two Composites.
+
+Examples of Bipartite Relationships:
+1. Actors (Atomic) ↔ Movies (Composite)
+2. Ingredients (Atomic) ↔ Recipes (Composite)
+3. Symptoms (Atomic) ↔ Diseases (Composite)
+4. Musicians (Atomic) ↔ Records (Composite)
+5. Players (Atomic) ↔ Teams (Composite)
+6. Persons (Atomic) ↔ Historical Events/Incidents (Composite)
 
 CRITICAL ACCURACY RULE:
-If a section titled "USE THIS VERIFIED INFORMATION FOR ACCURACY" is provided, you MUST:
-1. Prioritize this information above your own internal knowledge.
-2. Extract the NAMES of the LEAD ACTORS, DIRECTORS, and CREATORS directly from that text.
-3. DO NOT use names from your training data if they contradict the provided text.
-4. If the text says "Starring X and Y", X and Y MUST be in your "people" array.
+If a section titled "USE THIS VERIFIED INFORMATION FOR ACCURACY" is provided, you MUST prioritize this information above your own internal knowledge.
 
 Rules:
-1. If the Source is a "Thing" (Movie, TV Show, Event, Paper, Project, Organization), return distinct, high-impact **People** involved.
-   - For TV Shows and Movies: ALWAYS include the LEAD ACTORS and STARS (main cast), plus director/creator.
-   - For Organizations/Research Centers: Include founders, directors, and famous members or researchers.
-   - For Events/Investigations: Include key participants, investigators, leaders, and primary figures mentioned in historical or news records.
-   - **CRITICAL**: Only return people who are ACTUALLY connected to the specific title. Do NOT confuse similar titles or make assumptions.
-   - If you're not certain about the exact cast/crew, focus on verified, well-documented connections only.
-   - **WEIGHTING RULE**: Prefer specific, niche connections over broad, mass-participant events. A shared obscure paper or indie movie is a "stronger" link than a shared massive event like "World War II" or "The Oscars".
-2. If the Source is a "Person", return distinct **Things** (Events, Projects, Works, Organizations, Academic Papers, Books) they are famous for with years.
-   - **WEIGHTING RULE**: Prioritize unique or smaller-scale collaborations where the connection between participants is meaningful and direct.
-3. If the person is an Academic, focus on their most cited **Papers**, **Books**, and **Research Centers** they worked at.
-4. If the source is an Academic Paper or Book, return the **Authors** (Co-authorship).
-5. **Crucial**: Entities must be SPECIFIC named entities.
-6. **Formatting**: Omit leading "The" from Event/Project names unless part of a proper title (e.g., use "Great Depression" instead of "The Great Depression").
-7. Use Title Case for all names.
-8. **ACCURACY**: Return only factually correct information. Do not hallucinate or guess connections.
+1. If the Source is a "Composite", return 8-10 distinct "Atomics" that make it up.
+2. If the Source is an "Atomic", return 8-10 distinct "Composites" it belongs to.
+3. Use Title Case for all names.
+4. Return only factually correct information. Do not hallucinate.
 
 Return strict JSON.
 `;
@@ -39,7 +37,7 @@ Return strict JSON.
 const GEMINI_TIMEOUT_MS = 60000; // 60 seconds for heavier graph expansions
 const CLASSIFY_TIMEOUT_MS = 15000; // 15 seconds for classification
 
-export const classifyEntity = async (term: string): Promise<{ 
+export const classifyEntity = async (term: string, wikiContext?: string): Promise<{ 
   type: string; 
   description: string; 
   isAtomic: boolean;
@@ -65,15 +63,19 @@ export const classifyEntity = async (term: string): Promise<{
     console.error("❌ [Gemini] classifyEntity: No API key found");
     return { type: 'Event', description: '', isAtomic: false };
   }
-  console.log(`🧪 [Gemini] classify start`, { term, timeoutMs: CLASSIFY_TIMEOUT_MS });
+  console.log(`🧪 [Gemini] classify start`, { term, hasWiki: !!wikiContext, timeoutMs: CLASSIFY_TIMEOUT_MS });
   const ai = new GoogleGenAI({ apiKey });
 
+  const wikiPrompt = wikiContext
+    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
+    : "";
+
   try {
-    const prompt = `Classify "${term}". 
+    const prompt = `Classify "${term}". ${wikiPrompt}
       Determine if it is "Atomic" (a fundamental building block like a person, ingredient, or symptom) 
       or "Composite" (a collection or event like a movie, recipe, or disease).
       
-      Identify the relevant Bipartite Pair this belongs to (e.g. Actor/Movie, Ingredient/Recipe, Symptom/Disease).
+      Identify the relevant Bipartite Pair this belongs to (e.g. Actor/Movie, Ingredient/Recipe, Symptom/Disease, Person/Event).
       
       Return JSON:
       {
@@ -132,7 +134,15 @@ export const classifyEntity = async (term: string): Promise<{
   }
 };
 
-export const fetchConnections = async (nodeName: string, context?: string, excludeNodes: string[] = [], wikiContext?: string, wikipediaId?: string): Promise<GeminiResponse> => {
+export const fetchConnections = async (
+  nodeName: string, 
+  context?: string, 
+  excludeNodes: string[] = [], 
+  wikiContext?: string, 
+  wikipediaId?: string,
+  atomicType?: string,
+  compositeType?: string
+): Promise<GeminiResponse> => {
   const apiKey = await getApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] fetchConnections: No API key found");
@@ -154,17 +164,20 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
     ? `\nDO NOT include the following already known connections: ${JSON.stringify(excludeNodes)}. Find NEW high-impact connections.`
     : "";
 
+  const atomicLabel = atomicType || "ATOMIC entity";
+  const compositeLabel = compositeType || "COMPOSITE entity";
+
   try {
     const prompt = `${contextualPrompt}${wikiPrompt}${excludePrompt}
-      This is a COMPOSITE entity. 
-      Return 8-10 key ATOMIC entities (building blocks, participants, ingredients, etc.) that make up this composite.
+      This is a ${compositeLabel}. 
+      Return 8-10 key ${atomicLabel} entities (participants, victims, investigators, stars, ingredients, etc.) that make up this composite.
       
       Examples:
+      - If Event/Incident: Return key people involved (victims, shooters, investigators).
       - If Movie: Return lead actors/director.
       - If Team: Return key players.
       - If Recipe: Return ingredients.
-      - If Disease: Return symptoms.
-      - If Event: Return primary figures.`;
+      - If Disease: Return symptoms.`;
     
     console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
     
@@ -214,7 +227,14 @@ export const fetchConnections = async (nodeName: string, context?: string, exclu
   }
 };
 
-export const fetchPersonWorks = async (nodeName: string, excludeNodes: string[] = [], wikiContext?: string, wikipediaId?: string): Promise<PersonWorksResponse> => {
+export const fetchPersonWorks = async (
+  nodeName: string, 
+  excludeNodes: string[] = [], 
+  wikiContext?: string, 
+  wikipediaId?: string,
+  atomicType?: string,
+  compositeType?: string
+): Promise<PersonWorksResponse> => {
   const apiKey = await getApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] fetchPersonWorks: No API key found");
@@ -228,19 +248,22 @@ export const fetchPersonWorks = async (nodeName: string, excludeNodes: string[] 
     ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
     : "";
 
+  const atomicLabel = atomicType || "ATOMIC entity";
+  const compositeLabel = compositeType || "COMPOSITE entity";
+
   const contextPrompt = excludeNodes.length > 0
     ? `The user graph already contains these nodes connected to ${nodeName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}. 
-       Return 8-10 NEW significant COMPOSITE entities.`
-    : `List 8-10 DISTINCT, significant COMPOSITE entities that this ATOMIC entity "${nodeName}"${wikiIdStr} belongs to or is part of.
+       Return 8-10 NEW significant ${compositeLabel} entities.`
+    : `List 8-10 DISTINCT, significant ${compositeLabel} entities that this ${atomicLabel} "${nodeName}"${wikiIdStr} belongs to or is part of.
        
-       CRITICAL: A COMPOSITE entity must be a named organization, team, project, or work. 
-       DO NOT return descriptive phrases, facts, or achievements (e.g., do NOT return "Scoring Record" or "Best Defense").
+       CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, or specific historical event/incident. 
+       DO NOT return descriptive phrases, facts, or achievements.
        
        Examples:
-       - For a Player: Return their specific Teams (e.g., "Miami Heat").
-       - For an Actor: Return their Movies.
-       - For an Ingredient: Return specific Recipes.
-       - For a Symptom: Return specific Diseases.`;
+       - For a Person involved in a recent event: Return the named Event or Incident (e.g. "Killing of Renee Good", "2026 Minneapolis Protests").
+       - For an Ingredient (e.g. "Chicken"): Return specific Recipes.
+       - For a Player: Return specific Teams.
+       - For an Actor: Return specific Movies.`;
 
   try {
     const prompt = `${wikiPrompt}${contextPrompt}
