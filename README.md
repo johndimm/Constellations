@@ -23,6 +23,11 @@ Originally designed to map world history, **Constellations** has evolved into a 
 - **Medicine**: Symptom (Atomic) ↔ Disease (Composite)
 - **Academia**: Researcher (Atomic) ↔ Paper/Grant (Composite)
 
+### Universal Examples:
+| Culinary (Beef) | Sports (LeBron James) | Medicine (Sore Throat) |
+| :---: | :---: | :---: |
+| ![Beef](public/beef.png) | ![LeBron James](<public/LeBron James.png>) | ![Sore Throat](<public/sore throat.png>) |
+
 ## Philosophy & Design
 
 The core idea is to create collaboration graphs on the fly with **zero pre-computed database**. The graph constructs a local neighborhood around a given node using live LLM queries and expands outward.
