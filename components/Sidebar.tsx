@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GraphNode } from '../types';
+import { GraphNode, GraphLink } from '../types';
 import { X, ExternalLink, Search } from 'lucide-react';
 
 interface SidebarProps {
   selectedNode: GraphNode | null;
+  selectedLink?: GraphLink | null;
   onClose: () => void;
   onCollapseChange?: (collapsed: boolean) => void;
   externalToggleSignal?: number;
   onFindBetterImage?: (nodeId: number) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onCollapseChange, externalToggleSignal, onFindBetterImage }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, onCollapseChange, externalToggleSignal, onFindBetterImage }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFullSummary, setShowFullSummary] = useState(false);
@@ -95,6 +96,37 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, onClose, onCollapseChan
             </div>
 
             <div className="space-y-4 overflow-y-auto pr-1">
+              {/* Selected Edge Evidence (when user clicks an edge) */}
+              {selectedLink?.evidence && selectedLink.evidence.kind !== 'none' && (
+                <div className="p-3 bg-slate-800/40 rounded-lg border border-slate-600/40">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-300">
+                      Edge Evidence
+                    </span>
+                    {selectedLink.evidence.url && (
+                      <a
+                        href={selectedLink.evidence.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-amber-300 hover:text-amber-200"
+                      >
+                        Open Source
+                      </a>
+                    )}
+                  </div>
+                  {selectedLink.evidence.pageTitle && (
+                    <div className="text-xs font-semibold text-slate-200 mb-2">
+                      From: {selectedLink.evidence.pageTitle}
+                    </div>
+                  )}
+                  {selectedLink.evidence.snippet && (
+                    <p className="text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap">
+                      “{selectedLink.evidence.snippet}”
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* AI Classification Info */}
               {(selectedNode.atomic_type || selectedNode.composite_type) && (
                 <div className="p-3 bg-blue-900/20 rounded-lg border border-blue-500/20">

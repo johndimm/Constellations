@@ -657,6 +657,25 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 target: typeof link.target === 'object' ? (link.target as GraphNode).id : link.target
             }));
 
+        // Wide invisible hit-area for easier clicking on links
+        const linkHitSel = container.selectAll<SVGPathElement, GraphLink>(".link-hit").data(validLinks, d => d.id);
+        linkHitSel.exit().remove();
+        const linkHitEnter = linkHitSel.enter().insert("path", ".node")
+            .attr("class", "link-hit")
+            .attr("fill", "none")
+            .attr("stroke", "transparent")
+            .attr("stroke-opacity", 0)
+            .attr("stroke-width", 14)
+            .attr("stroke-linecap", "round")
+            .style("pointer-events", "stroke");
+
+        const linkHitMerged = linkHitSel.merge(linkHitEnter);
+        if (isTimelineMode) {
+            linkHitMerged.style("display", "none");
+        } else {
+            linkHitMerged.style("display", null);
+        }
+
         const linkSel = container.selectAll<SVGPathElement, GraphLink>(".link").data(validLinks, d => d.id);
         linkSel.exit().remove();
         const linkEnter = linkSel.enter().insert("path", ".node")
@@ -673,6 +692,16 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             linkMerged.style("display", "none");
         } else {
             linkMerged.style("display", null);
+        }
+
+        // Link click handling (for evidence)
+        if (onLinkClick) {
+            const clickHandler = (event: any, d: GraphLink) => {
+                event.stopPropagation();
+                onLinkClick(d);
+            };
+            linkMerged.style("cursor", "pointer").on("click", clickHandler);
+            linkHitMerged.style("cursor", "pointer").on("click", clickHandler);
         }
 
         const nodeSel = container.selectAll<SVGGElement, GraphNode>(".node").data(nodes, d => d.id);

@@ -84,6 +84,9 @@ async function ensureSchema() {
       await client.query("alter table edges rename column event_id to composite_id");
     }
 
+    // Edge evidence storage
+    await client.query("alter table if exists edges add column if not exists meta jsonb default '{}'::jsonb");
+
     // Ensure saved_graphs table exists
     await client.query(`
       create table if not exists saved_graphs (
@@ -172,6 +175,7 @@ create table if not exists edges (
   atomic_id int not null references nodes(id) on delete cascade,
   composite_id int not null references nodes(id) on delete cascade,
   label text,
+  meta jsonb default '{}'::jsonb,
   updated_at timestamptz default now(),
   unique(atomic_id, composite_id)
 );
@@ -368,15 +372,18 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
   return idMap;
 }
 
-async function upsertEdge(client: pg.PoolClient, atomicId: number, compositeId: number, label?: string) {
+async function upsertEdge(client: pg.PoolClient, atomicId: number, compositeId: number, label?: string, meta?: any) {
   await client.query(
     `
-      insert into edges (atomic_id, composite_id, label)
-      values ($1, $2, $3)
+      insert into edges (atomic_id, composite_id, label, meta)
+      values ($1, $2, $3, $4)
       on conflict (atomic_id, composite_id) do update
-      set label = coalesce(excluded.label, edges.label), updated_at = now();
+      set 
+        label = coalesce(excluded.label, edges.label), 
+        meta = coalesce(edges.meta, '{}'::jsonb) || coalesce(excluded.meta, '{}'::jsonb),
+        updated_at = now();
     `,
-    [atomicId, compositeId, label || null]
+    [atomicId, compositeId, label || null, meta || {}]
   );
 }
 
@@ -497,9 +504,14 @@ app.get("/expansion", async (req, res) => {
     // Fetch all nodes connected to this node
     const result = await client.query(
       `
-      select n.* from nodes n
-      join edges e on (e.atomic_id = n.id or e.composite_id = n.id)
-      where (e.atomic_id = $1 or e.composite_id = $1) and n.id != $1
+      select n.*, e.label as edge_label, e.meta as edge_meta
+      from nodes n
+      join edges e on (
+        (e.atomic_id = $1 and e.composite_id = n.id)
+        or
+        (e.composite_id = $1 and e.atomic_id = n.id)
+      )
+      where n.id != $1
       `,
       [id]
     );
@@ -519,7 +531,9 @@ app.get("/expansion", async (req, res) => {
             imageUrl: r.image_url, 
             wikiSummary: r.wiki_summary, 
             is_atomic: r.is_atomic ?? (r.type?.toLowerCase() === 'person'),
-            is_person: r.is_atomic ?? (r.type?.toLowerCase() === 'person') 
+            is_person: r.is_atomic ?? (r.type?.toLowerCase() === 'person'),
+            edge_label: r.edge_label ?? null,
+            edge_meta: r.edge_meta ?? null
           };
         })
       });
@@ -553,6 +567,14 @@ app.post("/expansion", async (req, res) => {
     const sourceIsAtomic = sourceRes.rows[0].is_atomic ?? (sourceRes.rows[0].type?.toLowerCase() === 'person');
 
     // 2. Upsert target nodes
+    // Build key->node payload map so we can also persist edge evidence (label/meta)
+    const nodeByKey = new Map<string, any>();
+    for (const n of nodes) {
+      const title = n.title || n.id;
+      const wikiId = (n.wikipedia_id || n.wikipediaId || "").toString().trim();
+      const key = `${title}|${n.type}|${wikiId || ''}`;
+      nodeByKey.set(key, n);
+    }
     const idMap = await upsertNodes(client, nodes);
 
     // 3. Create edges
@@ -570,7 +592,10 @@ app.post("/expansion", async (req, res) => {
         compositeId = sourceId;
       }
 
-      await upsertEdge(client, atomicId, compositeId);
+      const payload = nodeByKey.get(key);
+      const edgeLabel = payload?.edge_label || payload?.label || null;
+      const edgeMeta = payload?.edge_meta || payload?.meta_edge || null;
+      await upsertEdge(client, atomicId, compositeId, edgeLabel || undefined, edgeMeta || undefined);
     }
 
     await client.query("commit");

@@ -535,3 +535,25 @@ export const fetchWikipediaSummary = async (
   }
   return { extract: null, pageid: null, title: null };
 };
+
+// Fetch a longer plain-text extract (not just the intro) to help find evidence snippets.
+// Returns at most maxChars characters of the page extract.
+export const fetchWikipediaExtract = async (
+  title: string,
+  maxChars: number = 6000
+): Promise<{ extract: string | null; pageid: number | null; title: string | null }> => {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&explaintext&exchars=${maxChars}&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const pages = data.query?.pages;
+    if (!pages) return { extract: null, pageid: null, title: null };
+    const page = Object.values(pages)[0] as any;
+    if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
+      return { extract: page.extract || null, pageid: page.pageid || null, title: page.title || null };
+    }
+  } catch (e) {
+    console.warn("fetchWikipediaExtract failed:", title, e);
+  }
+  return { extract: null, pageid: null, title: null };
+};

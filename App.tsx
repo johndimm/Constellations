@@ -6,7 +6,7 @@ import NodeContextMenu from './components/NodeContextMenu';
 import { GraphNode, GraphLink, PathResponse } from './types';
 import { fetchConnections, fetchPersonWorks, classifyEntity, fetchConnectionPath, findWikipediaTitle } from './services/geminiService';
 import { getApiKey } from './services/aiUtils';
-import { fetchWikipediaImage, fetchWikipediaSummary } from './services/wikipediaService';
+import { fetchWikipediaImage, fetchWikipediaSummary, fetchWikipediaExtract } from './services/wikipediaService';
 import { Key, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react';
 
 const BrowsePeople = lazy(() => import('./components/BrowsePeople'));
@@ -161,6 +161,7 @@ const App: React.FC = () => {
     graphDataRef.current = graphData;
     const [isProcessing, setIsProcessing] = useState(false);
     const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+    const [selectedLink, setSelectedLink] = useState<GraphLink | null>(null);
     const [isCompact, setIsCompact] = useState(false);
     const [isTimelineMode, setIsTimelineMode] = useState(false);
     const [isTextOnly, setIsTextOnly] = useState(false);
@@ -189,6 +190,28 @@ const App: React.FC = () => {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [sidebarToggleSignal, setSidebarToggleSignal] = useState(0);
     const [peopleBrowserOpen, setPeopleBrowserOpen] = useState(false);
+
+    const buildWikiUrl = (title: string) => `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`;
+
+    const extractSentenceContaining = (text: string, needle: string): string | null => {
+        if (!text || !needle) return null;
+        const idx = text.toLowerCase().indexOf(needle.toLowerCase());
+        if (idx < 0) return null;
+        // Expand to nearest sentence boundaries (very simple heuristic)
+        const start = Math.max(
+            0,
+            Math.max(text.lastIndexOf('. ', idx), text.lastIndexOf('! ', idx), text.lastIndexOf('? ', idx)) + 2
+        );
+        const endCandidates = [
+            text.indexOf('. ', idx),
+            text.indexOf('! ', idx),
+            text.indexOf('? ', idx)
+        ].filter(n => n >= 0);
+        const end = endCandidates.length ? Math.min(...endCandidates) + 1 : Math.min(text.length, idx + 240);
+        const sentence = text.substring(start, end).trim();
+        if (!sentence) return null;
+        return sentence.length > 320 ? sentence.substring(0, 320).trim() + '…' : sentence;
+    };
 
     // Keep selectedNode in sync with latest node data (e.g., wikiSummary, images)
     useEffect(() => {
@@ -437,7 +460,9 @@ const App: React.FC = () => {
                         description: n.description || "",
                         year: n.year || null,
                         meta: n.meta || {},
-                        wikipedia_id: n.wikipedia_id
+                        wikipedia_id: n.wikipedia_id,
+                        edge_label: n.edge_label || null,
+                        edge_meta: n.edge_meta || null
                     }))
                 })
             });
@@ -645,7 +670,9 @@ const App: React.FC = () => {
                                 const newLinksToAdd: GraphLink[] = validCached.map(cn => ({
                                     source: node.id,
                                     target: cn.id,
-                                    id: `${node.id}-${cn.id}`
+                                    id: `${node.id}-${cn.id}`,
+                                    label: cn.edge_label || undefined,
+                                    evidence: cn.edge_meta?.evidence || undefined
                                 })).filter(l => !existingLinkIds.has(l.id));
                                 cacheNewLinks = newLinksToAdd.length;
                                 const combinedLinks = [...prev.links, ...newLinksToAdd];
@@ -709,6 +736,9 @@ const App: React.FC = () => {
                 nodeUpdates.set(node.id, { wikiSummary: wiki.extract, wikipedia_id: wiki.pageid?.toString() });
             }
             console.log(`📄 [Expand] wiki summary for "${node.title}": ${wiki.extract ? wiki.extract.substring(0, 120) + '…' : 'none'} (pageid=${wiki.pageid || 'n/a'})`);
+            // For evidence snippets, sometimes the intro won't include the related entity name.
+            // Fetch a longer extract once per expansion (cheap-ish) and reuse it.
+            const sourceLong = (await fetchWikipediaExtract(node.title, 6000)).extract || wiki.extract || '';
 
             let results: any[] = [];
             const isPerson = currentIsAtomic ?? currentType.toLowerCase() === 'person';
@@ -770,7 +800,21 @@ const App: React.FC = () => {
                 // Get Wikipedia info for all results to help disambiguate
                 const resultsWithWiki = await Promise.all(results.map(async r => {
                     const rWiki = await fetchWikipediaSummary(r.title, node.title);
-                    return { ...r, wikipedia_id: rWiki.pageid?.toString(), description: rWiki.extract || r.description };
+                    const sourceMention = extractSentenceContaining(sourceLong, r.title);
+                    const targetMention = rWiki.extract ? extractSentenceContaining(rWiki.extract, node.title) : null;
+                    const evidence =
+                        sourceMention
+                            ? { kind: 'wikipedia' as const, pageTitle: node.title, snippet: sourceMention, url: buildWikiUrl(node.title) }
+                            : (targetMention
+                                ? { kind: 'wikipedia' as const, pageTitle: rWiki.title || r.title, snippet: targetMention, url: buildWikiUrl(rWiki.title || r.title) }
+                                : { kind: 'none' as const });
+                    return { 
+                        ...r, 
+                        wikipedia_id: rWiki.pageid?.toString(), 
+                        description: rWiki.extract || r.description,
+                        edge_meta: { evidence },
+                        edge_label: r.role || null
+                    };
                 }));
 
                 let nodesToUse = resultsWithWiki;
@@ -860,7 +904,9 @@ const App: React.FC = () => {
                     const newLinksToAdd: GraphLink[] = processedNodes.map(cn => ({
                         source: node.id,
                         target: cn.id,
-                        id: `${node.id}-${cn.id}`
+                        id: `${node.id}-${cn.id}`,
+                        label: cn.edge_label || undefined,
+                        evidence: cn.edge_meta?.evidence || undefined
                     })).filter(l => !existingLinkIds.has(l.id));
 
                     return dedupeGraph(updatedNodes, [...prev.links, ...newLinksToAdd]);
@@ -1792,6 +1838,7 @@ const App: React.FC = () => {
     const handleNodeClick = useCallback((node: GraphNode | null) => {
         if (!node) {
             setSelectedNode(null);
+            setSelectedLink(null);
             setContextMenu(null);
             setPathNodeIds([]); // Clear path highlighting when deselecting
             setNewlyExpandedNodeIds([]); // Clear expansion highlighting on deselect
@@ -1829,6 +1876,7 @@ const App: React.FC = () => {
         } else {
             // First click: initiate selection request
             setContextMenu(null);
+            setSelectedLink(null);
             
             if (node.expanded || node.isLoading) {
                 // Already expanded: fulfill selection request immediately (connections are ready)
@@ -1843,6 +1891,11 @@ const App: React.FC = () => {
             }
         }
     }, [searchMode, pathStart, selectedNode, loadNodeImage, fetchAndExpandNode]);
+
+    const handleLinkClick = useCallback((link: GraphLink) => {
+        setSelectedLink(link);
+        // keep selectedNode as-is; sidebar will show evidence block
+    }, []);
 
     const handleViewportChange = useCallback((visibleNodes: GraphNode[]) => {
         if (visibleNodes.length <= 15 && !isTextOnly) {
@@ -2189,6 +2242,7 @@ const App: React.FC = () => {
                     nodes={nodes}
                     links={links}
                     onNodeClick={handleNodeClick}
+                    onLinkClick={handleLinkClick}
                     onViewportChange={handleViewportChange}
                     width={dimensions.width}
                     height={dimensions.height}
@@ -2237,6 +2291,7 @@ const App: React.FC = () => {
                 />
                 <Sidebar
                     selectedNode={selectedNode}
+                    selectedLink={selectedLink}
                     onClose={() => { setSelectedNode(null); setContextMenu(null); setPathNodeIds([]); }}
                     onCollapseChange={setSidebarCollapsed}
                     externalToggleSignal={sidebarToggleSignal}

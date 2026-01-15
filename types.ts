@@ -33,6 +33,15 @@ export interface GraphLink extends SimulationLinkDatum<GraphNode> {
   target: number | GraphNode;
   id: string; // Unique link ID
   label?: string; // Role or connection description
+  evidence?: {
+    kind: 'wikipedia' | 'ai' | 'none';
+    // Human-readable page title where the snippet came from (usually source or target)
+    pageTitle?: string;
+    // Copyable snippet (typically 1 sentence)
+    snippet?: string;
+    // URL to open for verification
+    url?: string;
+  };
 }
 
 export interface GeminiEntity {
