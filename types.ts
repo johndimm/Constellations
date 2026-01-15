@@ -55,6 +55,8 @@ export interface GeminiPerson {
   name: string;
   role: string; // Role in the source node
   description: string; // Brief bio
+  evidenceSnippet?: string; // 1 sentence from provided verified text (preferred)
+  evidencePageTitle?: string; // Which page the snippet came from (usually the source title)
 }
 
 export interface GeminiResponse {
@@ -69,6 +71,8 @@ export interface PersonWork {
   role: string;
   year: number;
   imageUrl?: string | null;
+  evidenceSnippet?: string; // 1 sentence from provided verified text (preferred)
+  evidencePageTitle?: string; // Which page the snippet came from (usually the source title)
 }
 
 export interface PersonWorksResponse {

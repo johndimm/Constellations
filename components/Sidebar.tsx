@@ -97,13 +97,13 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
 
             <div className="space-y-4 overflow-y-auto pr-1">
               {/* Selected Edge Evidence (when user clicks an edge) */}
-              {selectedLink?.evidence && selectedLink.evidence.kind !== 'none' && (
+              {selectedLink && (
                 <div className="p-3 bg-slate-800/40 rounded-lg border border-slate-600/40">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-300">
-                      Edge Evidence
+                      Edge Selected
                     </span>
-                    {selectedLink.evidence.url && (
+                    {selectedLink.evidence?.url && (
                       <a
                         href={selectedLink.evidence.url}
                         target="_blank"
@@ -114,14 +114,23 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
                       </a>
                     )}
                   </div>
-                  {selectedLink.evidence.pageTitle && (
+                  {selectedLink.label && (
+                    <div className="text-xs font-semibold text-slate-200 mb-2">
+                      {selectedLink.label}
+                    </div>
+                  )}
+                  {selectedLink.evidence?.pageTitle && (
                     <div className="text-xs font-semibold text-slate-200 mb-2">
                       From: {selectedLink.evidence.pageTitle}
                     </div>
                   )}
-                  {selectedLink.evidence.snippet && (
+                  {selectedLink.evidence?.snippet && selectedLink.evidence.kind !== 'none' ? (
                     <p className="text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap">
                       “{selectedLink.evidence.snippet}”
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      No evidence snippet available for this edge yet.
                     </p>
                   )}
                 </div>

@@ -171,6 +171,10 @@ export const fetchConnections = async (
     const prompt = `${contextualPrompt}${wikiPrompt}${excludePrompt}
       This is a ${compositeLabel}. 
       Return 8-10 key ${atomicLabel} entities (participants, victims, investigators, stars, ingredients, etc.) that make up this composite.
+
+      IMPORTANT: For each returned entity, also provide a 1-sentence evidence snippet.
+      - If VERIFIED INFORMATION text is provided, the evidence snippet MUST be copied verbatim from that text and should contain BOTH the source title and the returned entity name when possible.
+      - Set evidencePageTitle to the Wikipedia article title the snippet is from (usually the source).
       
       Examples:
       - If Event/Incident: Return key people involved (victims, shooters, investigators).
@@ -198,7 +202,9 @@ export const fetchConnections = async (
                 properties: {
                   name: { type: Type.STRING },
                   role: { type: Type.STRING, description: "Role in the requested Source Node" },
-                  description: { type: Type.STRING, description: "Short 1-sentence bio" }
+                  description: { type: Type.STRING, description: "Short 1-sentence bio" },
+                  evidenceSnippet: { type: Type.STRING, nullable: true, description: "1 sentence evidence, preferably verbatim from VERIFIED INFORMATION" },
+                  evidencePageTitle: { type: Type.STRING, nullable: true, description: "Wikipedia page title where the snippet came from" }
                 },
                 required: ["name", "role", "description"]
               }
@@ -258,6 +264,10 @@ export const fetchPersonWorks = async (
        
        CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, or specific historical event/incident. 
        DO NOT return descriptive phrases, facts, or achievements.
+
+       IMPORTANT: For each returned entity, also provide a 1-sentence evidence snippet.
+       - If VERIFIED INFORMATION text is provided, the evidence snippet MUST be copied verbatim from that text and should contain BOTH the source name and the returned entity name when possible.
+       - Set evidencePageTitle to the Wikipedia article title the snippet is from (usually the source).
        
        Examples:
        - For a Person involved in a recent event: Return the named Event or Incident (e.g. "Killing of Renee Good", "2026 Minneapolis Protests").
@@ -289,7 +299,9 @@ export const fetchPersonWorks = async (
                   type: { type: Type.STRING },
                   description: { type: Type.STRING, description: "Short 1-sentence description" },
                   role: { type: Type.STRING, nullable: true },
-                  year: { type: Type.INTEGER, nullable: true }
+                  year: { type: Type.INTEGER, nullable: true },
+                  evidenceSnippet: { type: Type.STRING, nullable: true, description: "1 sentence evidence, preferably verbatim from VERIFIED INFORMATION" },
+                  evidencePageTitle: { type: Type.STRING, nullable: true, description: "Wikipedia page title where the snippet came from" }
                 },
                 required: ["entity", "type", "description"]
               }

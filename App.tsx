@@ -193,26 +193,6 @@ const App: React.FC = () => {
 
     const buildWikiUrl = (title: string) => `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`;
 
-    const extractSentenceContaining = (text: string, needle: string): string | null => {
-        if (!text || !needle) return null;
-        const idx = text.toLowerCase().indexOf(needle.toLowerCase());
-        if (idx < 0) return null;
-        // Expand to nearest sentence boundaries (very simple heuristic)
-        const start = Math.max(
-            0,
-            Math.max(text.lastIndexOf('. ', idx), text.lastIndexOf('! ', idx), text.lastIndexOf('? ', idx)) + 2
-        );
-        const endCandidates = [
-            text.indexOf('. ', idx),
-            text.indexOf('! ', idx),
-            text.indexOf('? ', idx)
-        ].filter(n => n >= 0);
-        const end = endCandidates.length ? Math.min(...endCandidates) + 1 : Math.min(text.length, idx + 240);
-        const sentence = text.substring(start, end).trim();
-        if (!sentence) return null;
-        return sentence.length > 320 ? sentence.substring(0, 320).trim() + '…' : sentence;
-    };
-
     // Keep selectedNode in sync with latest node data (e.g., wikiSummary, images)
     useEffect(() => {
         if (!selectedNode) return;
@@ -746,18 +726,29 @@ const App: React.FC = () => {
             console.log(`📡 [Expand] Expanding ${currentType}: "${node.title}" (ID: ${node.id}, WikiID: ${node.wikipedia_id || 'none'})`);
 
             if (isPerson) {
-                const data = await fetchPersonWorks(node.title, neighborNames, wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                // Pass a longer verified extract when available so the LLM can pick evidence sentences.
+                const data = await fetchPersonWorks(node.title, neighborNames, sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 results = (data.works || []).map(w => ({ 
                     title: w.entity, 
                     type: w.type, 
                     description: w.description, 
                     year: w.year ?? undefined, 
                     role: w.role ?? undefined,
-                    is_atomic: false // Results of expanding an Atomic are always Composites (Cards)
+                    is_atomic: false, // Results of expanding an Atomic are always Composites (Cards)
+                    edge_meta: w.evidenceSnippet ? {
+                        evidence: {
+                            kind: 'ai',
+                            pageTitle: w.evidencePageTitle || node.title,
+                            snippet: w.evidenceSnippet,
+                            url: buildWikiUrl(w.evidencePageTitle || node.title)
+                        }
+                    } : null,
+                    edge_label: w.role || null
                 }));
                 console.log(`✅ [Expand] Found ${results.length} connections for atomic "${node.title}"`);
             } else {
-                const data = await fetchConnections(node.title, undefined, neighborNames, wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                // Pass a longer verified extract when available so the LLM can pick evidence sentences.
+                const data = await fetchConnections(node.title, undefined, neighborNames, sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
                 
                 // Use the atomic type identified during classification if available, else default to 'Person'
@@ -767,7 +758,16 @@ const App: React.FC = () => {
                     type: atomicTypeToUse, 
                     description: p.description, 
                     role: p.role,
-                    is_atomic: true // Force circle UI for all atomic components
+                    is_atomic: true, // Force circle UI for all atomic components
+                    edge_meta: p.evidenceSnippet ? {
+                        evidence: {
+                            kind: 'ai',
+                            pageTitle: p.evidencePageTitle || node.title,
+                            snippet: p.evidenceSnippet,
+                            url: buildWikiUrl(p.evidencePageTitle || node.title)
+                        }
+                    } : null,
+                    edge_label: p.role || null
                 }));
                 console.log(`✅ [Expand] Found ${results.length} atomic components for composite "${node.title}"`);
             }
@@ -800,20 +800,16 @@ const App: React.FC = () => {
                 // Get Wikipedia info for all results to help disambiguate
                 const resultsWithWiki = await Promise.all(results.map(async r => {
                     const rWiki = await fetchWikipediaSummary(r.title, node.title);
-                    const sourceMention = extractSentenceContaining(sourceLong, r.title);
-                    const targetMention = rWiki.extract ? extractSentenceContaining(rWiki.extract, node.title) : null;
-                    const evidence =
-                        sourceMention
-                            ? { kind: 'wikipedia' as const, pageTitle: node.title, snippet: sourceMention, url: buildWikiUrl(node.title) }
-                            : (targetMention
-                                ? { kind: 'wikipedia' as const, pageTitle: rWiki.title || r.title, snippet: targetMention, url: buildWikiUrl(rWiki.title || r.title) }
-                                : { kind: 'none' as const });
+                    // Do NOT guess evidence in the application layer. If the model didn't provide evidence,
+                    // we explicitly mark it as missing.
+                    const evidence = r.edge_meta?.evidence || { kind: 'none' as const };
+
                     return { 
                         ...r, 
                         wikipedia_id: rWiki.pageid?.toString(), 
                         description: rWiki.extract || r.description,
                         edge_meta: { evidence },
-                        edge_label: r.role || null
+                        edge_label: r.edge_label || r.role || null
                     };
                 }));
 
@@ -1893,6 +1889,13 @@ const App: React.FC = () => {
     }, [searchMode, pathStart, selectedNode, loadNodeImage, fetchAndExpandNode]);
 
     const handleLinkClick = useCallback((link: GraphLink) => {
+        try {
+            console.log("🔗 [UI] link clicked", {
+                id: link.id,
+                label: link.label,
+                evidenceKind: link.evidence?.kind
+            });
+        } catch { }
         setSelectedLink(link);
         // keep selectedNode as-is; sidebar will show evidence block
     }, []);
