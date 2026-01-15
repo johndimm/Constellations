@@ -87,6 +87,27 @@ async function ensureSchema() {
     // Edge evidence storage
     await client.query("alter table if exists edges add column if not exists meta jsonb default '{}'::jsonb");
 
+    // Edges indexes: handle old schema (person_id/event_id) and new schema (atomic_id/composite_id)
+    // Drop old indexes if they exist (safe).
+    await client.query("drop index if exists edges_person_idx");
+    await client.query("drop index if exists edges_event_idx");
+    await client.query("drop index if exists edges_atomic_idx");
+    await client.query("drop index if exists edges_composite_idx");
+    const edgeColsRes = await client.query(
+      "select column_name from information_schema.columns where table_name = 'edges' and column_name in ('atomic_id','composite_id','person_id','event_id')"
+    );
+    const edgeCols = new Set(edgeColsRes.rows.map((r: any) => r.column_name));
+    if (edgeCols.has('atomic_id')) {
+      await client.query("create index if not exists edges_atomic_idx on edges (atomic_id)");
+    } else if (edgeCols.has('person_id')) {
+      await client.query("create index if not exists edges_person_idx on edges (person_id)");
+    }
+    if (edgeCols.has('composite_id')) {
+      await client.query("create index if not exists edges_composite_idx on edges (composite_id)");
+    } else if (edgeCols.has('event_id')) {
+      await client.query("create index if not exists edges_event_idx on edges (event_id)");
+    }
+
     // Ensure saved_graphs table exists
     await client.query(`
       create table if not exists saved_graphs (
@@ -180,8 +201,6 @@ create table if not exists edges (
   unique(atomic_id, composite_id)
 );
 
-create index if not exists edges_atomic_idx on edges (atomic_id);
-create index if not exists edges_composite_idx on edges (composite_id);
 create unique index if not exists nodes_title_ltype_wiki_idx on nodes (lower(title), lower(type), wikipedia_id);
 
 create table if not exists saved_graphs (
@@ -245,11 +264,31 @@ do $$ begin
 end $$;
 `;
 
+// Backwards-compatible detection of which boolean column represents the "atomic" side.
+// Older deployments used nodes.is_person.
+let NODE_ATOMIC_COL: 'is_atomic' | 'is_person' | null = null;
+async function getNodeAtomicCol(client: pg.PoolClient): Promise<'is_atomic' | 'is_person' | null> {
+  if (NODE_ATOMIC_COL) return NODE_ATOMIC_COL;
+  try {
+    const colsRes = await client.query(
+      `select column_name from information_schema.columns where table_name = 'nodes' and column_name in ('is_atomic','is_person')`
+    );
+    const cols = new Set(colsRes.rows.map((r: any) => r.column_name));
+    if (cols.has('is_atomic')) NODE_ATOMIC_COL = 'is_atomic';
+    else if (cols.has('is_person')) NODE_ATOMIC_COL = 'is_person';
+    else NODE_ATOMIC_COL = null;
+  } catch (e) {
+    NODE_ATOMIC_COL = null;
+  }
+  return NODE_ATOMIC_COL;
+}
+
 // Upsert nodes batch and return mapping of (title, type, wikipedia_id) -> id
 async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<string, number>> {
   if (!nodes.length) return new Map();
 
   const idMap = new Map<string, number>();
+  const atomicCol = await getNodeAtomicCol(client);
 
   for (const n of nodes) {
     const meta = n.meta || {};
@@ -312,49 +351,95 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
         // Use provided is_atomic flag, or default to checking type for legacy data
         const isAtomicToKeep = n.is_atomic !== undefined ? !!n.is_atomic : (n.is_person !== undefined ? !!n.is_person : (typeToKeep && typeToKeep.toLowerCase() === 'person'));
 
-        const updateSql = `
-                update nodes set
-                  type = $1,
-                  description = coalesce($2, description),
-                  year = coalesce($3, year),
-                  meta = coalesce(meta, '{}'::jsonb) || coalesce($4, '{}'::jsonb),
-                  image_url = coalesce($5, image_url),
-                  wiki_summary = coalesce($6, wiki_summary),
-                  wikipedia_id = $8,
-                  is_atomic = $9,
-                  updated_at = now()
-                where id = $7
-             `;
-        await client.query(updateSql, [
-          typeToKeep,
-          n.description ?? null,
-          n.year ?? null,
-          meta,
-          imageUrl,
-          wikiSummary,
-          id,
-          wikiToKeep,
-          isAtomicToKeep
-        ]);
+        if (atomicCol) {
+          const updateSql = `
+                  update nodes set
+                    type = $1,
+                    description = coalesce($2, description),
+                    year = coalesce($3, year),
+                    meta = coalesce(meta, '{}'::jsonb) || coalesce($4, '{}'::jsonb),
+                    image_url = coalesce($5, image_url),
+                    wiki_summary = coalesce($6, wiki_summary),
+                    wikipedia_id = $8,
+                    ${atomicCol} = $9,
+                    updated_at = now()
+                  where id = $7
+               `;
+          await client.query(updateSql, [
+            typeToKeep,
+            n.description ?? null,
+            n.year ?? null,
+            meta,
+            imageUrl,
+            wikiSummary,
+            id,
+            wikiToKeep,
+            isAtomicToKeep
+          ]);
+        } else {
+          const updateSql = `
+                  update nodes set
+                    type = $1,
+                    description = coalesce($2, description),
+                    year = coalesce($3, year),
+                    meta = coalesce(meta, '{}'::jsonb) || coalesce($4, '{}'::jsonb),
+                    image_url = coalesce($5, image_url),
+                    wiki_summary = coalesce($6, wiki_summary),
+                    wikipedia_id = $8,
+                    updated_at = now()
+                  where id = $7
+               `;
+          await client.query(updateSql, [
+            typeToKeep,
+            n.description ?? null,
+            n.year ?? null,
+            meta,
+            imageUrl,
+            wikiSummary,
+            id,
+            wikiToKeep
+          ]);
+        }
       } else {
         // 3. INSERT new
         const isAtomic = n.is_atomic !== undefined ? !!n.is_atomic : (n.is_person !== undefined ? !!n.is_person : (n.type && n.type.toLowerCase() === 'person'));
-        const insertSql = `
-               insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary, is_atomic)
-               values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-               returning id
-             `;
-        const insertRes = await client.query(insertSql, [
-          title,
-          n.type,
-          n.description ?? null,
-          n.year ?? null,
-          meta,
-          normalizedWikiId,
-          imageUrl,
-          wikiSummary,
-          isAtomic
-        ]);
+        let insertSql: string;
+        let insertParams: any[];
+        if (atomicCol) {
+          insertSql = `
+                 insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary, ${atomicCol})
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                 returning id
+               `;
+          insertParams = [
+            title,
+            n.type,
+            n.description ?? null,
+            n.year ?? null,
+            meta,
+            normalizedWikiId,
+            imageUrl,
+            wikiSummary,
+            isAtomic
+          ];
+        } else {
+          insertSql = `
+                 insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8)
+                 returning id
+               `;
+          insertParams = [
+            title,
+            n.type,
+            n.description ?? null,
+            n.year ?? null,
+            meta,
+            normalizedWikiId,
+            imageUrl,
+            wikiSummary
+          ];
+        }
+        const insertRes = await client.query(insertSql, insertParams);
         id = insertRes.rows[0].id;
       }
 

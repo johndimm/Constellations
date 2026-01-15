@@ -50,6 +50,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
     const simulationRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
     const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
     const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
+    const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
     const [focusedNode, setFocusedNode] = useState<GraphNode | null>(null);
     const [timelineLayoutVersion, setTimelineLayoutVersion] = useState(0);
     const wasTimelineRef = useRef(isTimelineMode);
@@ -694,14 +695,25 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             linkMerged.style("display", null);
         }
 
-        // Link click handling (for evidence)
+        // Link click handling (for evidence) + hover highlight via hit-area
         if (onLinkClick) {
             const clickHandler = (event: any, d: GraphLink) => {
                 event.stopPropagation();
                 onLinkClick(d);
             };
-            linkMerged.style("cursor", "pointer").on("click", clickHandler);
-            linkHitMerged.style("cursor", "pointer").on("click", clickHandler);
+            const hoverIn = (_event: any, d: GraphLink) => setHoveredLinkId(d.id);
+            const hoverOut = () => setHoveredLinkId(null);
+
+            linkMerged
+                .style("cursor", "pointer")
+                .on("click", clickHandler)
+                .on("mouseover", hoverIn)
+                .on("mouseout", hoverOut);
+            linkHitMerged
+                .style("cursor", "pointer")
+                .on("click", clickHandler)
+                .on("mouseover", hoverIn)
+                .on("mouseout", hoverOut);
         }
 
         const nodeSel = container.selectAll<SVGGElement, GraphNode>(".node").data(nodes, d => d.id);
@@ -1260,6 +1272,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                         if (!isConnected) return 0.25;
                         return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? 0.9 : 0.4;
                     }
+                    // Hover highlight for links
+                    if (hoveredLinkId && d.id === hoveredLinkId) return 1;
                     return 0.7;
                 })
                 .style("stroke", d => {
@@ -1270,18 +1284,22 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     if (hasHighlight && pathLinkIds.has(d.id)) return "#f59e0b";
                     // Priority 2: Other links when path highlighting is active
                     if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return "#94a3b8";
+                    // Hover highlight for links
+                    if (hoveredLinkId && d.id === hoveredLinkId) return "#fbbf24";
                     // Priority 3: Focused node highlighting
                     if (effectiveFocused && (sId === effectiveFocused.id || tId === effectiveFocused.id)) return "#f97316";
                     return "#dc2626";
                 })
                 .style("stroke-width", d => {
+                    // Hover highlight for links
+                    if (hoveredLinkId && d.id === hoveredLinkId) return 6;
                     // Make path links thicker - only for links actually in the path sequence
                     if (hasHighlight && pathLinkIds.has(d.id)) return 4;
                     return 2;
                 });
         }
 
-    }, [nodes, links, isTimelineMode, hoveredNode, effectiveFocused, highlightKeepIds, highlightDropIds, isTextOnly, onNodeClick]);
+    }, [nodes, links, isTimelineMode, hoveredNode, hoveredLinkId, effectiveFocused, highlightKeepIds, highlightDropIds, isTextOnly, onNodeClick]);
 
     return (
         <svg
