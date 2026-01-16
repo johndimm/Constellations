@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Constellations — 05-evaluation-plan.md</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --card: rgba(15, 23, 42, 0.72);
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --link: #93c5fd;
+        --linkHover: #bfdbfe;
+        --border: rgba(148, 163, 184, 0.25);
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        background: radial-gradient(1200px 800px at 30% 10%, rgba(59,130,246,0.18), transparent 60%),
+                    radial-gradient(1000px 700px at 75% 30%, rgba(245,158,11,0.12), transparent 55%),
+                    var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+      a { color: var(--link); text-decoration: none; }
+      a:hover { color: var(--linkHover); text-decoration: underline; }
+      code { background: rgba(148,163,184,0.14); padding: 2px 6px; border-radius: 8px; }
+      pre { background: rgba(2,6,23,0.45); border: 1px solid var(--border); padding: 12px; border-radius: 12px; overflow: auto; }
+      h1,h2,h3 { line-height: 1.25; }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 26px 18px 70px; }
+      .nav {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 10px 14px;
+        margin: 14px 0 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .nav a { margin-right: 10px; }
+      .content {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px 18px;
+      }
+      ul { margin: 10px 0; padding-left: 20px; }
+      p { margin: 10px 0; }
+      figure { margin: 14px 0 18px; text-align: center; }
+      img {
+        max-width: 56%;
+        height: auto;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        display: block;
+        margin: 0 auto;
+      }
+      figcaption { color: var(--muted); font-size: 12px; margin-top: 6px; text-align: center; }
+      video { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border); }
+
+      /* Print-friendly: black on white, no dark backgrounds */
+      @media print {
+        :root {
+          --bg: #ffffff;
+          --card: #ffffff;
+          --text: #000000;
+          --muted: #333333;
+          --link: #000000;
+          --linkHover: #000000;
+          --border: rgba(0, 0, 0, 0.2);
+        }
+        body { background: #ffffff !important; color: #000000 !important; }
+        .nav { display: none !important; }
+        .content { border: none !important; background: #ffffff !important; }
+        a { text-decoration: underline !important; }
+        pre { background: #ffffff !important; }
+        figure { break-inside: avoid; page-break-inside: avoid; }
+        img { border: 1px solid rgba(0,0,0,0.15) !important; }
+        video { display: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="nav"><a href="./index.html">Paper Index</a> <a href="../index.html">Raw Index (HTML)</a> <a href="../../bibliography.html">Bibliography</a></div>
+      <div class="content">
+        <h1>Evaluation (Plan for a First Study)</h1>
+<p>This section outlines a mixed-method evaluation aligned with <b>low-friction, branching exploration</b> rather than accuracy alone. The goal is to evaluate whether Constellations supports recall, discovery, and sensemaking in a way that is difficult to capture with conventional “answer correctness” metrics.</p>
+<h2>Study 1: Task-based user study (qual + quant)</h2>
+<h3>Goal</h3>
+<p>Measure whether Constellations helps users:</p>
+<ul>
+<li>recall forgotten related entities,</li>
+<li>discover new adjacent entities,</li>
+<li>maintain orientation during rapid branching and backtracking,</li>
+<li>and assess connections using evidence.</li>
+</ul>
+<h3>Participants</h3>
+<ul>
+<li>Mixed expertise: casual users + a small number of domain enthusiasts (e.g., film).</li>
+</ul>
+<h3>Tasks (examples)</h3>
+<ul>
+<li><b>Recall</b>: “Start from a film/person you know. Find 5 related items you had forgotten you knew.”</li>
+<li><b>Discovery</b>: “Find 3 new films you want to watch next; explain why.”</li>
+<li><b>Frontier navigation</b>: “Keep expanding until you hit a boundary where you no longer recognize most nodes; describe what you found.”</li>
+<li><b>Evidence use</b>: “Given a surprising edge, use the evidence panel to decide whether you trust it enough to expand further.”</li>
+</ul>
+<h3>Conditions (ablation)</h3>
+<ul>
+<li>With vs without <b>edge evidence</b> (hide evidence panel).</li>
+<li>With vs without <b>bipartite enforcement</b> (optional, if a safe relaxed mode exists) or compare to a baseline interface (e.g., search + Wikipedia navigation).</li>
+</ul>
+<h3>Measures</h3>
+<ul>
+<li>Task completion (time, steps/expansions, backtracks).</li>
+<li>Self-reported recall/discovery (Likert + short explanations).</li>
+<li>Perceived orientation (NASA-TLX subset or simpler “I felt lost” scale).</li>
+<li>Evidence interaction frequency (edge clicks, “open source” clicks).</li>
+</ul>
+<h3>Qualitative prompts (examples)</h3>
+<ul>
+<li>“Describe a moment where you changed direction quickly—what triggered it?”</li>
+<li>“Describe a moment where an edge’s evidence changed your decision to explore further.”</li>
+<li>“What did the system surface that you felt was ‘on the edge’ of your memory?”</li>
+</ul>
+<h2>Study 2: Log-based / offline quality evaluation</h2>
+<h3>Goal</h3>
+<p>Assess properties of generated neighborhoods without claiming “truth”:</p>
+<ul>
+<li><b>Named-entity quality</b> (avoid generic phrases).</li>
+<li><b>Diversity</b> (avoid near-duplicates).</li>
+<li><b>Evidence availability</b> (fraction of edges with evidence snippets).</li>
+</ul>
+<h3>Sample design</h3>
+<p>Select a set of seeds across domains (films prioritized), run multiple expansions, and evaluate with:</p>
+<ul>
+<li>rater checks (human annotation),</li>
+<li>plus simple structural metrics (degree distributions; repetition).</li>
+</ul>
+<h2>Reporting “knowledge frontier”</h2>
+<p>One paper-specific contribution could be operationalizing the “frontier”:</p>
+<ul>
+<li>Track the point during exploration where a participant reports low recognition.</li>
+<li>Quantify as a function of depth/expansions and node familiarity labels.</li>
+</ul>
+      </div>
+    </div>
+  </body>
+</html>

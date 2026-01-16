@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Constellations — 04-system.md</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --card: rgba(15, 23, 42, 0.72);
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --link: #93c5fd;
+        --linkHover: #bfdbfe;
+        --border: rgba(148, 163, 184, 0.25);
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        background: radial-gradient(1200px 800px at 30% 10%, rgba(59,130,246,0.18), transparent 60%),
+                    radial-gradient(1000px 700px at 75% 30%, rgba(245,158,11,0.12), transparent 55%),
+                    var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+      a { color: var(--link); text-decoration: none; }
+      a:hover { color: var(--linkHover); text-decoration: underline; }
+      code { background: rgba(148,163,184,0.14); padding: 2px 6px; border-radius: 8px; }
+      pre { background: rgba(2,6,23,0.45); border: 1px solid var(--border); padding: 12px; border-radius: 12px; overflow: auto; }
+      h1,h2,h3 { line-height: 1.25; }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 26px 18px 70px; }
+      .nav {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 10px 14px;
+        margin: 14px 0 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .nav a { margin-right: 10px; }
+      .content {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px 18px;
+      }
+      ul { margin: 10px 0; padding-left: 20px; }
+      p { margin: 10px 0; }
+      figure { margin: 14px 0 18px; text-align: center; }
+      img {
+        max-width: 56%;
+        height: auto;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        display: block;
+        margin: 0 auto;
+      }
+      figcaption { color: var(--muted); font-size: 12px; margin-top: 6px; text-align: center; }
+      video { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border); }
+
+      /* Print-friendly: black on white, no dark backgrounds */
+      @media print {
+        :root {
+          --bg: #ffffff;
+          --card: #ffffff;
+          --text: #000000;
+          --muted: #333333;
+          --link: #000000;
+          --linkHover: #000000;
+          --border: rgba(0, 0, 0, 0.2);
+        }
+        body { background: #ffffff !important; color: #000000 !important; }
+        .nav { display: none !important; }
+        .content { border: none !important; background: #ffffff !important; }
+        a { text-decoration: underline !important; }
+        pre { background: #ffffff !important; }
+        figure { break-inside: avoid; page-break-inside: avoid; }
+        img { border: 1px solid rgba(0,0,0,0.15) !important; }
+        video { display: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="nav"><a href="./index.html">Paper Index</a> <a href="../index.html">Raw Index (HTML)</a> <a href="../../bibliography.html">Bibliography</a></div>
+      <div class="content">
+        <h1>System</h1>
+<h2>Overview</h2>
+<p>Constellations is an interactive graph explorer that constructs a small, local graph from a user query and supports repeated expansion. The system enforces a bipartite alternation constraint:</p>
+<ul>
+<li><b>Atomic nodes</b>: individual entities or elementary concepts (e.g., Person, Ingredient, Symptom, Player).</li>
+<li><b>Composite nodes</b>: aggregations, works, events, groups, conditions, or other “meeting-like” constructs that connect multiple atomics (e.g., Movie, Recipe, Disease, Team, Historical Event/Incident).</li>
+</ul>
+<p>The UI encodes this alternation with distinct visual forms (e.g., circles vs cards) while keeping interactions consistent across domains.</p>
+<h2>Data flow (high level)</h2>
+<p>1. <b>User query</b>: user enters a seed entity.</p>
+<p>2. <b>Context retrieval</b>: fetch lightweight context (e.g., Wikipedia summary) to help disambiguation and mitigate model knowledge gaps.</p>
+<p>3. <b>Type classification</b>: determine whether the seed is Atomic or Composite and identify the bipartite pair labels (AtomicType↔CompositeType).</p>
+<p>4. <b>Expansion</b>: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition.</p>
+<p>5. <b>Evidence attachment</b>: each proposed neighbor includes an evidence snippet + page title; selecting an edge reveals the evidence (“why is this connected?”).</p>
+<p>6. <b>Caching</b>: store nodes and edges (with evidence) in a database to reduce repeated calls and support persistence.</p>
+<h2>Bipartite constraint and “events as meetings”</h2>
+<p>The original domain (people↔events) is motivated by an event-centric view: an event is any construct that brings multiple people into relation. This framing generalizes naturally to other domains by choosing a Composite that aggregates multiple Atomics and for which the inverse membership relation is meaningful (e.g., actors in films; ingredients in recipes).</p>
+<h2>Evidence-backed edges</h2>
+<p>Each edge carries structured evidence:</p>
+<ul>
+<li><b>kind</b>: currently “ai” (LLM-provided) or “none”</li>
+<li><b>snippet</b>: one sentence</li>
+<li><b>pageTitle + url</b>: where the snippet is claimed to come from (typically a Wikipedia page)</li>
+</ul>
+<p>Selecting an edge displays this evidence in the sidebar. The goal is not to “prove” an edge, but to support interpretability and user judgment during exploration.</p>
+<h2>Figures (screenshots)</h2>
+<p>The experience is dynamic (the graph reconfigures as nodes are added; users can drag nodes to reshape local structure). A few static screenshots help convey the interaction model:</p>
+<p>In Figure 1, expanding a composite (film) reveals connected atomic entities (people) and supporting evidence.</p>
+<figure><img src="/godfather-brando.png" alt="Figure 1. The Godfather expansion (screenshot)" /><figcaption>Figure 1. The Godfather expansion (screenshot)</figcaption></figure>
+<p>Figure 2 illustrates the timeline view, where temporal metadata provides a second organizing lens alongside the network layout.</p>
+<figure><img src="/godfather-timeline.png" alt="Figure 2. Timeline view example (screenshot)" /><figcaption>Figure 2. Timeline view example (screenshot)</figcaption></figure>
+<p>Figure 3 shows a path-seeking example: finding a bipartite path between two entities.</p>
+<figure><img src="/John%20Von%20Neumann%20to%20Geoffrey%20Hinton.png" alt="Figure 3. Path-seeking example (screenshot)" /><figcaption>Figure 3. Path-seeking example (screenshot)</figcaption></figure>
+<p>Figure 4 shows the people browser used to seed exploration.</p>
+<figure><img src="/people.png" alt="Figure 4. Browse People (screenshot)" /><figcaption>Figure 4. Browse People (screenshot)</figcaption></figure>
+<h3>Cross-domain examples (Atomic↔Composite generalization)</h3>
+<p>Figures 5–7 show the same interaction model applied across domains.</p>
+<figure><img src="/beef.png" alt="Figure 5. Culinary: Beef (screenshot)" /><figcaption>Figure 5. Culinary: Beef (screenshot)</figcaption></figure>
+<figure><img src="/LeBron%20James.png" alt="Figure 6. Sports: LeBron James (screenshot)" /><figcaption>Figure 6. Sports: LeBron James (screenshot)</figcaption></figure>
+<figure><img src="/sore%20throat.png" alt="Figure 7. Medicine: Sore Throat (screenshot)" /><figcaption>Figure 7. Medicine: Sore Throat (screenshot)</figcaption></figure>
+<p>For motion, the repo includes a short demo video: <code>/demo.mp4</code>.</p>
+<h3>Demo video (in-browser)</h3>
+<p>The embedded video can render as a black frame in some contexts, so we include a representative still frame instead:</p>
+<figure><img src="/demo-frame.png" alt="Figure 8. Demo frame (click through to watch the video)" /><figcaption>Figure 8. Demo frame (click through to watch the video)</figcaption></figure>
+<p><a href="/demo.mp4">Watch the demo video</a></p>
+<h2>Interaction design: low-friction branching</h2>
+<p>Constellations is optimized for low commitment per step:</p>
+<ul>
+<li>expanding a node is a single click,</li>
+<li>backing up (choosing a different node) is immediate,</li>
+<li>bulk operations allow quick frontier growth (e.g., expand all leaf/frontier nodes across the whole graph).</li>
+</ul>
+<p>This interaction model encourages “try and see” exploration, where users do not need to decide a path “once and for all.”</p>
+<h2>Caching and persistence</h2>
+<p>To keep exploration responsive and reduce repeated API calls, Constellations caches:</p>
+<ul>
+<li><b>nodes</b> (title, type, summaries, images, and classification metadata), and</li>
+<li><b>edges</b> (role/label and evidence metadata).</li>
+</ul>
+<p>Caching supports repeated browsing, saving/loading graphs, and revisiting a previously explored frontier with evidence intact.</p>
+<h2>Implementation notes (to expand later)</h2>
+<ul>
+<li><b>Graph rendering</b>: force-directed layout with interaction primitives (hover highlight, edge selection).</li>
+<li><b>Expansion strategy</b>: request a bounded number of neighbors (8–10) to keep the interface comprehensible.</li>
+<li><b>Guardrails</b>: enforce named-entity outputs and require per-edge evidence in the LLM schema to improve interpretability.</li>
+<li><b>Failure modes</b>: ambiguity, generic outputs, and recency; mitigations include context-first classification and evidence requirements.</li>
+</ul>
+<h2>Implementation notes (to expand later)</h2>
+<ul>
+<li>Graph rendering and interaction model (click/hover, progressive expansion).</li>
+<li>Schema/caching (nodes, edges, evidence stored in edge metadata).</li>
+<li>Failure modes (ambiguity, generic outputs, recency) and mitigations (context-first classification; strict output schema; evidence requirement).</li>
+</ul>
+      </div>
+    </div>
+  </body>
+</html>

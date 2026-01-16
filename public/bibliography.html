@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Constellations — Reading List / Bibliography</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --card: rgba(15, 23, 42, 0.7);
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --link: #93c5fd;
+        --linkHover: #bfdbfe;
+        --border: rgba(148, 163, 184, 0.25);
+      }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        background: radial-gradient(1200px 800px at 30% 10%, rgba(59,130,246,0.18), transparent 60%),
+                    radial-gradient(1000px 700px at 75% 30%, rgba(245,158,11,0.12), transparent 55%),
+                    var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+      }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 32px 18px 60px; }
+      h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: 0.2px; }
+      .sub { color: var(--muted); margin: 0 0 18px; }
+      .note {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin: 18px 0 26px;
+      }
+      .note b { color: #fbbf24; }
+      h2 { margin: 28px 0 10px; font-size: 18px; }
+      h3 { margin: 18px 0 8px; font-size: 14px; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.08em; }
+      ul { margin: 10px 0 0; padding: 0 0 0 18px; }
+      li { margin: 10px 0; }
+      a { color: var(--link); text-decoration: none; }
+      a:hover { color: var(--linkHover); text-decoration: underline; }
+      .entry-title { font-weight: 700; }
+      .meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
+      code { background: rgba(148,163,184,0.14); padding: 2px 6px; border-radius: 8px; }
+      .pillrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--border);
+        background: rgba(2,6,23,0.35);
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        color: #cbd5e1;
+      }
+      .footer { margin-top: 34px; color: var(--muted); font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Constellations — Reading List / Bibliography</h1>
+      <p class="sub">
+        A browsable starter bibliography for an HCI / InfoVis paper on <b>knowledge wandering</b>,
+        interactive graph exploration, and evidence/provenance.
+      </p>
+
+      <div class="note">
+        <div><b>Tip:</b> some publisher links may be paywalled; when available, prefer arXiv/preprint/PDF mirrors.</div>
+        <div class="meta">This list is intentionally broad so you can explore adjacent literature.</div>
+      </div>
+
+      <h2>Sensemaking, “knowledge wandering”, and interactive visualization</h2>
+      <ul>
+        <li>
+          <div class="entry-title">Heer, J., &amp; Shneiderman, B. (2012). Interactive Dynamics for Visual Analysis.</div>
+          <div class="pillrow">
+            <span class="pill">interaction patterns</span>
+            <span class="pill">InfoVis</span>
+          </div>
+          <div class="meta">
+            Link: <a href="https://idl.cs.washington.edu/papers/interactive-dynamics/" target="_blank" rel="noopener noreferrer">paper page</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Brehmer, M., &amp; Munzner, T. (2013). A Multi-Level Typology of Abstract Visualization Tasks.</div>
+          <div class="pillrow">
+            <span class="pill">task taxonomy</span>
+            <span class="pill">evaluation framing</span>
+          </div>
+          <div class="meta">
+            DOI: <a href="https://doi.org/10.1109/TVCG.2013.124" target="_blank" rel="noopener noreferrer">10.1109/TVCG.2013.124</a>
+            · IEEE: <a href="https://ieeexplore.ieee.org/document/6291665" target="_blank" rel="noopener noreferrer">ieeexplore</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Pirolli, P., &amp; Card, S. (2005). The Sensemaking Process and Leverage Points for Analyst Technology.</div>
+          <div class="pillrow">
+            <span class="pill">sensemaking loop</span>
+            <span class="pill">analysis workflow</span>
+          </div>
+          <div class="meta">
+            Link: <a href="https://www.researchgate.net/publication/228797476_The_sensemaking_process_and_leverage_points_for_analyst_technology" target="_blank" rel="noopener noreferrer">accessible copy (ResearchGate)</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Munzner, T. (2014). Visualization Analysis &amp; Design.</div>
+          <div class="pillrow">
+            <span class="pill">design framework</span>
+            <span class="pill">InfoVis</span>
+          </div>
+          <div class="meta">
+            Link: <a href="https://www.cs.ubc.ca/~tmm/vadbook/" target="_blank" rel="noopener noreferrer">book site</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">GuidelineExplorer (2024). Actionable Guidelines for Node-Link Visualizations.</div>
+          <div class="pillrow">
+            <span class="pill">node-link guidelines</span>
+            <span class="pill">graph readability</span>
+          </div>
+          <div class="meta">
+            arXiv: <a href="https://arxiv.org/abs/2406.05558" target="_blank" rel="noopener noreferrer">2406.05558</a>
+          </div>
+        </li>
+      </ul>
+
+      <h2>Knowledge graphs &amp; entity linking (ground truth / disambiguation)</h2>
+      <ul>
+        <li>
+          <div class="entry-title">Vrandečić, D., &amp; Krötzsch, M. (2014). Wikidata: A Free Collaborative Knowledge Base.</div>
+          <div class="pillrow">
+            <span class="pill">Wikidata</span>
+            <span class="pill">knowledge base</span>
+          </div>
+          <div class="meta">
+            DOI: <a href="https://doi.org/10.1145/2629489.2629492" target="_blank" rel="noopener noreferrer">10.1145/2629489.2629492</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Auer, S., Bizer, C., Kobilarov, G., Lehmann, J., Cyganiak, R., &amp; Ives, Z. (2007). DBpedia: A Nucleus for a Web of Open Data.</div>
+          <div class="pillrow">
+            <span class="pill">DBpedia</span>
+            <span class="pill">linked data</span>
+          </div>
+          <div class="meta">
+            DOI: <a href="https://doi.org/10.1007/978-3-540-76298-0_52" target="_blank" rel="noopener noreferrer">10.1007/978-3-540-76298-0_52</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Mendes, P. N., Jakob, M., García-Silva, A., &amp; Bizer, C. (2011). DBpedia Spotlight: Shedding Light on the Web of Documents.</div>
+          <div class="pillrow">
+            <span class="pill">entity linking</span>
+            <span class="pill">Wikification</span>
+          </div>
+          <div class="meta">
+            DOI: <a href="https://doi.org/10.1145/2063576.2063582" target="_blank" rel="noopener noreferrer">10.1145/2063576.2063582</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Hoffart, J., Suchanek, F. M., Berberich, K., &amp; Weikum, G. (2011). YAGO2: A Spatially and Temporally Enhanced Knowledge Base from Wikipedia.</div>
+          <div class="pillrow">
+            <span class="pill">Wikipedia-derived KB</span>
+            <span class="pill">time + space</span>
+          </div>
+          <div class="meta">
+            DOI: <a href="https://doi.org/10.1145/1989323.1989346" target="_blank" rel="noopener noreferrer">10.1145/1989323.1989346</a>
+          </div>
+        </li>
+      </ul>
+
+      <h2>Atomic vs Composite (closest prior framings) + bipartite “two-mode” graphs</h2>
+      <p class="sub">
+        Your Atomic↔Composite split is a practical UI/interaction constraint. Prior work typically uses different names:
+        <b>actor↔event</b> (cultural heritage / museum ontologies), <b>continuant↔occurrent</b> (upper ontologies),
+        and <b>two-mode / affiliation networks</b> (social network analysis).
+      </p>
+      <ul>
+        <li>
+          <div class="entry-title">CIDOC CRM (ISO 21127) — event-centric cultural heritage ontology (Actor/Event modeling).</div>
+          <div class="pillrow">
+            <span class="pill">museum informatics</span>
+            <span class="pill">event-centric modeling</span>
+            <span class="pill">actor ↔ event</span>
+          </div>
+          <div class="meta">
+            Spec / site: <a href="https://cidoc-crm.org/" target="_blank" rel="noopener noreferrer">cidoc-crm.org</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Stead, S. (2008). CIDOC CRM Tutorial (slides) — includes “Historical events as meetings”.</div>
+          <div class="pillrow">
+            <span class="pill">event-centric modeling</span>
+            <span class="pill">people ↔ events</span>
+            <span class="pill">museum informatics</span>
+          </div>
+          <div class="meta">
+            Slide deck: <a href="https://www.slideshare.net/slideshow/cidoccrmtutorialorigppt/254963731" target="_blank" rel="noopener noreferrer">CIDOC CRM Tutorial (SlideShare)</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Basic Formal Ontology (BFO) — “continuants” vs “occurrents” (things vs happenings/events).</div>
+          <div class="pillrow">
+            <span class="pill">upper ontology</span>
+            <span class="pill">continuant ↔ occurrent</span>
+          </div>
+          <div class="meta">
+            Site: <a href="https://basic-formal-ontology.org/" target="_blank" rel="noopener noreferrer">basic-formal-ontology.org</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Two-mode / affiliation networks — classic bipartite modeling in social network analysis.</div>
+          <div class="pillrow">
+            <span class="pill">two-mode networks</span>
+            <span class="pill">bipartite graphs</span>
+            <span class="pill">people ↔ events</span>
+          </div>
+          <div class="meta">
+            Practical visualization tool (supports 2-mode networks): <a href="http://vlado.fmf.uni-lj.si/pub/networks/pajek/" target="_blank" rel="noopener noreferrer">Pajek</a>
+            (widely used in SNA; includes 2-mode network operations and visualization).
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Borgatti, S. P. (c. 1990s–2000s). Network Analysis of Two-Mode Data.</div>
+          <div class="pillrow">
+            <span class="pill">two-mode networks</span>
+            <span class="pill">affiliation networks</span>
+            <span class="pill">methods</span>
+          </div>
+          <div class="meta">
+            PDF: <a href="https://www.researchgate.net/profile/Stephen-Borgatti/publication/222212892_Network_Analysis_of_Two_Mode_Data/links/5a0df27d45851541b7079ee9/Network-Analysis-of-Two-Mode-Data.pdf" target="_blank" rel="noopener noreferrer">Network Analysis of Two-Mode Data (ResearchGate)</a>
+            <span class="meta">· Useful for motivating bipartite-specific ranking/weighting (e.g., avoid projection artifacts) without making causal claims.</span>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Faust, K. (2005). Using Correspondence Analysis for Joint Displays of Affiliation Networks.</div>
+          <div class="pillrow">
+            <span class="pill">joint display</span>
+            <span class="pill">2D embedding</span>
+            <span class="pill">affiliation networks</span>
+          </div>
+          <div class="meta">
+            PDF: <a href="https://sites.socsci.uci.edu/~kfaust/faust/research/articles/faust_correspondence_analysis_2005.pdf" target="_blank" rel="noopener noreferrer">faust_correspondence_analysis_2005.pdf</a>
+            <span class="meta">· Directly relevant to “map-like wandering”: places actors and events in a shared space via correspondence analysis and discusses what “near” means.</span>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Snijders, T. A. B. (2025). Two-mode Network Dynamics (slides/notes).</div>
+          <div class="pillrow">
+            <span class="pill">definitions</span>
+            <span class="pill">two-mode networks</span>
+            <span class="pill">dynamics (background)</span>
+          </div>
+          <div class="meta">
+            PDF: <a href="https://www.stats.ox.ac.uk/~snijders/siena/Twomode_s.pdf" target="_blank" rel="noopener noreferrer">Twomode_s.pdf</a>
+            <span class="meta">· Mostly relevant for standard terminology and bipartite structures (e.g., 4-cycles). The SAOM/dynamics machinery assumes access to a global observed two-mode matrix, which differs from Constellations’ LLM-generated, local exploration setting.</span>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Two-mode / affiliation networks (reference PDF: socnet07.pdf).</div>
+          <div class="pillrow">
+            <span class="pill">two-mode networks</span>
+            <span class="pill">affiliation networks</span>
+            <span class="pill">bipartite</span>
+          </div>
+          <div class="meta">
+            PDF: <a href="https://www.complexnetworks.fr/wp-content/uploads/2011/01/socnet07.pdf" target="_blank" rel="noopener noreferrer">socnet07.pdf</a>
+            <span class="meta">· Note: metadata/title extraction is unclear; treat as a “lead” and we can replace with a canonical citation once identified.</span>
+          </div>
+        </li>
+      </ul>
+
+      <h2>LLMs, structured outputs, and retrieval (positioning Constellations)</h2>
+      <ul>
+        <li>
+          <div class="entry-title">Lewis, P. et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks.</div>
+          <div class="pillrow">
+            <span class="pill">RAG</span>
+            <span class="pill">retrieval + generation</span>
+          </div>
+          <div class="meta">
+            arXiv: <a href="https://arxiv.org/abs/2005.11401" target="_blank" rel="noopener noreferrer">2005.11401</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Beurer-Kellner, L. et al. (2022). LMQL: A Programming Language for Prompting LLMs.</div>
+          <div class="pillrow">
+            <span class="pill">constraints</span>
+            <span class="pill">structured generation</span>
+          </div>
+          <div class="meta">
+            arXiv: <a href="https://arxiv.org/abs/2212.06094" target="_blank" rel="noopener noreferrer">2212.06094</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Microsoft GraphRAG (tooling / reference implementation).</div>
+          <div class="pillrow">
+            <span class="pill">GraphRAG</span>
+            <span class="pill">retrieval + graph</span>
+          </div>
+          <div class="meta">
+            Repo: <a href="https://github.com/microsoft/graphrag" target="_blank" rel="noopener noreferrer">github.com/microsoft/graphrag</a>
+          </div>
+        </li>
+      </ul>
+
+      <h2>Provenance, evidence, and “why is this connected?”</h2>
+      <ul>
+        <li>
+          <div class="entry-title">Ragan, E. D., Endert, A., Sanyal, J., &amp; Chen, J. (2016). Characterizing Provenance in Visualization and Data Analysis: An Organizational Framework of Provenance Types and Purposes.</div>
+          <div class="pillrow">
+            <span class="pill">provenance</span>
+            <span class="pill">trust</span>
+          </div>
+          <div class="meta">
+            IEEE: <a href="https://ieeexplore.ieee.org/document/7192665" target="_blank" rel="noopener noreferrer">ieeexplore</a>
+          </div>
+        </li>
+
+        <li>
+          <div class="entry-title">Freire, J., Silva, C. T., Callahan, S. P., Santos, E., Scheidegger, C. E., &amp; Vo, H. T. (2006). Managing Rapidly-Evolving Scientific Workflows.</div>
+          <div class="pillrow">
+            <span class="pill">workflow provenance</span>
+            <span class="pill">lineage</span>
+          </div>
+          <div class="meta">
+            DOI: <a href="https://doi.org/10.1145/1081870.1081885" target="_blank" rel="noopener noreferrer">10.1145/1081870.1081885</a>
+          </div>
+        </li>
+      </ul>
+
+      <div class="footer">
+        Want more? Tell the assistant your target venue (CHI / VIS / EuroVis / UIST) and we can expand this list with
+        paper-appropriate, recent LLM→graph extraction and explanation/provenance citations.
+      </div>
+    </div>
+  </body>
+</html>
+

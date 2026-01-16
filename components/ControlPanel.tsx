@@ -14,6 +14,7 @@ interface ControlPanelProps {
   onSearch: (term: string) => void;
   onPathSearch: (start: string, end: string) => void;
   onClear: () => void;
+  onExpandAllLeafNodes?: () => void;
   isProcessing: boolean;
   isCompact: boolean;
   onToggleCompact: () => void;
@@ -48,6 +49,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onSearch,
   onPathSearch,
   onClear,
+  onExpandAllLeafNodes,
   isProcessing,
   isCompact,
   onToggleCompact,
@@ -223,6 +225,17 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             >
               <Trash2 size={14} /> CLEAR
             </button>
+
+            {onExpandAllLeafNodes && (
+              <button
+                onClick={onExpandAllLeafNodes}
+                disabled={isProcessing}
+                className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-emerald-300 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed`}
+                title="Expand all unexpanded nodes anywhere in the graph (leaf/frontier expansion)"
+              >
+                <Maximize size={14} className="text-emerald-400" /> EXPAND LEAVES
+              </button>
+            )}
           </div>
           <div className="flex flex-wrap gap-2 mb-3 text-xs">
             <button
@@ -380,6 +393,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   <li><strong>Timeline:</strong> View events and lives across the river of time.</li>
                 </ul>
                 <div className="pt-2 border-t border-slate-700 flex flex-col gap-2">
+                  <a
+                    href="/paper/rendered/paper.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-slate-200 hover:text-white transition-colors font-medium"
+                  >
+                    <LinkIcon size={14} /> Read the paper (draft)
+                  </a>
                   <a
                     href="https://www.linkedin.com/in/johndimm/"
                     target="_blank"

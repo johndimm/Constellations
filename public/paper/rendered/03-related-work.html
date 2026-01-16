@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Constellations — 03-related-work.md</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --card: rgba(15, 23, 42, 0.72);
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --link: #93c5fd;
+        --linkHover: #bfdbfe;
+        --border: rgba(148, 163, 184, 0.25);
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        background: radial-gradient(1200px 800px at 30% 10%, rgba(59,130,246,0.18), transparent 60%),
+                    radial-gradient(1000px 700px at 75% 30%, rgba(245,158,11,0.12), transparent 55%),
+                    var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+      a { color: var(--link); text-decoration: none; }
+      a:hover { color: var(--linkHover); text-decoration: underline; }
+      code { background: rgba(148,163,184,0.14); padding: 2px 6px; border-radius: 8px; }
+      pre { background: rgba(2,6,23,0.45); border: 1px solid var(--border); padding: 12px; border-radius: 12px; overflow: auto; }
+      h1,h2,h3 { line-height: 1.25; }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 26px 18px 70px; }
+      .nav {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 10px 14px;
+        margin: 14px 0 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .nav a { margin-right: 10px; }
+      .content {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px 18px;
+      }
+      ul { margin: 10px 0; padding-left: 20px; }
+      p { margin: 10px 0; }
+      figure { margin: 14px 0 18px; text-align: center; }
+      img {
+        max-width: 56%;
+        height: auto;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        display: block;
+        margin: 0 auto;
+      }
+      figcaption { color: var(--muted); font-size: 12px; margin-top: 6px; text-align: center; }
+      video { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border); }
+
+      /* Print-friendly: black on white, no dark backgrounds */
+      @media print {
+        :root {
+          --bg: #ffffff;
+          --card: #ffffff;
+          --text: #000000;
+          --muted: #333333;
+          --link: #000000;
+          --linkHover: #000000;
+          --border: rgba(0, 0, 0, 0.2);
+        }
+        body { background: #ffffff !important; color: #000000 !important; }
+        .nav { display: none !important; }
+        .content { border: none !important; background: #ffffff !important; }
+        a { text-decoration: underline !important; }
+        pre { background: #ffffff !important; }
+        figure { break-inside: avoid; page-break-inside: avoid; }
+        img { border: 1px solid rgba(0,0,0,0.15) !important; }
+        video { display: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="nav"><a href="./index.html">Paper Index</a> <a href="../index.html">Raw Index (HTML)</a> <a href="../../bibliography.html">Bibliography</a></div>
+      <div class="content">
+        <h1>Related Work</h1>
+<p>Constellations sits at the intersection of (1) sensemaking-oriented visualization and interactive graph exploration, (2) two-mode / affiliation networks and event-centric modeling, and (3) LLM-mediated interfaces that must communicate uncertainty and evidence. We briefly summarize relevant foundations and highlight how Constellations differs in scope: it emphasizes <b>low-friction exploratory navigation</b> and <b>edge-level interpretability</b> in an open-world setting, rather than statistical inference over a fully observed two-mode matrix.</p>
+<h2>Sensemaking and exploratory visualization</h2>
+<p>Classic work on sensemaking characterizes analysis as an iterative process of foraging, externalizing structure, and revising hypotheses. This perspective motivates interfaces that make it cheap to “try a move,” inspect the result, and backtrack. In InfoVis, interaction models for exploration and task taxonomies provide a language for describing what users do (e.g., search, browse, compare, derive) and for structuring evaluations beyond accuracy.</p>
+<p>In this frame, Constellations targets tasks that are often under-emphasized in search-centric evaluation: recall, discovery, and orientation during iterative branching. The system’s bipartite constraint can be viewed as a design mechanism for reducing cognitive load: it narrows the space of possible moves (“expand to the other side”) while remaining expressive across domains.</p>
+<h2>Graph exploration interfaces and node-link visualization guidelines</h2>
+<p>Node-link diagrams enable intuitive local reasoning (“what connects to what?”), but scale poorly without interaction, filtering, and progressive disclosure. Design guidance for node-link diagrams emphasizes readability, avoidance of “hairballs,” and interaction techniques (hover, highlight, selection, focus+context). Constellations embraces progressive disclosure by default: the graph is small and local, and growth is explicitly user-driven through expansion (including bulk expansion of frontier nodes).</p>
+<h2>Two-mode / affiliation networks (bipartite graphs)</h2>
+<p>Two-mode (bipartite) networks are a long-standing model for situations where actors participate in events or belong to groups. Canonical examples include actors↔movies, authors↔papers, boards↔companies, and other membership/affiliation structures. A key methodological lesson is that naively projecting a bipartite network into one mode (e.g., actor–actor) can introduce artifacts; bipartite structure deserves analysis and visualization in its own right.</p>
+<p>Constellations adopts bipartiteness not primarily as an analytic device, but as an interaction constraint that simplifies exploration: each step alternates between atomic and composite nodes. Joint spatial displays of affiliation networks (e.g., correspondence-analysis-style embeddings) also provide an important precedent for “map-like” knowledge exploration and inform a future direction of large-scale knowledge cartography.</p>
+<h2>Event-centric modeling in cultural heritage and museums</h2>
+<p>Event-centric cultural heritage modeling emphasizes events as the connective tissue that relates people, places, objects, and documents. The “historical events as meetings” framing aligns strongly with Constellations’ original person↔event concept: an event is any construct that brings multiple people into relation. Constellations generalizes this idea across domains by letting the system infer an appropriate Atomic↔Composite pairing for a seed term.</p>
+<h2>LLMs, structured outputs, and evidence/provenance</h2>
+<p>LLM-based interfaces face a core tension: generative flexibility enables broad coverage, but users need interpretable reasons for what the system shows. Work on provenance and evidence in visualization motivates making “why is this here?” a first-class interaction. Constellations operationalizes this at the edge level: edges carry evidence snippets and a source link, and the UI exposes evidence on selection. This supports user judgment in a low-friction exploration loop without claiming causal conclusions.</p>
+<h2>Constellations’ positioning (one paragraph to write later)</h2>
+<p>Constellations differs from prior bipartite/affiliation network work in that it is <b>open-world</b> and <b>interactive-first</b>: the graph is constructed locally on demand from natural language queries, and the system emphasizes interpretability via evidence-backed edges rather than statistical inference over a fully observed two-mode matrix. It also differs from static knowledge graph browsers in that the system can adapt its bipartite pairing across domains while maintaining a consistent interaction model.</p>
+      </div>
+    </div>
+  </body>
+</html>

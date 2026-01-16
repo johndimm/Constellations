@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Constellations — 07-references.md</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --card: rgba(15, 23, 42, 0.72);
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --link: #93c5fd;
+        --linkHover: #bfdbfe;
+        --border: rgba(148, 163, 184, 0.25);
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        background: radial-gradient(1200px 800px at 30% 10%, rgba(59,130,246,0.18), transparent 60%),
+                    radial-gradient(1000px 700px at 75% 30%, rgba(245,158,11,0.12), transparent 55%),
+                    var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+      a { color: var(--link); text-decoration: none; }
+      a:hover { color: var(--linkHover); text-decoration: underline; }
+      code { background: rgba(148,163,184,0.14); padding: 2px 6px; border-radius: 8px; }
+      pre { background: rgba(2,6,23,0.45); border: 1px solid var(--border); padding: 12px; border-radius: 12px; overflow: auto; }
+      h1,h2,h3 { line-height: 1.25; }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 26px 18px 70px; }
+      .nav {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 10px 14px;
+        margin: 14px 0 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .nav a { margin-right: 10px; }
+      .content {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px 18px;
+      }
+      ul { margin: 10px 0; padding-left: 20px; }
+      p { margin: 10px 0; }
+      figure { margin: 14px 0 18px; text-align: center; }
+      img {
+        max-width: 56%;
+        height: auto;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        display: block;
+        margin: 0 auto;
+      }
+      figcaption { color: var(--muted); font-size: 12px; margin-top: 6px; text-align: center; }
+      video { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border); }
+
+      /* Print-friendly: black on white, no dark backgrounds */
+      @media print {
+        :root {
+          --bg: #ffffff;
+          --card: #ffffff;
+          --text: #000000;
+          --muted: #333333;
+          --link: #000000;
+          --linkHover: #000000;
+          --border: rgba(0, 0, 0, 0.2);
+        }
+        body { background: #ffffff !important; color: #000000 !important; }
+        .nav { display: none !important; }
+        .content { border: none !important; background: #ffffff !important; }
+        a { text-decoration: underline !important; }
+        pre { background: #ffffff !important; }
+        figure { break-inside: avoid; page-break-inside: avoid; }
+        img { border: 1px solid rgba(0,0,0,0.15) !important; }
+        video { display: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="nav"><a href="./index.html">Paper Index</a> <a href="../index.html">Raw Index (HTML)</a> <a href="../../bibliography.html">Bibliography</a></div>
+      <div class="content">
+        <h1>References (Working List)</h1>
+<p>This is a lightweight, link-forward reference list for the “printable snapshot.” For the evolving bibliography, see <code>../bibliography.html</code>.</p>
+<h2>Visualization / sensemaking</h2>
+<ul>
+<li>Heer, J., & Shneiderman, B. (2012). *Interactive Dynamics for Visual Analysis*. <code>https://idl.cs.washington.edu/papers/interactive-dynamics/</code></li>
+<li>Brehmer, M., & Munzner, T. (2013). *A Multi-Level Typology of Abstract Visualization Tasks*. DOI: <code>https://doi.org/10.1109/TVCG.2013.124</code></li>
+</ul>
+<h2>Two-mode / affiliation networks (bipartite)</h2>
+<ul>
+<li>Borgatti, S. P. *Network Analysis of Two-Mode Data* (PDF). <code>https://www.researchgate.net/profile/Stephen-Borgatti/publication/222212892_Network_Analysis_of_Two_Mode_Data/links/5a0df27d45851541b7079ee9/Network-Analysis-of-Two-Mode-Data.pdf</code></li>
+<li>Faust, K. (2005). *Using Correspondence Analysis for Joint Displays of Affiliation Networks* (PDF). <code>https://sites.socsci.uci.edu/~kfaust/faust/research/articles/faust_correspondence_analysis_2005.pdf</code></li>
+<li>CIDOC CRM Tutorial (Stead, 2008) — includes “Historical events as meetings”. <code>https://www.slideshare.net/slideshow/cidoccrmtutorialorigppt/254963731</code></li>
+<li>CIDOC CRM (site/spec). <code>https://cidoc-crm.org/</code></li>
+</ul>
+<h2>Knowledge graphs + retrieval</h2>
+<ul>
+<li>Vrandečić, D., & Krötzsch, M. (2014). *Wikidata: A Free Collaborative Knowledge Base*. DOI: <code>https://doi.org/10.1145/2629489.2629492</code></li>
+<li>Auer, S., et al. (2007). *DBpedia: A Nucleus for a Web of Open Data*. DOI: <code>https://doi.org/10.1007/978-3-540-76298-0_52</code></li>
+<li>Lewis, P., et al. (2020). *Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks*. arXiv: <code>https://arxiv.org/abs/2005.11401</code></li>
+</ul>
+      </div>
+    </div>
+  </body>
+</html>

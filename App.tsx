@@ -1832,6 +1832,82 @@ const App: React.FC = () => {
         }
     }, [fetchAndExpandNode]);
 
+    const [isExpandingAllLeaves, setIsExpandingAllLeaves] = useState(false);
+
+    const handleExpandAllLeafNodes = useCallback(async () => {
+        if (isExpandingAllLeaves) return;
+        try {
+            setIsExpandingAllLeaves(true);
+            const currentLinks = graphDataRef.current.links;
+            const currentNodes = graphDataRef.current.nodes;
+
+            // "Leaf" here means a frontier node: present in the graph but not yet expanded.
+            // (This matches the mental model: expand the boundary everywhere.)
+            const degree = new Map<number, number>();
+            currentLinks.forEach(l => {
+                const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+                const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+                degree.set(s, (degree.get(s) || 0) + 1);
+                degree.set(t, (degree.get(t) || 0) + 1);
+            });
+
+            const frontier = currentNodes
+                .filter(n => (degree.get(n.id) || 0) > 0)
+                .filter(n => !n.expanded && !n.isLoading);
+
+            if (frontier.length === 0) {
+                setNotification({ message: "No unexpanded nodes in the graph.", type: 'error' });
+                return;
+            }
+
+            // Safety cap: large global expansions can overwhelm the UI/LLM.
+            // Users can press the button multiple times to continue.
+            const MAX_PER_RUN = 40;
+            const toExpand = frontier.slice(0, MAX_PER_RUN);
+            const remaining = frontier.length - toExpand.length;
+
+            setNotification({
+                message: `Expanding ${toExpand.length} leaf nodes${remaining > 0 ? ` (and ${remaining} more remaining)…` : '…'}`,
+                type: 'success'
+            });
+
+            let done = 0;
+            for (const target of toExpand) {
+                const latestNodes = graphDataRef.current.nodes;
+                const nodeToExpand = latestNodes.find(n => n.id === target.id);
+                if (!nodeToExpand || nodeToExpand.expanded || nodeToExpand.isLoading) continue;
+
+                try {
+                    // Expand in the background without stealing selection/highlight.
+                    await fetchAndExpandNode(nodeToExpand, false, false, undefined, undefined, true, true);
+                } catch (e) {
+                    console.error(`Failed to expand node ${target.id} (${target.title})`, e);
+                }
+
+                done += 1;
+                if (done % 5 === 0) {
+                    setNotification({
+                        message: `Expanded ${done}/${toExpand.length}…${remaining > 0 ? ` (${remaining} more remaining)` : ''}`,
+                        type: 'success'
+                    });
+                }
+
+                // Brief pause to avoid hammering the API / UI.
+                await new Promise(resolve => setTimeout(resolve, 250));
+            }
+
+            setNotification({
+                message: `Expanded ${done} leaf nodes.${remaining > 0 ? ` (${remaining} more remaining)` : ''}`,
+                type: 'success'
+            });
+        } catch (e) {
+            console.error("Error in handleExpandAllLeafNodes:", e);
+            setNotification({ message: "Global expansion failed.", type: 'error' });
+        } finally {
+            setIsExpandingAllLeaves(false);
+        }
+    }, [fetchAndExpandNode, isExpandingAllLeaves]);
+
 
     // Auto-expand trigger: when pendingAutoExpandId is set and the node is ready, call handleExpandLeaves
     useEffect(() => {
@@ -2296,7 +2372,8 @@ const App: React.FC = () => {
                     onSearch={handleStartSearch}
                     onPathSearch={handlePathSearch}
                     onClear={handleClear}
-                    isProcessing={isProcessing}
+                    onExpandAllLeafNodes={handleExpandAllLeafNodes}
+                    isProcessing={isProcessing || isExpandingAllLeaves}
                     isCompact={isCompact}
                     onToggleCompact={() => setIsCompact(!isCompact)}
                     isTimelineMode={isTimelineMode}

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Constellations — Paper Draft (Rendered)</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --card: rgba(15, 23, 42, 0.72);
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --link: #93c5fd;
+        --linkHover: #bfdbfe;
+        --border: rgba(148, 163, 184, 0.25);
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        background: radial-gradient(1200px 800px at 30% 10%, rgba(59,130,246,0.18), transparent 60%),
+                    radial-gradient(1000px 700px at 75% 30%, rgba(245,158,11,0.12), transparent 55%),
+                    var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+      a { color: var(--link); text-decoration: none; }
+      a:hover { color: var(--linkHover); text-decoration: underline; }
+      code { background: rgba(148,163,184,0.14); padding: 2px 6px; border-radius: 8px; }
+      pre { background: rgba(2,6,23,0.45); border: 1px solid var(--border); padding: 12px; border-radius: 12px; overflow: auto; }
+      h1,h2,h3 { line-height: 1.25; }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 26px 18px 70px; }
+      .nav {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 10px 14px;
+        margin: 14px 0 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .nav a { margin-right: 10px; }
+      .content {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px 18px;
+      }
+      ul { margin: 10px 0; padding-left: 20px; }
+      p { margin: 10px 0; }
+      figure { margin: 14px 0 18px; text-align: center; }
+      img {
+        max-width: 56%;
+        height: auto;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        display: block;
+        margin: 0 auto;
+      }
+      figcaption { color: var(--muted); font-size: 12px; margin-top: 6px; text-align: center; }
+      video { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border); }
+
+      /* Print-friendly: black on white, no dark backgrounds */
+      @media print {
+        :root {
+          --bg: #ffffff;
+          --card: #ffffff;
+          --text: #000000;
+          --muted: #333333;
+          --link: #000000;
+          --linkHover: #000000;
+          --border: rgba(0, 0, 0, 0.2);
+        }
+        body { background: #ffffff !important; color: #000000 !important; }
+        .nav { display: none !important; }
+        .content { border: none !important; background: #ffffff !important; }
+        a { text-decoration: underline !important; }
+        pre { background: #ffffff !important; }
+        figure { break-inside: avoid; page-break-inside: avoid; }
+        img { border: 1px solid rgba(0,0,0,0.15) !important; }
+        video { display: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="nav"><a href="./index.html">Paper Index</a> <a href="../index.html">Raw Index (HTML)</a> <a href="../../bibliography.html">Bibliography</a></div>
+      <div class="content">
+        <h1>Constellations — Paper Draft</h1>
+<p>This is the rendered HTML view of the Markdown draft. Edit the source in <code>public/paper/*.md</code>, then run <code>npm run render:paper</code> to regenerate.</p>
+<p><b>Printable:</b> <a href="./paper.html">paper.html</a></p>
+<h2>Sections</h2>
+<ul>
+<li><a href="./00-outline.html">00-outline.md</a></li>
+<li><a href="./01-abstract.html">01-abstract.md</a></li>
+<li><a href="./02-introduction.html">02-introduction.md</a></li>
+<li><a href="./03-related-work.html">03-related-work.md</a></li>
+<li><a href="./04-system.html">04-system.md</a></li>
+<li><a href="./05-evaluation-plan.html">05-evaluation-plan.md</a></li>
+<li><a href="./06-discussion-future-work.html">06-discussion-future-work.md</a></li>
+<li><a href="./07-references.html">07-references.md</a></li>
+<li><a href="./08-acknowledgements.html">08-acknowledgements.md</a></li>
+</ul>
+      </div>
+    </div>
+  </body>
+</html>
