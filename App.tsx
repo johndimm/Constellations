@@ -647,15 +647,27 @@ const App: React.FC = () => {
                                 }
                                 const updatedNodes = Array.from(nodeMap.values());
 
-                                const newLinksToAdd: GraphLink[] = validCached.map(cn => ({
+                                const candidateLinks: GraphLink[] = validCached.map(cn => ({
                                     source: node.id,
                                     target: cn.id,
                                     id: `${node.id}-${cn.id}`,
                                     label: cn.edge_label || undefined,
-                                    evidence: cn.edge_meta?.evidence || undefined
-                                })).filter(l => !existingLinkIds.has(l.id));
+                                    evidence: cn.edge_meta?.evidence || { kind: 'none' }
+                                }));
+
+                                // Merge evidence/label into existing links (so old cached edges get "upgraded")
+                                const updatedExistingLinks = prev.links.map(l => {
+                                    const cand = candidateLinks.find(c => c.id === l.id);
+                                    if (!cand) return l;
+                                    const merged: GraphLink = { ...l };
+                                    if (!merged.label && cand.label) merged.label = cand.label;
+                                    if ((!merged.evidence || merged.evidence.kind === 'none') && cand.evidence) merged.evidence = cand.evidence;
+                                    return merged;
+                                });
+
+                                const newLinksToAdd = candidateLinks.filter(l => !existingLinkIds.has(l.id));
                                 cacheNewLinks = newLinksToAdd.length;
-                                const combinedLinks = [...prev.links, ...newLinksToAdd];
+                                const combinedLinks = [...updatedExistingLinks, ...newLinksToAdd];
 
 
                                 return dedupeGraph(updatedNodes, combinedLinks);
@@ -735,14 +747,14 @@ const App: React.FC = () => {
                     year: w.year ?? undefined, 
                     role: w.role ?? undefined,
                     is_atomic: false, // Results of expanding an Atomic are always Composites (Cards)
-                    edge_meta: w.evidenceSnippet ? {
+                    edge_meta: {
                         evidence: {
                             kind: 'ai',
-                            pageTitle: w.evidencePageTitle || node.title,
-                            snippet: w.evidenceSnippet,
-                            url: buildWikiUrl(w.evidencePageTitle || node.title)
+                            pageTitle: (w as any).evidencePageTitle || node.title,
+                            snippet: (w as any).evidenceSnippet || '',
+                            url: buildWikiUrl((w as any).evidencePageTitle || node.title)
                         }
-                    } : null,
+                    },
                     edge_label: w.role || null
                 }));
                 console.log(`✅ [Expand] Found ${results.length} connections for atomic "${node.title}"`);
@@ -759,14 +771,14 @@ const App: React.FC = () => {
                     description: p.description, 
                     role: p.role,
                     is_atomic: true, // Force circle UI for all atomic components
-                    edge_meta: p.evidenceSnippet ? {
+                    edge_meta: {
                         evidence: {
                             kind: 'ai',
-                            pageTitle: p.evidencePageTitle || node.title,
-                            snippet: p.evidenceSnippet,
-                            url: buildWikiUrl(p.evidencePageTitle || node.title)
+                            pageTitle: (p as any).evidencePageTitle || node.title,
+                            snippet: (p as any).evidenceSnippet || '',
+                            url: buildWikiUrl((p as any).evidencePageTitle || node.title)
                         }
-                    } : null,
+                    },
                     edge_label: p.role || null
                 }));
                 console.log(`✅ [Expand] Found ${results.length} atomic components for composite "${node.title}"`);
@@ -897,15 +909,26 @@ const App: React.FC = () => {
 
                     const updatedNodes = Array.from(nodeMap.values());
                     const existingLinkIds = new Set(prev.links.map(l => l.id));
-                    const newLinksToAdd: GraphLink[] = processedNodes.map(cn => ({
+                    const candidateLinks: GraphLink[] = processedNodes.map(cn => ({
                         source: node.id,
                         target: cn.id,
                         id: `${node.id}-${cn.id}`,
                         label: cn.edge_label || undefined,
-                        evidence: cn.edge_meta?.evidence || undefined
-                    })).filter(l => !existingLinkIds.has(l.id));
+                        evidence: cn.edge_meta?.evidence || { kind: 'none' }
+                    }));
 
-                    return dedupeGraph(updatedNodes, [...prev.links, ...newLinksToAdd]);
+                    const updatedExistingLinks = prev.links.map(l => {
+                        const cand = candidateLinks.find(c => c.id === l.id);
+                        if (!cand) return l;
+                        const merged: GraphLink = { ...l };
+                        if (!merged.label && cand.label) merged.label = cand.label;
+                        if ((!merged.evidence || merged.evidence.kind === 'none') && cand.evidence) merged.evidence = cand.evidence;
+                        return merged;
+                    });
+
+                    const newLinksToAdd = candidateLinks.filter(l => !existingLinkIds.has(l.id));
+
+                    return dedupeGraph(updatedNodes, [...updatedExistingLinks, ...newLinksToAdd]);
                 });
 
                 // Track new child nodes for highlighting - they should be bright
@@ -1893,7 +1916,8 @@ const App: React.FC = () => {
             console.log("🔗 [UI] link clicked", {
                 id: link.id,
                 label: link.label,
-                evidenceKind: link.evidence?.kind
+                evidenceKind: link.evidence?.kind,
+                evidenceSnippetPreview: link.evidence?.snippet ? `${link.evidence.snippet.substring(0, 80)}…` : null
             });
         } catch { }
         setSelectedLink(link);

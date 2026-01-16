@@ -175,6 +175,7 @@ export const fetchConnections = async (
       IMPORTANT: For each returned entity, also provide a 1-sentence evidence snippet.
       - If VERIFIED INFORMATION text is provided, the evidence snippet MUST be copied verbatim from that text and should contain BOTH the source title and the returned entity name when possible.
       - Set evidencePageTitle to the Wikipedia article title the snippet is from (usually the source).
+      - If you cannot find a good verbatim quote in VERIFIED INFORMATION, still return evidenceSnippet as a brief, explicit rationale (no quotes) and set evidencePageTitle to the most relevant page title (usually the source).
       
       Examples:
       - If Event/Incident: Return key people involved (victims, shooters, investigators).
@@ -203,10 +204,10 @@ export const fetchConnections = async (
                   name: { type: Type.STRING },
                   role: { type: Type.STRING, description: "Role in the requested Source Node" },
                   description: { type: Type.STRING, description: "Short 1-sentence bio" },
-                  evidenceSnippet: { type: Type.STRING, nullable: true, description: "1 sentence evidence, preferably verbatim from VERIFIED INFORMATION" },
-                  evidencePageTitle: { type: Type.STRING, nullable: true, description: "Wikipedia page title where the snippet came from" }
+                  evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
+                  evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
                 },
-                required: ["name", "role", "description"]
+                required: ["name", "role", "description", "evidenceSnippet", "evidencePageTitle"]
               }
             }
           },
@@ -268,6 +269,7 @@ export const fetchPersonWorks = async (
        IMPORTANT: For each returned entity, also provide a 1-sentence evidence snippet.
        - If VERIFIED INFORMATION text is provided, the evidence snippet MUST be copied verbatim from that text and should contain BOTH the source name and the returned entity name when possible.
        - Set evidencePageTitle to the Wikipedia article title the snippet is from (usually the source).
+       - If you cannot find a good verbatim quote in VERIFIED INFORMATION, still return evidenceSnippet as a brief, explicit rationale (no quotes) and set evidencePageTitle to the most relevant page title (usually the source).
        
        Examples:
        - For a Person involved in a recent event: Return the named Event or Incident (e.g. "Killing of Renee Good", "2026 Minneapolis Protests").
@@ -300,10 +302,10 @@ export const fetchPersonWorks = async (
                   description: { type: Type.STRING, description: "Short 1-sentence description" },
                   role: { type: Type.STRING, nullable: true },
                   year: { type: Type.INTEGER, nullable: true },
-                  evidenceSnippet: { type: Type.STRING, nullable: true, description: "1 sentence evidence, preferably verbatim from VERIFIED INFORMATION" },
-                  evidencePageTitle: { type: Type.STRING, nullable: true, description: "Wikipedia page title where the snippet came from" }
+                  evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
+                  evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
                 },
-                required: ["entity", "type", "description"]
+                required: ["entity", "type", "description", "evidenceSnippet", "evidencePageTitle"]
               }
             }
           },
