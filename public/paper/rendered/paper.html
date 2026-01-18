@@ -92,18 +92,20 @@
     <hr style="border: 0; border-top: 1px solid var(--border); margin: 14px 0 18px;" />
   
 <h1>Abstract</h1>
-<p>People often explore knowledge not only to answer a specific question, but to follow curiosity across many possible directions with minimal commitment: quickly trying an expansion, backing up, and trying another. We present <b>Constellations</b>, an interactive system for <b>low-friction exploratory navigation</b> that constructs <b>bipartite (Atomic↔Composite)</b> graphs on demand from natural-language queries. Users begin with a single entity and iteratively expand the graph to encounter related people, events, works, or other domain-specific pairs, while the system enforces bipartite alternation to maintain a stable interaction model across domains. To support interpretation and trust, Constellations attaches <b>evidence-backed edges</b> (short snippets with source links) so users can ask “why is this connected?” at any step. We describe the system design, position it relative to work on two-mode/affiliation networks and event-centric cultural heritage modeling, and propose an evaluation plan focused on recall, discovery, and sensemaking during iterative exploration. We argue that evidence-backed bipartite exploration offers a complementary paradigm to search and static knowledge graphs: a lightweight interface for navigating the frontier between what users know and what they might learn next.</p>
+<p>People often explore knowledge not only to answer a specific question, but to follow curiosity across many possible directions with minimal commitment: quickly trying an expansion, backing up, and trying another. We present <b>Constellations</b>, an interactive system for <b>low-friction exploratory navigation</b> that constructs <b>bipartite (Atomic↔Composite)</b> graphs on demand from natural-language queries. Users begin with a single entity and iteratively expand the graph while the system enforces bipartite alternation. To reduce instability from mid-graph ontology drift, Constellations selects a bipartite pair from the first query (currently among Person↔Event, Ingredient↔Recipe, Symptom↔Disease) and <b>locks it for the session</b> (no switching). To support interpretation and trust, Constellations attaches <b>evidence-backed edges</b> (short snippets with source links) so users can inspect the claimed reason behind a connection at any step. We describe the system design, position it relative to work on two-mode/affiliation networks and event-centric cultural heritage modeling, and propose an evaluation plan focused on recall, discovery, and sensemaking during iterative exploration. We argue that evidence-backed bipartite exploration offers a complementary paradigm to search and static knowledge graphs: a lightweight interface for navigating the frontier between what users know and what they might learn next.</p>
 <h1>Introduction</h1>
 <p>People often explore knowledge not to answer a single query, but to follow curiosity across many possible directions with minimal commitment: expand something, see what appears, and backtrack quickly to try a different branch. We call the boundary this process reveals the <b>knowledge frontier</b>—the set of adjacent ideas that are reachable from a current concept but not yet part of one’s active memory. Interfaces for search, browsing, and encyclopedic reading support directed lookup, but can be less suited to this low-friction, branching process of “what else is nearby?” where the cost of trying a path is intentionally small.</p>
 <p>Constellations is designed for this mode. Starting from a single user-provided entity, the system constructs a small, local graph and supports repeated <b>expand</b> operations that reveal additional connected entities. The key design decision is to enforce a <b>bipartite alternation constraint</b>: nodes alternate between <b>Atomic</b> entities (individuals or elementary concepts) and <b>Composite</b> entities (events, works, groups, conditions, or other aggregations). This constraint yields a stable interaction model across domains: atomic nodes are expanded into composites, and composites into atomics. In the project’s origin domain—history—this corresponds to a simple idea closely aligned with event-centric cultural heritage modeling: <b>events as “meetings”</b> that bring multiple people together. We generalize this to other domains (e.g., films: people↔movies; cooking: ingredients↔recipes; medicine: symptoms↔diseases) without changing the core UI.</p>
 <p>Because the system operates in open-world settings and aims for broad domain coverage, Constellations uses a large language model (LLM) to propose candidate neighbors during expansion. However, exploratory systems that rely on generative models face an immediate interpretability challenge: users naturally ask <b>why</b> a connection exists before deciding whether it is worth pursuing. To address this, Constellations attaches <b>edge evidence</b>: short evidence snippets and source links displayed when an edge is selected. Evidence is treated as support for interpretation and verification, not as proof of causal claims.</p>
 <p>This paper contributes an interactive exploration system and a design framing for bipartite low-friction exploration. We position Constellations relative to two-mode/affiliation networks and event-centric modeling, and we outline an evaluation plan centered on recall, discovery, and sensemaking.</p>
-<h2>Contributions (Draft)</h2>
+<h2>Contributions</h2>
 <ul>
-<li><b>A bipartite exploration interface</b> that enforces Atomic↔Composite alternation to keep interaction simple across domains.</li>
-<li><b>An LLM-assisted, on-demand graph construction pipeline</b> that builds local neighborhoods without a precomputed knowledge graph.</li>
-<li><b>Evidence-backed edges</b> that make “why is this connected?” a first-class interaction.</li>
-<li><b>An evaluation plan</b> targeting low-friction exploration outcomes (recall, discovery, orientation, trust), rather than accuracy alone.</li>
+<li><b>A bipartite exploration interface</b> that enforces Atomic↔Composite alternation as a domain-general interaction primitive for click-to-expand exploration.</li>
+<li><b>A session-level locking mechanism for bipartite pair selection</b>: the system chooses an Atomic↔Composite pairing from the first query and locks it for the session to reduce mid-graph “ontology drift.”</li>
+<li><b>A kiosk-first interaction mode</b> (no typing) designed for touch displays, where users start from curated seeds and drive exploration by tapping.</li>
+<li><b>Evidence-backed edges</b> that make edge inspection a first-class interaction via short snippets and source links.</li>
+<li><b>An LLM-assisted, on-demand graph construction pipeline</b> that builds local neighborhoods without requiring a precomputed knowledge graph.</li>
+<li><b>An evaluation plan</b> targeting exploration outcomes (recall, discovery, orientation, and trust), rather than accuracy alone.</li>
 </ul>
 <h2>Why films are an especially good domain (informal motivation)</h2>
 <p>Many domains contain bipartite structure, but films provide a particularly clean and rewarding instance: people↔works with high-quality public metadata, stable naming, and strong Wikipedia coverage. This makes it easy to generate meaningful expansions (directors, co-stars, producers; films in a person’s oeuvre) and to attach interpretable evidence. In contrast, domains like current politics are both more dynamic and more sensitive; they require stricter evidence policies and careful treatment of ambiguity and recency.</p>
@@ -118,11 +120,11 @@
 <p>Two-mode (bipartite) networks are a long-standing model for situations where actors participate in events or belong to groups. Canonical examples include actors↔movies, authors↔papers, boards↔companies, and other membership/affiliation structures. A key methodological lesson is that naively projecting a bipartite network into one mode (e.g., actor–actor) can introduce artifacts; bipartite structure deserves analysis and visualization in its own right.</p>
 <p>Constellations adopts bipartiteness not primarily as an analytic device, but as an interaction constraint that simplifies exploration: each step alternates between atomic and composite nodes. Joint spatial displays of affiliation networks (e.g., correspondence-analysis-style embeddings) also provide an important precedent for “map-like” knowledge exploration and inform a future direction of large-scale knowledge cartography.</p>
 <h2>Event-centric modeling in cultural heritage and museums</h2>
-<p>Event-centric cultural heritage modeling emphasizes events as the connective tissue that relates people, places, objects, and documents. The “historical events as meetings” framing aligns strongly with Constellations’ original person↔event concept: an event is any construct that brings multiple people into relation. Constellations generalizes this idea across domains by letting the system infer an appropriate Atomic↔Composite pairing for a seed term.</p>
+<p>Event-centric cultural heritage modeling emphasizes events as the connective tissue that relates people, places, objects, and documents. The “historical events as meetings” framing aligns strongly with Constellations’ original person↔event concept: an event is any construct that brings multiple people into relation. In Constellations’ current design, the system selects a bipartite Atomic↔Composite pairing from the seed term and <b>locks it for the session</b> to prevent mid-graph switching, while still enabling cross-domain use via different seeds.</p>
 <h2>LLMs, structured outputs, and evidence/provenance</h2>
 <p>LLM-based interfaces face a core tension: generative flexibility enables broad coverage, but users need interpretable reasons for what the system shows. Work on provenance and evidence in visualization motivates making “why is this here?” a first-class interaction. Constellations operationalizes this at the edge level: edges carry evidence snippets and a source link, and the UI exposes evidence on selection. This supports user judgment in a low-friction exploration loop without claiming causal conclusions.</p>
-<h2>Constellations’ positioning (one paragraph to write later)</h2>
-<p>Constellations differs from prior bipartite/affiliation network work in that it is <b>open-world</b> and <b>interactive-first</b>: the graph is constructed locally on demand from natural language queries, and the system emphasizes interpretability via evidence-backed edges rather than statistical inference over a fully observed two-mode matrix. It also differs from static knowledge graph browsers in that the system can adapt its bipartite pairing across domains while maintaining a consistent interaction model.</p>
+<h2>Constellations’ positioning</h2>
+<p>Constellations can be read as a pragmatic synthesis of (i) interaction design principles for progressive disclosure in node-link exploration, (ii) the representational clarity of two-mode affiliation networks, and (iii) open-world neighbor proposal via an LLM. Relative to classic two-mode network analysis, Constellations does not assume a fully observed matrix or attempt statistical inference; instead, it constructs small neighborhoods on demand and treats the bipartite constraint primarily as an interaction primitive (“expand to the other side”) that limits cognitive load. Relative to static knowledge-graph browsers and search engines, Constellations emphasizes rapid branching and backtracking, and it foregrounds interpretability at the granularity where exploration decisions are made: the edge. Finally, relative to free-form LLM browsing experiences, Constellations introduces two stabilizers—bipartite alternation and a session-level lock of the Atomic↔Composite pair chosen from the seed—to reduce drift and preserve a coherent local structure during exploration.</p>
 <h1>System</h1>
 <h2>Overview</h2>
 <p>Constellations is an interactive graph explorer that constructs a small, local graph from a user query and supports repeated expansion. The system enforces a bipartite alternation constraint:</p>
@@ -132,11 +134,11 @@
 </ul>
 <p>The UI encodes this alternation with distinct visual forms (e.g., circles vs cards) while keeping interactions consistent across domains.</p>
 <h2>Data flow (high level)</h2>
-<p>1. <b>User query</b>: user enters a seed entity.</p>
+<p>1. <b>User query</b>: in kiosk mode (default), the user taps a curated seed entity (no typing); in non-kiosk mode, the user can type a query.</p>
 <p>2. <b>Context retrieval</b>: fetch lightweight context (e.g., Wikipedia summary) to help disambiguation and mitigate model knowledge gaps.</p>
-<p>3. <b>Type classification</b>: determine whether the seed is Atomic or Composite and identify the bipartite pair labels (AtomicType↔CompositeType).</p>
-<p>4. <b>Expansion</b>: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition.</p>
-<p>5. <b>Evidence attachment</b>: each proposed neighbor includes an evidence snippet + page title; selecting an edge reveals the evidence (“why is this connected?”).</p>
+<p>3. <b>Start-pair classification (locked)</b>: choose a bipartite pair from the first input (currently one of Person↔Event, Ingredient↔Recipe, Symptom↔Disease), then <b>lock it for the entire graph</b> (no switching).</p>
+<p>4. <b>Expansion</b>: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition, conditioned on the locked pair.</p>
+<p>5. <b>Evidence attachment</b>: each proposed neighbor includes an evidence snippet + page title; selecting an edge reveals the supporting citation.</p>
 <p>6. <b>Caching</b>: store nodes and edges (with evidence) in a database to reduce repeated calls and support persistence.</p>
 <h2>Bipartite constraint and “events as meetings”</h2>
 <p>The original domain (people↔events) is motivated by an event-centric view: an event is any construct that brings multiple people into relation. This framing generalizes naturally to other domains by choosing a Composite that aggregates multiple Atomics and for which the inverse membership relation is meaningful (e.g., actors in films; ingredients in recipes).</p>
@@ -151,29 +153,30 @@
 <h2>Figures (screenshots)</h2>
 <p>The experience is dynamic (the graph reconfigures as nodes are added; users can drag nodes to reshape local structure). A few static screenshots help convey the interaction model:</p>
 <p>In Figure 1, expanding a composite (film) reveals connected atomic entities (people) and supporting evidence.</p>
-<figure><img src="/godfather-brando.png" alt="Figure 1. The Godfather expansion (screenshot)" /><figcaption>Figure 1. The Godfather expansion (screenshot)</figcaption></figure>
+<figure><img src="../../godfather-brando.png" alt="Figure 1. The Godfather expansion (screenshot)" /><figcaption>Figure 1. The Godfather expansion (screenshot)</figcaption></figure>
 <p>Figure 2 illustrates the timeline view, where temporal metadata provides a second organizing lens alongside the network layout.</p>
-<figure><img src="/godfather-timeline.png" alt="Figure 2. Timeline view example (screenshot)" /><figcaption>Figure 2. Timeline view example (screenshot)</figcaption></figure>
+<figure><img src="../../godfather-timeline.png" alt="Figure 2. Timeline view example (screenshot)" /><figcaption>Figure 2. Timeline view example (screenshot)</figcaption></figure>
 <p>Figure 3 shows a path-seeking example: finding a bipartite path between two entities.</p>
-<figure><img src="/John%20Von%20Neumann%20to%20Geoffrey%20Hinton.png" alt="Figure 3. Path-seeking example (screenshot)" /><figcaption>Figure 3. Path-seeking example (screenshot)</figcaption></figure>
+<figure><img src="../../John%20Von%20Neumann%20to%20Geoffrey%20Hinton.png" alt="Figure 3. Path-seeking example (screenshot)" /><figcaption>Figure 3. Path-seeking example (screenshot)</figcaption></figure>
 <p>Figure 4 shows the people browser used to seed exploration.</p>
-<figure><img src="/people.png" alt="Figure 4. Browse People (screenshot)" /><figcaption>Figure 4. Browse People (screenshot)</figcaption></figure>
+<figure><img src="../../people.png" alt="Figure 4. Browse People (screenshot)" /><figcaption>Figure 4. Browse People (screenshot)</figcaption></figure>
 <h3>Cross-domain examples (Atomic↔Composite generalization)</h3>
 <p>Figures 5–7 show the same interaction model applied across domains.</p>
-<figure><img src="/beef.png" alt="Figure 5. Culinary: Beef (screenshot)" /><figcaption>Figure 5. Culinary: Beef (screenshot)</figcaption></figure>
-<figure><img src="/LeBron%20James.png" alt="Figure 6. Sports: LeBron James (screenshot)" /><figcaption>Figure 6. Sports: LeBron James (screenshot)</figcaption></figure>
-<figure><img src="/sore%20throat.png" alt="Figure 7. Medicine: Sore Throat (screenshot)" /><figcaption>Figure 7. Medicine: Sore Throat (screenshot)</figcaption></figure>
+<figure><img src="../../beef.png" alt="Figure 5. Culinary: Beef (screenshot)" /><figcaption>Figure 5. Culinary: Beef (screenshot)</figcaption></figure>
+<figure><img src="../../LeBron%20James.png" alt="Figure 6. Sports: LeBron James (screenshot)" /><figcaption>Figure 6. Sports: LeBron James (screenshot)</figcaption></figure>
+<figure><img src="../../sore%20throat.png" alt="Figure 7. Medicine: Sore Throat (screenshot)" /><figcaption>Figure 7. Medicine: Sore Throat (screenshot)</figcaption></figure>
 <p>For motion, the repo includes a short demo video: <code>/demo.mp4</code>.</p>
 <h3>Demo video (in-browser)</h3>
 <p>The embedded video can render as a black frame in some contexts, so we include a representative still frame instead:</p>
-<figure><img src="/demo-frame.png" alt="Figure 8. Demo frame (click through to watch the video)" /><figcaption>Figure 8. Demo frame (click through to watch the video)</figcaption></figure>
-<p><a href="/demo.mp4">Watch the demo video</a></p>
+<figure><img src="../../demo-frame.png" alt="Figure 8. Demo frame (click through to watch the video)" /><figcaption>Figure 8. Demo frame (click through to watch the video)</figcaption></figure>
+<p><a href="../../demo.mp4">Watch the demo video</a></p>
 <h2>Interaction design: low-friction branching</h2>
 <p>Constellations is optimized for low commitment per step:</p>
 <ul>
 <li>expanding a node is a single click,</li>
 <li>backing up (choosing a different node) is immediate,</li>
-<li>bulk operations allow quick frontier growth (e.g., expand all leaf/frontier nodes across the whole graph).</li>
+<li>bulk operations allow quick frontier growth (e.g., expand all frontier nodes across the whole graph),</li>
+<li>when a node’s first expansion yields very few neighbors, the UI can automatically request “expand more” once to reduce repeated clicks.</li>
 </ul>
 <p>This interaction model encourages “try and see” exploration, where users do not need to decide a path “once and for all.”</p>
 <h2>Caching and persistence</h2>
@@ -183,18 +186,15 @@
 <li><b>edges</b> (role/label and evidence metadata).</li>
 </ul>
 <p>Caching supports repeated browsing, saving/loading graphs, and revisiting a previously explored frontier with evidence intact.</p>
-<h2>Implementation notes (to expand later)</h2>
+<h2>Implementation notes</h2>
+<p>The current implementation is a client-side React application with a small cache backend. While the core ideas are model- and stack-agnostic, a few design choices matter for reproducibility and user experience:</p>
 <ul>
-<li><b>Graph rendering</b>: force-directed layout with interaction primitives (hover highlight, edge selection).</li>
-<li><b>Expansion strategy</b>: request a bounded number of neighbors (8–10) to keep the interface comprehensible.</li>
-<li><b>Guardrails</b>: enforce named-entity outputs and require per-edge evidence in the LLM schema to improve interpretability.</li>
-<li><b>Failure modes</b>: ambiguity, generic outputs, and recency; mitigations include context-first classification and evidence requirements.</li>
-</ul>
-<h2>Implementation notes (to expand later)</h2>
-<ul>
-<li>Graph rendering and interaction model (click/hover, progressive expansion).</li>
-<li>Schema/caching (nodes, edges, evidence stored in edge metadata).</li>
-<li>Failure modes (ambiguity, generic outputs, recency) and mitigations (context-first classification; strict output schema; evidence requirement).</li>
+<li><b>Graph rendering and interaction</b>: a force-directed node-link layout supports direct manipulation (dragging nodes), hover highlighting, and edge selection for evidence inspection. Nodes are visually differentiated by partition (Atomic vs Composite) to reinforce alternation.</li>
+<li><b>Bounded neighborhood expansion</b>: each expansion requests a small number of neighbors (typically 8–10) to avoid hairball growth and to keep the choice set cognitively manageable.</li>
+<li><b>LLM output guardrails</b>: expansions are constrained to named entities on the opposite partition and require per-edge evidence fields (a short snippet plus a source page title/URL). This does not guarantee correctness, but it makes edges inspectable.</li>
+<li><b>Context-first disambiguation</b>: before classification/expansion, the system fetches lightweight context (e.g., a Wikipedia summary) to reduce ambiguity and mitigate model knowledge gaps.</li>
+<li><b>Session-level pair locking</b>: after the first query, the chosen Atomic↔Composite pair is locked for the remainder of the graph exploration to reduce mid-graph switching and preserve stable semantics for expansion prompts.</li>
+<li><b>Caching and persistence</b>: nodes and edges (including evidence) are cached to reduce repeated LLM calls and to enable saving/loading graphs with evidence intact.</li>
 </ul>
 <h1>Evaluation (Plan for a First Study)</h1>
 <p>This section outlines a mixed-method evaluation aligned with <b>low-friction, branching exploration</b> rather than accuracy alone. The goal is to evaluate whether Constellations supports recall, discovery, and sensemaking in a way that is difficult to capture with conventional “answer correctness” metrics.</p>
@@ -259,14 +259,15 @@
 <h1>Discussion & Future Work</h1>
 <h2>Discussion: what Constellations is (and is not)</h2>
 <p>Constellations is designed for <b>exploration</b>, not inference. While bipartite network analysis offers statistical models for affiliation data, Constellations operates in an open-world setting with locally constructed neighborhoods and focuses on user experience: recall, curiosity, and sensemaking.</p>
-<h2>Limitations (draft)</h2>
+<h2>Limitations</h2>
 <ul>
-<li><b>Open-world ambiguity</b>: many entities have ambiguous names; disambiguation is imperfect.</li>
-<li><b>Recency and knowledge gaps</b>: recent events may not be represented reliably without external context.</li>
-<li><b>Evidence quality</b>: evidence snippets can be missing, weak, or not fully verifiable without additional checks.</li>
-<li><b>Domain variance</b>: some domains are naturally “clean” bipartite graphs (films), while others are noisier (politics).</li>
+<li><b>Open-world ambiguity and name collisions</b>: many entities share names (e.g., people vs works with the same title). Lightweight context helps, but disambiguation remains imperfect and can propagate errors into expansion.</li>
+<li><b>Model knowledge gaps and recency</b>: LLMs can be outdated, and Wikipedia coverage varies; the system can misclassify entities or miss important neighbors without stronger retrieval and verification.</li>
+<li><b>Evidence is supportive, not definitive</b>: a single snippet and link is often enough for user judgment, but it does not guarantee the edge is correct. Automated snippet verification and multi-source provenance are not yet implemented.</li>
+<li><b>Domain variance</b>: some domains naturally form clean affiliation structures (e.g., actors↔films), while others exhibit weaker “membership” semantics or higher noise. Session-level pair locking reduces drift but can also constrain legitimate cross-type exploration.</li>
+<li><b>Scalability and layout stability</b>: force-directed layouts are effective for small local neighborhoods but can become unstable or visually dense under repeated bulk expansion, motivating multi-resolution views and clustering.</li>
 </ul>
-<h2>Future work directions (draft)</h2>
+<h2>Future work directions</h2>
 <h3>Better expansion ranking (bipartite-aware)</h3>
 <p>Use bipartite-inspired heuristics for ranking and diversity:</p>
 <ul>
@@ -281,6 +282,8 @@
 <li>automated verification that the snippet exists in the claimed source,</li>
 <li>user feedback loops (confirm/reject edges).</li>
 </ul>
+<h3>Pair learning and “soft locks”</h3>
+<p>The current system chooses among a small set of bipartite pairs and locks the choice for the session. A natural extension is to treat pair selection as a probabilistic belief state: maintain a small set of candidate pairings with confidence, allow controlled switching only when confidence crosses a threshold, and preserve previously drawn edges by freezing node partitions once placed.</p>
 <h3>Global “map-like” exploration (joint embedding)</h3>
 <p>Inspired by joint displays of affiliation networks, a long-term direction is to place a very large two-mode graph into a shared 2D space (“knowledge cartography”), enabling map-like exploration at multiple zoom levels. A practical approach would require multi-resolution embeddings and approximate optimization rather than exact global minimization.</p>
 <h3>Domain packs and curatorial modes</h3>

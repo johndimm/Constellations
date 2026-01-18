@@ -4,10 +4,17 @@ import ControlPanel from './components/ControlPanel';
 import Sidebar from './components/Sidebar';
 import NodeContextMenu from './components/NodeContextMenu';
 import { GraphNode, GraphLink, PathResponse } from './types';
-import { fetchConnections, fetchPersonWorks, classifyEntity, fetchConnectionPath, findWikipediaTitle } from './services/geminiService';
+import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, type LockedPair } from './services/geminiService';
 import { getApiKey } from './services/aiUtils';
 import { fetchWikipediaImage, fetchWikipediaSummary, fetchWikipediaExtract } from './services/wikipediaService';
 import { Key, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react';
+import {
+    KioskDomain,
+    loadKioskDomains,
+    saveKioskDomains,
+    loadSelectedKioskDomainId,
+    saveSelectedKioskDomainId
+} from './kioskDomains';
 
 const BrowsePeople = lazy(() => import('./components/BrowsePeople'));
 const PeopleBrowserSidebar = lazy(() => import('./components/PeopleBrowserSidebar'));
@@ -171,6 +178,13 @@ const App: React.FC = () => {
     const nodesRef = useRef<GraphNode[]>([]);
     const graphRef = useRef<GraphHandle>(null);
     const cacheEnabled = !!cacheBaseUrl;
+    const selectedNodeRef = useRef<GraphNode | null>(null);
+    useEffect(() => {
+        selectedNodeRef.current = selectedNode;
+    }, [selectedNode]);
+
+    // Auto "expand more" once per node when initial expansion yields very few neighbors.
+    const autoExpandMoreDoneRef = useRef<Set<number>>(new Set());
 
     // Search State Lifted
     const [searchMode, setSearchMode] = useState<'explore' | 'connect'>('explore');
@@ -191,6 +205,48 @@ const App: React.FC = () => {
     const [sidebarToggleSignal, setSidebarToggleSignal] = useState(0);
     const [peopleBrowserOpen, setPeopleBrowserOpen] = useState(false);
 
+    // Graph-level locked pair: chosen once from the first search term and then reused for all expansions (no switching).
+    const [lockedPair, setLockedPair] = useState<LockedPair>({ atomicType: "Person", compositeType: "Event" });
+    const lockedPairRef = useRef<LockedPair>(lockedPair);
+    useEffect(() => { lockedPairRef.current = lockedPair; }, [lockedPair]);
+
+    // Kiosk / no-typing mode: DEFAULT ON.
+    // Disable via `?kiosk=0` (restores the old typing UI).
+    const [isKioskMode] = useState(() => {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('kiosk') !== '0';
+        } catch {
+            return true;
+        }
+    });
+
+    // Admin mode: enables editing kiosk domains in-app (requires keyboard/mouse)
+    const [isAdminMode] = useState(() => {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('admin') === '1';
+        } catch {
+            return false;
+        }
+    });
+
+    const [kioskDomains, setKioskDomains] = useState<KioskDomain[]>(() => loadKioskDomains());
+    const [selectedKioskDomainId, setSelectedKioskDomainId] = useState<string>(() =>
+        loadSelectedKioskDomainId(loadKioskDomains())
+    );
+
+    useEffect(() => {
+        // Persist domains + selection for kiosk installs
+        try { saveKioskDomains(kioskDomains); } catch { }
+        try { saveSelectedKioskDomainId(selectedKioskDomainId); } catch { }
+    }, [kioskDomains, selectedKioskDomainId]);
+
+    const selectedKioskDomain = kioskDomains.find(d => d.id === selectedKioskDomainId) || kioskDomains[0];
+    const kioskSeedTerms = selectedKioskDomain?.terms || [];
+
+    const [pendingKioskConnect, setPendingKioskConnect] = useState<{ start: string; end: string } | null>(null);
+
     const buildWikiUrl = (title: string) => `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`;
 
     // Keep selectedNode in sync with latest node data (e.g., wikiSummary, images)
@@ -205,10 +261,29 @@ const App: React.FC = () => {
     // Global safety net: dedupe graph whenever nodes/links change to eliminate stray duplicates
     useEffect(() => {
         const deduped = dedupeGraph(nodes, links);
-        const nodesChanged = deduped.nodes.length !== nodes.length || deduped.nodes.some((n, i) => n.id !== nodes[i]?.id);
-        const linksChanged = deduped.links.length !== links.length || deduped.links.some((l, i) => l.id !== links[i]?.id);
+
+        // Backfill `is_atomic` from legacy `is_person` if needed (older cached/imported graphs)
+        const normalizedNodes = deduped.nodes.map(n => {
+            if (n.is_atomic === undefined && typeof (n as any).is_person === 'boolean') {
+                return { ...n, is_atomic: (n as any).is_person };
+            }
+            return n;
+        });
+
+        // IMPORTANT: Do NOT retroactively drop links when a node gets reclassified during an expansion.
+        // That causes confusing "edges disappearing" behavior (e.g., Michelangelo → David).
+        // We enforce bipartiteness by filtering *new* links at insertion time, while keeping existing links stable.
+        const normalizedLinks = deduped.links;
+
+        const nodesChanged =
+            normalizedNodes.length !== nodes.length ||
+            normalizedNodes.some((n, i) => n.id !== nodes[i]?.id || n.is_atomic !== nodes[i]?.is_atomic);
+        const linksChanged =
+            normalizedLinks.length !== links.length ||
+            normalizedLinks.some((l, i) => l.id !== links[i]?.id);
+
         if (nodesChanged || linksChanged) {
-            setGraphData(deduped);
+            setGraphData({ nodes: normalizedNodes, links: normalizedLinks });
         }
     }, [nodes, links]);
 
@@ -490,29 +565,75 @@ const App: React.FC = () => {
 
         try {
             const nodeUpdates = new Map<number, Partial<GraphNode>>();
+            const maybeAutoExpandMore = (neighborCount: number) => {
+                // Only for the first expansion (not for forceMore calls)
+                if (forceMore) return;
+                if (neighborCount > 3) return;
+                if (autoExpandMoreDoneRef.current.has(node.id)) return;
+                autoExpandMoreDoneRef.current.add(node.id);
+
+                // Only auto-expand if the user is still focused on this node.
+                setTimeout(() => {
+                    if (selectedNodeRef.current?.id !== node.id) return;
+                    console.log(`➕ [Auto] expand more (small initial expansion: ${neighborCount}) for "${node.title}"`);
+                    fetchAndExpandNode(node, false, true);
+                }, 900);
+            };
+
+            // Neighbor context (used for disambiguating Wikipedia + better classification)
+            const neighborLinks = currentLinks.filter(l =>
+                (typeof l.source === 'number' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
+                (typeof l.target === 'number' ? l.target === node.id : (l.target as GraphNode).id === node.id)
+            );
+            const neighborNames = neighborLinks.map(l => {
+                const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+                const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+                const nid = s === node.id ? t : s;
+                return currentNodes.find(n => n.id === nid)?.title || '';
+            }).filter(Boolean);
+
+            // Fetch Wikipedia summary BEFORE classification to avoid ambiguity (e.g., "David" person vs sculpture).
+            let wiki = { extract: node.wikiSummary || null, pageid: node.wikipedia_id ? Number(node.wikipedia_id) : null };
+            if (!wiki.extract && !wiki.pageid) {
+                wiki = await fetchWikipediaSummary(node.title, neighborNames.join(' '));
+            }
+            if (wiki.extract) {
+                nodeUpdates.set(node.id, { wikiSummary: wiki.extract, wikipedia_id: wiki.pageid?.toString() });
+            }
 
             // 1. Ensure node has classification info
             let currentIsAtomic = node.is_atomic ?? node.is_person;
             let currentType = node.type;
-            let currentAtomicType = node.atomic_type;
-            let currentCompositeType = node.composite_type;
+
+            // Enforce the locked pair chosen at the first input (no switching).
+            const pair = lockedPairRef.current || { atomicType: "Person", compositeType: "Event" };
+            const currentAtomicType = pair.atomicType;
+            const currentCompositeType = pair.compositeType;
 
             if (!node.classification_reasoning) {
-                console.log(`🧠 [Expand] Classifying node "${node.title}" before expansion...`);
-                // Use existing summary for context if available
-                const classification = await classifyEntity(node.title, node.wikiSummary);
-                currentIsAtomic = classification.isAtomic;
-                currentType = classification.type;
-                currentAtomicType = classification.atomicType;
-                currentCompositeType = classification.compositeType;
-
                 nodeUpdates.set(node.id, {
-                    classification_reasoning: classification.reasoning,
-                    atomic_type: classification.atomicType,
-                    composite_type: classification.compositeType,
-                    is_atomic: classification.isAtomic,
-                    type: classification.type
+                    classification_reasoning: `Locked pair: ${pair.atomicType} ↔ ${pair.compositeType}.`,
+                    atomic_type: pair.atomicType,
+                    composite_type: pair.compositeType
                 });
+            }
+            if (currentIsAtomic === undefined) {
+                // Infer partition from the locked pair when possible; otherwise fall back to LLM classification (but do not change pair labels).
+                const inferred = (node.type || '').toLowerCase() === pair.atomicType.toLowerCase() ? true
+                    : (node.type || '').toLowerCase() === pair.compositeType.toLowerCase() ? false
+                        : undefined;
+                if (typeof inferred === 'boolean') {
+                    currentIsAtomic = inferred;
+                    nodeUpdates.set(node.id, { is_atomic: inferred });
+                } else {
+                    console.log(`🧠 [Expand] Classifying node "${node.title}" for partition only (pair locked to ${pair.atomicType}/${pair.compositeType})...`);
+                    const classification = await classifyEntity(node.title, wiki.extract || node.wikiSummary);
+                    currentIsAtomic = classification.isAtomic;
+                    nodeUpdates.set(node.id, {
+                        ...(typeof (node.is_atomic ?? (node as any).is_person) === 'boolean' ? {} : { is_atomic: classification.isAtomic }),
+                        type: classification.type
+                    });
+                }
             }
 
             const fixMissingWiki = (targets: any[]) => {
@@ -559,7 +680,31 @@ const App: React.FC = () => {
                 if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
                     console.log(`💾 [Cache] exact expansion hit for node ${node.id} (${node.title}), targets=${cacheHit.nodes.length}`);
                     const cachedNodes: any[] = cacheHit.nodes;
-                    const validCached = cachedNodes.filter(cn => cn.id !== node.id); // ignore self
+                    let validCached = cachedNodes.filter(cn => cn.id !== node.id); // ignore self
+
+                    // Upgrade stale cached nodes that clearly contain the wrong sense (e.g., "is a song...") by re-fetching Wikipedia.
+                    // This is especially important because exact cache hits normally skip the LLM/wiki refresh path.
+                    try {
+                        const upgraded = await Promise.all(validCached.map(async (cn: any) => {
+                            const meta = cn.meta || {};
+                            const text = String(meta.wikiSummary || cn.description || '').toLowerCase();
+                            const looksLikeSong = text.includes(' is a song') || text.includes(' song written') || text.includes(' song by');
+                            if (!looksLikeSong) return cn;
+                            const w = await fetchWikipediaSummary(cn.title, node.title);
+                            if (!w.extract) return cn;
+                            return {
+                                ...cn,
+                                wikipedia_id: w.pageid ? String(w.pageid) : cn.wikipedia_id,
+                                description: w.extract,
+                                meta: { ...meta, wikiSummary: w.extract }
+                            };
+                        }));
+                        validCached = upgraded;
+                        // Persist upgrades back to the cache so future hits are corrected.
+                        await saveCacheExpansion(node.id, upgraded);
+                    } catch (e) {
+                        console.warn("Cache wiki upgrade failed", e);
+                    }
 
                     if (validCached.length === 0) {
                         console.log(`💾 [Cache] hit but contained no valid targets. Falling back to LLM.`);
@@ -614,6 +759,8 @@ const App: React.FC = () => {
                                 const existingNodeIds = new Set(prev.nodes.map(n => n.id));
                                 const existingLinkIds = new Set(prev.links.map(l => l.id));
                                 const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
+                                const parentIsAtomic = !!(currentIsAtomic ?? node.is_atomic ?? (node as any).is_person);
+                                const expectedChildIsAtomic = !parentIsAtomic;
 
                                 // We already know some are new, but allow the reducer to handle the merge details
                                 validCached.forEach(cn => {
@@ -631,8 +778,10 @@ const App: React.FC = () => {
                                         id: cn.id,
                                         title: cn.title,
                                         type: cn.type,
+                                        // Preserve/repair bipartite partition for cached expansions
+                                        is_atomic: (existing?.is_atomic ?? (existing as any)?.is_person ?? expectedChildIsAtomic),
                                         wikipedia_id: cn.wikipedia_id,
-                                        description: cn.description || existing?.description || "",
+                                        description: meta.wikiSummary || cn.description || existing?.description || "",
                                         year: cn.year ?? existing?.year,
                                         imageUrl,
                                         imageChecked: !!imageUrl || existing?.imageChecked,
@@ -647,6 +796,13 @@ const App: React.FC = () => {
                                 }
                                 const updatedNodes = Array.from(nodeMap.values());
 
+                                const isAtomicForId = new Map<number, boolean>();
+                                updatedNodes.forEach(n => {
+                                    const v = (n.is_atomic ?? (n as any).is_person);
+                                    if (typeof v === 'boolean') isAtomicForId.set(n.id, v);
+                                    else if ((n.type || '').toLowerCase() === 'person') isAtomicForId.set(n.id, true);
+                                });
+
                                 const candidateLinks: GraphLink[] = validCached.map(cn => ({
                                     source: node.id,
                                     target: cn.id,
@@ -654,10 +810,18 @@ const App: React.FC = () => {
                                     label: cn.edge_label || undefined,
                                     evidence: cn.edge_meta?.evidence || { kind: 'none' }
                                 }));
+                                const bipartiteSafeCandidates = candidateLinks.filter(l => {
+                                    const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+                                    const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+                                    const sa = isAtomicForId.get(Number(s));
+                                    const ta = isAtomicForId.get(Number(t));
+                                    if (sa === undefined || ta === undefined) return true;
+                                    return sa !== ta;
+                                });
 
                                 // Merge evidence/label into existing links (so old cached edges get "upgraded")
                                 const updatedExistingLinks = prev.links.map(l => {
-                                    const cand = candidateLinks.find(c => c.id === l.id);
+                                    const cand = bipartiteSafeCandidates.find(c => c.id === l.id);
                                     if (!cand) return l;
                                     const merged: GraphLink = { ...l };
                                     if (!merged.label && cand.label) merged.label = cand.label;
@@ -665,13 +829,29 @@ const App: React.FC = () => {
                                     return merged;
                                 });
 
-                                const newLinksToAdd = candidateLinks.filter(l => !existingLinkIds.has(l.id));
+                                const newLinksToAdd = bipartiteSafeCandidates.filter(l => !existingLinkIds.has(l.id));
                                 cacheNewLinks = newLinksToAdd.length;
                                 const combinedLinks = [...updatedExistingLinks, ...newLinksToAdd];
 
+                                // Prune any newly-added nodes that ended up with zero edges (can happen after filtering/dedupe).
+                                const degree = new Map<number, number>();
+                                combinedLinks.forEach(l => {
+                                    const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+                                    const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+                                    degree.set(Number(s), (degree.get(Number(s)) || 0) + 1);
+                                    degree.set(Number(t), (degree.get(Number(t)) || 0) + 1);
+                                });
+                                const prunedNodes = updatedNodes.filter(n => {
+                                    if (n.id === node.id) return true;
+                                    if (existingNodeIds.has(n.id)) return true;
+                                    return (degree.get(n.id) || 0) > 0;
+                                });
 
-                                return dedupeGraph(updatedNodes, combinedLinks);
+                                return dedupeGraph(prunedNodes, combinedLinks);
                             });
+
+                            // Auto "expand more" if this expansion produced very few targets
+                            maybeAutoExpandMore(validCached.length);
 
                             // Cache hit: fulfill selection request (data is ready, before building new nodes)
                             if (!skipSelection) {
@@ -709,24 +889,6 @@ const App: React.FC = () => {
                     }
                 }
             }
-            const neighborLinks = currentLinks.filter(l =>
-                (typeof l.source === 'number' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
-                (typeof l.target === 'number' ? l.target === node.id : (l.target as GraphNode).id === node.id)
-            );
-            const neighborNames = neighborLinks.map(l => {
-                const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
-                const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
-                const nid = s === node.id ? t : s;
-                return currentNodes.find(n => n.id === nid)?.title || '';
-            }).filter(Boolean);
-
-            let wiki = { extract: node.wikiSummary || null, pageid: node.wikipedia_id ? Number(node.wikipedia_id) : null };
-            if (!wiki.extract && !wiki.pageid) {
-                wiki = await fetchWikipediaSummary(node.title, neighborNames.join(' '));
-            }
-            if (wiki.extract) {
-                nodeUpdates.set(node.id, { wikiSummary: wiki.extract, wikipedia_id: wiki.pageid?.toString() });
-            }
             console.log(`📄 [Expand] wiki summary for "${node.title}": ${wiki.extract ? wiki.extract.substring(0, 120) + '…' : 'none'} (pageid=${wiki.pageid || 'n/a'})`);
             // For evidence snippets, sometimes the intro won't include the related entity name.
             // Fetch a longer extract once per expansion (cheap-ish) and reuse it.
@@ -739,10 +901,15 @@ const App: React.FC = () => {
 
             if (isPerson) {
                 // Pass a longer verified extract when available so the LLM can pick evidence sentences.
-                const data = await fetchPersonWorks(node.title, neighborNames, sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                let data = await fetchPersonWorks(node.title, neighborNames, sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                // If exclusions made the result set empty, retry once without exclusions.
+                if ((!data.works || data.works.length === 0) && neighborNames.length > 0) {
+                    console.log(`↩️ [Expand] empty result with exclusions; retrying without exclusions for "${node.title}"`);
+                    data = await fetchPersonWorks(node.title, [], sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                }
                 results = (data.works || []).map(w => ({ 
                     title: w.entity, 
-                    type: w.type, 
+                    type: currentCompositeType, 
                     description: w.description, 
                     year: w.year ?? undefined, 
                     role: w.role ?? undefined,
@@ -760,7 +927,12 @@ const App: React.FC = () => {
                 console.log(`✅ [Expand] Found ${results.length} connections for atomic "${node.title}"`);
             } else {
                 // Pass a longer verified extract when available so the LLM can pick evidence sentences.
-                const data = await fetchConnections(node.title, undefined, neighborNames, sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                let data = await fetchConnections(node.title, undefined, neighborNames, sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                // If exclusions made the result set empty, retry once without exclusions.
+                if ((!data.people || data.people.length === 0) && neighborNames.length > 0) {
+                    console.log(`↩️ [Expand] empty result with exclusions; retrying without exclusions for "${node.title}"`);
+                    data = await fetchConnections(node.title, undefined, [], sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                }
                 if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
                 
                 // Use the atomic type identified during classification if available, else default to 'Person'
@@ -820,6 +992,7 @@ const App: React.FC = () => {
                         ...r, 
                         wikipedia_id: rWiki.pageid?.toString(), 
                         description: rWiki.extract || r.description,
+                        meta: { ...(r.meta || {}), wikiSummary: rWiki.extract || undefined },
                         edge_meta: { evidence },
                         edge_label: r.edge_label || r.role || null
                     };
@@ -834,10 +1007,42 @@ const App: React.FC = () => {
                     const existingCache = await fetchCacheExpansion(node.id);
 
                     if (existingCache && existingCache.nodes) {
-                        const existingIds = new Set(existingCache.nodes.map((n: any) => n.title.toLowerCase())); // dedup by title roughly
-                        const newUnique = resultsWithWiki.filter(n => !existingIds.has(n.title.toLowerCase()));
-                        combinedNodes = [...existingCache.nodes, ...newUnique];
-                        console.log(`💾 [Cache] Merging ${existingCache.nodes.length} existing + ${newUnique.length} new nodes.`);
+                        // Merge by title, but UPGRADE existing cached entries with fresher Wikipedia/context/evidence.
+                        const byTitle = new Map<string, any>();
+                        existingCache.nodes.forEach((n: any) => {
+                            if (!n?.title) return;
+                            byTitle.set(String(n.title).toLowerCase(), { ...n });
+                        });
+
+                        resultsWithWiki.forEach((n: any) => {
+                            const key = String(n.title || '').toLowerCase();
+                            if (!key) return;
+                            const existing = byTitle.get(key);
+                            if (!existing) {
+                                byTitle.set(key, { ...n });
+                                return;
+                            }
+
+                            // Upgrade stale cached node with fresher wiki + description (and edge info).
+                            byTitle.set(key, {
+                                ...existing,
+                                ...n,
+                                // Keep existing id if present (cache ids are important), but keep new wikipedia_id if provided.
+                                id: existing.id ?? n.id,
+                                wikipedia_id: n.wikipedia_id || existing.wikipedia_id,
+                                description: (n.description && n.description.length >= (existing.description || '').length) ? n.description : existing.description,
+                                meta: {
+                                    ...(existing.meta || {}),
+                                    ...(n.meta || {})
+                                },
+                                edge_meta: n.edge_meta || existing.edge_meta,
+                                edge_label: n.edge_label || existing.edge_label
+                            });
+                        });
+
+                        combinedNodes = Array.from(byTitle.values());
+                        const newUniqueCount = resultsWithWiki.filter(n => !byTitle.has(String(n.title || '').toLowerCase())).length;
+                        console.log(`💾 [Cache] Upgraded merge: existing=${existingCache.nodes.length}, combined=${combinedNodes.length}, incoming=${resultsWithWiki.length}`);
                     }
 
                     await saveCacheExpansion(node.id, combinedNodes);
@@ -881,6 +1086,8 @@ const App: React.FC = () => {
                 setGraphData(prev => {
                     const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
                     const existingNodeIds = new Set(prev.nodes.map(n => n.id));
+                    const parentIsAtomic = !!(currentIsAtomic ?? node.is_atomic ?? (node as any).is_person);
+                    const expectedChildIsAtomic = !parentIsAtomic;
                     
                     processedNodes.forEach(cn => {
                         const meta = cn.meta || {};
@@ -889,6 +1096,10 @@ const App: React.FC = () => {
                             id: cn.id,
                             title: cn.title,
                             type: cn.type,
+                            // Preserve/repair bipartite partition (critical for non-person atomic types)
+                            is_atomic: (existing?.is_atomic ??
+                                (existing as any)?.is_person ??
+                                (typeof (cn as any).is_atomic === 'boolean' ? (cn as any).is_atomic : expectedChildIsAtomic)),
                             wikipedia_id: cn.wikipedia_id,
                             description: cn.description || existing?.description || "",
                             year: cn.year ?? existing?.year,
@@ -916,9 +1127,23 @@ const App: React.FC = () => {
                         label: cn.edge_label || undefined,
                         evidence: cn.edge_meta?.evidence || { kind: 'none' }
                     }));
+                    const isAtomicForId = new Map<number, boolean>();
+                    updatedNodes.forEach(n => {
+                        const v = (n.is_atomic ?? (n as any).is_person);
+                        if (typeof v === 'boolean') isAtomicForId.set(n.id, v);
+                        else if ((n.type || '').toLowerCase() === 'person') isAtomicForId.set(n.id, true);
+                    });
+                    const bipartiteSafeCandidates = candidateLinks.filter(l => {
+                        const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+                        const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+                        const sa = isAtomicForId.get(Number(s));
+                        const ta = isAtomicForId.get(Number(t));
+                        if (sa === undefined || ta === undefined) return true;
+                        return sa !== ta;
+                    });
 
                     const updatedExistingLinks = prev.links.map(l => {
-                        const cand = candidateLinks.find(c => c.id === l.id);
+                        const cand = bipartiteSafeCandidates.find(c => c.id === l.id);
                         if (!cand) return l;
                         const merged: GraphLink = { ...l };
                         if (!merged.label && cand.label) merged.label = cand.label;
@@ -926,10 +1151,29 @@ const App: React.FC = () => {
                         return merged;
                     });
 
-                    const newLinksToAdd = candidateLinks.filter(l => !existingLinkIds.has(l.id));
+                    const newLinksToAdd = bipartiteSafeCandidates.filter(l => !existingLinkIds.has(l.id));
 
-                    return dedupeGraph(updatedNodes, [...updatedExistingLinks, ...newLinksToAdd]);
+                    const combinedLinks = [...updatedExistingLinks, ...newLinksToAdd];
+
+                    // Prune any newly-added nodes that ended up with zero edges (can happen after filtering/dedupe).
+                    const degree = new Map<number, number>();
+                    combinedLinks.forEach(l => {
+                        const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+                        const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+                        degree.set(Number(s), (degree.get(Number(s)) || 0) + 1);
+                        degree.set(Number(t), (degree.get(Number(t)) || 0) + 1);
+                    });
+                    const prunedNodes = updatedNodes.filter(n => {
+                        if (n.id === node.id) return true;
+                        if (existingNodeIds.has(n.id)) return true;
+                        return (degree.get(n.id) || 0) > 0;
+                    });
+
+                    return dedupeGraph(prunedNodes, combinedLinks);
                 });
+
+                // Auto "expand more" if this expansion produced very few targets
+                maybeAutoExpandMore(processedNodes.length);
 
                 // Track new child nodes for highlighting - they should be bright
                 if (!skipExpandingHighlight) {
@@ -994,10 +1238,12 @@ const App: React.FC = () => {
             const truncatedWiki = wiki.extract ? (wiki.extract.length > 100 ? wiki.extract.substring(0, 100) + "..." : wiki.extract) : "none";
             console.log(`Wiki summary: "${truncatedWiki}"`);
 
-            // 2. Classify with context
-            const classification = await classifyEntity(term, wiki.extract || undefined);
-            const { type, description: geminiDescription, isAtomic, atomicType, compositeType, reasoning } = classification;
-            console.log(`Type: ${type}, Atomic: ${isAtomic}, Pair: ${atomicType}/${compositeType}`);
+            // 2. Choose the locked pair for this session based on the first input (no switching after this).
+            const startC = await classifyStartPair(term, wiki.extract || undefined);
+            const chosenPair: LockedPair = { atomicType: startC.atomicType, compositeType: startC.compositeType };
+            setLockedPair(chosenPair);
+            const { type, description: geminiDescription, isAtomic, reasoning } = startC;
+            console.log(`Type: ${type}, Atomic: ${isAtomic}, LockedPair: ${chosenPair.atomicType}/${chosenPair.compositeType}`);
 
             // 3. Upsert to DB to get serial ID
             let nodeId: number = -1;
@@ -1045,8 +1291,8 @@ const App: React.FC = () => {
                 expanded: false,
                 wikiSummary: wiki.extract || undefined,
                 classification_reasoning: reasoning,
-                atomic_type: atomicType,
-                composite_type: compositeType
+                atomic_type: chosenPair.atomicType,
+                composite_type: chosenPair.compositeType
             };
 
             setGraphData({
@@ -1561,6 +1807,19 @@ const App: React.FC = () => {
         }
     };
 
+    // Kiosk connect mode: when both endpoints are picked by tapping, kick off the search.
+    useEffect(() => {
+        if (!pendingKioskConnect) return;
+        const { start, end } = pendingKioskConnect;
+        setPendingKioskConnect(null);
+        // Ensure UI reflects the endpoints even if search clears the graph
+        setSearchMode('connect');
+        setPathStart(start);
+        setPathEnd(end);
+        handlePathSearch(start, end);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingKioskConnect]);
+
     // Load initial graph based on URL params (static or live)
     useEffect(() => {
         const checkParams = async () => {
@@ -1948,6 +2207,33 @@ const App: React.FC = () => {
             loadNodeImage(node.id, node.title);
         }
 
+        // Kiosk connect mode: taps pick start, then end, and automatically run "Connect 2".
+        // In this mode we avoid expanding nodes on tap; taps are selection, not exploration.
+        if (isKioskMode && searchMode === 'connect') {
+            const title = node.title;
+
+            // Keep sidebar selection behavior (but no expansion)
+            setSelectedNode(node);
+            setSelectedLink(null);
+            setContextMenu(null);
+            setExpandingNodeId(null);
+            setNewChildNodeIds(new Set());
+
+            // Pick endpoints
+            if (!pathStart || (pathStart && pathEnd)) {
+                setPathStart(title);
+                setPathEnd('');
+                return;
+            }
+            if (!pathEnd && title !== pathStart) {
+                setPathEnd(title);
+                setPendingKioskConnect({ start: pathStart, end: title });
+                return;
+            }
+
+            return;
+        }
+
         // If in connect mode, auto-fill start/end inputs ONLY if they are empty
         if (searchMode === 'connect') {
             setPathStart(prev => prev || node.title);
@@ -1985,7 +2271,7 @@ const App: React.FC = () => {
                 fetchAndExpandNode(node);
             }
         }
-    }, [searchMode, pathStart, selectedNode, loadNodeImage, fetchAndExpandNode]);
+    }, [isKioskMode, searchMode, pathStart, pathEnd, selectedNode, loadNodeImage, fetchAndExpandNode]);
 
     const handleLinkClick = useCallback((link: GraphLink) => {
         try {
@@ -2270,6 +2556,29 @@ const App: React.FC = () => {
         setShowBrowse(true);
     }, []);
 
+    const handleKioskPickTerm = (term: string) => {
+        // Explore: start a search immediately (no typing)
+        if (searchMode === 'explore') {
+            setExploreTerm(term);
+            // Kiosk: expand only one hop on initial open (avoid overwhelming auto leaf expansion)
+            handleStartSearch(term, 0);
+            return;
+        }
+
+        // Connect: first pick sets start, second pick sets end and runs Connect 2
+        if (!pathStart || (pathStart && pathEnd)) {
+            setPathStart(term);
+            setPathEnd('');
+            return;
+        }
+
+        if (!pathEnd && term !== pathStart) {
+            setPathEnd(term);
+            setPendingKioskConnect({ start: pathStart, end: term });
+            return;
+        }
+    };
+
     if (!isKeyReady) {
         return (
             <div className="flex flex-col items-center justify-center w-screen h-screen bg-slate-900 text-white space-y-6">
@@ -2371,6 +2680,19 @@ const App: React.FC = () => {
                     setPathEnd={setPathEnd}
                     onSearch={handleStartSearch}
                     onPathSearch={handlePathSearch}
+                    isKioskMode={isKioskMode}
+                    isAdminMode={isAdminMode}
+                    kioskSeedTerms={kioskSeedTerms}
+                    onKioskPickTerm={handleKioskPickTerm}
+                    kioskDomains={kioskDomains}
+                    selectedKioskDomainId={selectedKioskDomainId}
+                    onSelectKioskDomain={(domainId) => {
+                        setSelectedKioskDomainId(domainId);
+                        // Clear any in-progress connect selection when switching domains
+                        setPathStart('');
+                        setPathEnd('');
+                    }}
+                    onUpdateKioskDomains={(domains) => setKioskDomains(domains)}
                     onClear={handleClear}
                     onExpandAllLeafNodes={handleExpandAllLeafNodes}
                     isProcessing={isProcessing || isExpandingAllLeaves}

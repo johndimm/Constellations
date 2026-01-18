@@ -93,7 +93,7 @@
 <li><b>A Bipartite Interface for Open-World Knowledge Exploration</b></li>
 </ul>
 <h2>One-sentence pitch</h2>
-<p>Constellations is an interactive system for <b>low-friction, branching exploration</b> that constructs <b>bipartite (Atomic↔Composite)</b> graphs on demand from natural-language queries and attaches <b>edge evidence</b> so users can ask “why is this connected?” as they explore.</p>
+<p>Constellations is an interactive system for <b>low-friction, branching exploration</b> that constructs <b>bipartite (Atomic↔Composite)</b> graphs on demand from natural-language queries and attaches <b>edge evidence</b> to support interpretability during exploration.</p>
 <h2>Core framing</h2>
 <ul>
 <li><b>Problem</b>: People often explore knowledge for recall, curiosity, and discovery—not just to answer a single query. Search and static KGs under-serve fast, low-commitment <b>try/backtrack</b> exploration.</li>
@@ -109,9 +109,9 @@
 </ul>
 <h2>Contributions (draft)</h2>
 <ul>
-<li><b>System</b>: A working interactive graph explorer that supports multiple Atomic↔Composite pairs with a consistent UI.</li>
+<li><b>System</b>: A working interactive graph explorer that supports a small set of Atomic↔Composite pairs and <b>locks the pair per session</b> (chosen from the first query) to prevent mid-graph switching.</li>
 <li><b>Design</b>: A design rationale for bipartite alternation as an exploration constraint (“events as meetings” generalized).</li>
-<li><b>Evidence UI</b>: Edge-level evidence display (“why is this connected?”) as a first-class interaction.</li>
+<li><b>Evidence UI</b>: Edge-level evidence display as a first-class interaction.</li>
 <li><b>Evaluation plan</b>: A mixed-method evaluation focused on recall, discovery, and sensemaking during low-friction exploratory navigation.</li>
 </ul>
 <h2>Research questions (draft)</h2>

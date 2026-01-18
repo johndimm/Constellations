@@ -9,11 +9,11 @@ Constellations is an interactive graph explorer that constructs a small, local g
 The UI encodes this alternation with distinct visual forms (e.g., circles vs cards) while keeping interactions consistent across domains.
 
 ## Data flow (high level)
-1. **User query**: user enters a seed entity.
+1. **User query**: in kiosk mode (default), the user taps a curated seed entity (no typing); in non-kiosk mode, the user can type a query.
 2. **Context retrieval**: fetch lightweight context (e.g., Wikipedia summary) to help disambiguation and mitigate model knowledge gaps.
-3. **Type classification**: determine whether the seed is Atomic or Composite and identify the bipartite pair labels (AtomicType↔CompositeType).
-4. **Expansion**: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition.
-5. **Evidence attachment**: each proposed neighbor includes an evidence snippet + page title; selecting an edge reveals the evidence (“why is this connected?”).
+3. **Start-pair classification (locked)**: choose a bipartite pair from the first input (currently one of Person↔Event, Ingredient↔Recipe, Symptom↔Disease), then **lock it for the entire graph** (no switching).
+4. **Expansion**: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition, conditioned on the locked pair.
+5. **Evidence attachment**: each proposed neighbor includes an evidence snippet + page title; selecting an edge reveals the supporting citation.
 6. **Caching**: store nodes and edges (with evidence) in a database to reduce repeated calls and support persistence.
 
 ## Bipartite constraint and “events as meetings”
@@ -68,7 +68,8 @@ The embedded video can render as a black frame in some contexts, so we include a
 Constellations is optimized for low commitment per step:
 - expanding a node is a single click,
 - backing up (choosing a different node) is immediate,
-- bulk operations allow quick frontier growth (e.g., expand all leaf/frontier nodes across the whole graph).
+- bulk operations allow quick frontier growth (e.g., expand all frontier nodes across the whole graph),
+- when a node’s first expansion yields very few neighbors, the UI can automatically request “expand more” once to reduce repeated clicks.
 
 This interaction model encourages “try and see” exploration, where users do not need to decide a path “once and for all.”
 
@@ -79,14 +80,13 @@ To keep exploration responsive and reduce repeated API calls, Constellations cac
 
 Caching supports repeated browsing, saving/loading graphs, and revisiting a previously explored frontier with evidence intact.
 
-## Implementation notes (to expand later)
-- **Graph rendering**: force-directed layout with interaction primitives (hover highlight, edge selection).
-- **Expansion strategy**: request a bounded number of neighbors (8–10) to keep the interface comprehensible.
-- **Guardrails**: enforce named-entity outputs and require per-edge evidence in the LLM schema to improve interpretability.
-- **Failure modes**: ambiguity, generic outputs, and recency; mitigations include context-first classification and evidence requirements.
+## Implementation notes
+The current implementation is a client-side React application with a small cache backend. While the core ideas are model- and stack-agnostic, a few design choices matter for reproducibility and user experience:
 
-## Implementation notes (to expand later)
-- Graph rendering and interaction model (click/hover, progressive expansion).
-- Schema/caching (nodes, edges, evidence stored in edge metadata).
-- Failure modes (ambiguity, generic outputs, recency) and mitigations (context-first classification; strict output schema; evidence requirement).
+- **Graph rendering and interaction**: a force-directed node-link layout supports direct manipulation (dragging nodes), hover highlighting, and edge selection for evidence inspection. Nodes are visually differentiated by partition (Atomic vs Composite) to reinforce alternation.
+- **Bounded neighborhood expansion**: each expansion requests a small number of neighbors (typically 8–10) to avoid hairball growth and to keep the choice set cognitively manageable.
+- **LLM output guardrails**: expansions are constrained to named entities on the opposite partition and require per-edge evidence fields (a short snippet plus a source page title/URL). This does not guarantee correctness, but it makes edges inspectable.
+- **Context-first disambiguation**: before classification/expansion, the system fetches lightweight context (e.g., a Wikipedia summary) to reduce ambiguity and mitigate model knowledge gaps.
+- **Session-level pair locking**: after the first query, the chosen Atomic↔Composite pair is locked for the remainder of the graph exploration to reduce mid-graph switching and preserve stable semantics for expansion prompts.
+- **Caching and persistence**: nodes and edges (including evidence) are cached to reduce repeated LLM calls and to enable saving/loading graphs with evidence intact.
 

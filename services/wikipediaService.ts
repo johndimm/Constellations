@@ -334,6 +334,48 @@ export const fetchWikipediaSummary = async (
       "ted dunning": "Ted Dunning is a computer scientist, software architect, and machine learning expert known for his work on streaming algorithms, Mahout, and real-time analytics."
     };
     if (summaryOverrides[normalized]) return { extract: summaryOverrides[normalized], pageid: null, title: query };
+
+    // IMPORTANT: If the exact title exists as a non-disambiguation page, prefer it even when context is provided.
+    // This prevents cases like "Pablo Picasso" resolving to "(song)" due to contextual search ranking.
+    const tryDirectLookup = async (titleToFetch: string) => {
+      try {
+        const directUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToFetch)}&redirects=1&origin=*`;
+        const directRes = await fetch(directUrl);
+        const directData = await directRes.json();
+        const directPages = directData.query?.pages;
+
+        if (directPages) {
+          const page = Object.values(directPages)[0] as any;
+          if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
+            const fullExtract = page.extract || "";
+            let paragraphs = fullExtract.split(/\n\n|\r\n\r\n/);
+            let firstParagraph = paragraphs[0].trim();
+            if (!firstParagraph || firstParagraph.length > 1500) {
+              const lines = fullExtract.split(/\n|\r/);
+              if (lines[0].trim()) firstParagraph = lines[0].trim();
+            }
+            if (firstParagraph.length > 1000) {
+              const truncated = firstParagraph.substring(0, 1000);
+              const lastPeriod = truncated.lastIndexOf('.');
+              firstParagraph = lastPeriod > 500 ? truncated.substring(0, lastPeriod + 1) : truncated + "...";
+            }
+            const finalExtract = firstParagraph || null;
+            if (finalExtract) {
+              return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null };
+            }
+          }
+        }
+      } catch { }
+      return null;
+    };
+
+    // Try exact clean query first.
+    const exact = await tryDirectLookup(cleanQuery);
+    if (exact?.extract) {
+      console.log(`✅ [Wiki] Direct lookup succeeded for "${exact.title}" (preferred over search)`);
+      return exact;
+    }
+
     const searchQuery = context ? `${cleanQuery} ${context}` : query;
     const avoidMedia = /\b(project|program|programme|operation|war|battle|campaign|treaty|scandal|scientist)\b/i.test(cleanQuery);
     const isMediaTitle = (title: string) => /\b(film|tv series|miniseries|series|movie|documentary|episode)\b/i.test(title);
@@ -471,43 +513,7 @@ export const fetchWikipediaSummary = async (
 
     console.log(`❌ [Wiki] No summary found for "${bestTitle}" via search. Attempting direct lookup for "${cleanQuery}".`);
 
-    // Direct lookup fallback
-    const tryDirectLookup = async (titleToFetch: string) => {
-      try {
-        const directUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToFetch)}&redirects=1&origin=*`;
-        const directRes = await fetch(directUrl);
-        const directData = await directRes.json();
-        const directPages = directData.query?.pages;
-
-        if (directPages) {
-          const page = Object.values(directPages)[0] as any;
-          if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
-            // Reuse extraction logic
-            const fullExtract = page.extract || "";
-            let paragraphs = fullExtract.split(/\n\n|\r\n\r\n/);
-            let firstParagraph = paragraphs[0].trim();
-            if (!firstParagraph || firstParagraph.length > 1500) {
-              const lines = fullExtract.split(/\n|\r/);
-              if (lines[0].trim()) firstParagraph = lines[0].trim();
-            }
-            if (firstParagraph.length > 1000) {
-              const truncated = firstParagraph.substring(0, 1000);
-              const lastPeriod = truncated.lastIndexOf('.');
-              firstParagraph = lastPeriod > 500 ? truncated.substring(0, lastPeriod + 1) : truncated + "...";
-            }
-
-            const finalExtract = firstParagraph || null;
-            if (finalExtract) {
-              console.log(`✅ [Wiki] Found summary via direct lookup for "${page.title}"`);
-              return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null };
-            }
-          }
-        }
-      } catch (err) {
-        console.warn(`Direct lookup failed for ${titleToFetch}`, err);
-      }
-      return null;
-    };
+    // Direct lookup fallback (reuse helper)
 
     // 1. Try exact clean query
     const exactMatch = await tryDirectLookup(cleanQuery);

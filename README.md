@@ -15,13 +15,19 @@
 
 Originally designed to map world history, **Constellations** has evolved into a **Universal Bipartite Explorer**. It uses LLMs to identify the fundamental "Atomic" building blocks and the "Composite" collections that connect them in any domain.
 
-### Supported Bipartite Pairs:
-- **History**: Person (Atomic) ↔ Event/Project (Composite)
-- **Cinema**: Actor/Director (Atomic) ↔ Movie/TV Show (Composite)
-- **Sports**: Player (Atomic) ↔ Team (Composite)
-- **Culinary**: Ingredient (Atomic) ↔ Recipe (Composite)
-- **Medicine**: Symptom (Atomic) ↔ Disease (Composite)
-- **Academia**: Researcher (Atomic) ↔ Paper/Grant (Composite)
+### Locked bipartite pairs (chosen once at the start)
+Constellations now **locks a single bipartite pair per graph**, chosen from the **first input node** (and then **does not switch**):
+- **Person ↔ Event**
+- **Ingredient ↔ Recipe**
+- **Symptom ↔ Disease**
+
+This makes exploration more reliable (no mid-graph “ontology drift”), while still supporting multiple domains.
+
+### Kiosk mode (default)
+Constellations is optimized for touch displays and public installations:
+- **No typing by default**: users start from curated “Start here” seeds and expand by tapping.
+- **Old typing UI**: add `?kiosk=0`
+- **Curate domains/seeds in-app**: add `?admin=1`
 
 ### Universal Examples:
 | Culinary (Beef) | Sports (LeBron James) | Medicine (Sore Throat) |
@@ -38,7 +44,7 @@ The app strictly follows a bipartite structure:
 - **Composite Nodes** (Cards): Collections or events that bring Atomics together (Movies, Recipes, Diseases).
 - **Edges**: Only connect Atomics to the Composites they belong to.
 
-This prevents "hallucinated connections" and forces a logical structure onto the space. The AI even explains its classification reasoning in the sidebar for every node.
+This prevents "hallucinated connections" and forces a logical structure onto the space. The AI explains its classification reasoning in the sidebar for every node, and the chosen bipartite pair is locked at the start of each graph.
 
 ![The Godfather and Marlon Brando](public/godfather-brando.png)
 
@@ -72,7 +78,7 @@ For inspiration, I scored the 5,000 "top" biographies from Simple Wikipedia base
 
 ## Technical Architecture
 
-- **Live Queries**: Uses **Gemini Pro** to identify connections on the fly.
+- **Live Queries**: Uses **Gemini** models to identify connections on the fly (configurable via `VITE_GEMINI_MODEL`).
 - **Image Logic**: Currently queries **Wikipedia Commons** for images rather than the LLM (which the agents claimed would be too error-prone, though the current way has its own quirks!).
 - **Persistence**: Saved graphs and LLM responses are cached in a **PostgreSQL (Supabase)** database to reduce tokens and speed up recurring paths.
 - **Frontend**: React 19 + Tailwind CSS.
@@ -90,6 +96,9 @@ For inspiration, I scored the 5,000 "top" biographies from Simple Wikipedia base
    Create a `.env` file with your Gemini API key and Supabase URL.
    ```env
    VITE_GEMINI_API_KEY=your_key_here
+   # Optional:
+   VITE_GEMINI_MODEL=gemini-2.5-flash
+   VITE_GEMINI_MODEL_CLASSIFY=gemini-2.5-pro
    DATABASE_URL=your_postgres_url
    ```
 

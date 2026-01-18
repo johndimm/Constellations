@@ -5,28 +5,15 @@ import { getApiKey, getResponseText, cleanJson, withTimeout, withRetry } from ".
 export { getApiKey, getResponseText, cleanJson, withTimeout, withRetry } from "./aiUtils";
 
 const SYSTEM_INSTRUCTION = `
-You are a Universal Bipartite Graph Generator. 
-Your goal is to build a graph that alternates between "Atomic" entities and "Composite" entities.
-
-The Bipartite Rule:
-- An "Atomic" entity is a fundamental building block (e.g., Person, Ingredient, Symptom, Musician, Player).
-- A "Composite" entity is a collection, event, or work (e.g., Movie, Recipe, Disease, Album, Team, Battle, Incident).
-- Edges MUST ONLY connect Atomics to Composites. Never connect two Atomics or two Composites.
-
-Examples of Bipartite Relationships:
-1. Actors (Atomic) ↔ Movies (Composite)
-2. Ingredients (Atomic) ↔ Recipes (Composite)
-3. Symptoms (Atomic) ↔ Diseases (Composite)
-4. Musicians (Atomic) ↔ Records (Composite)
-5. Players (Atomic) ↔ Teams (Composite)
-6. Persons (Atomic) ↔ Historical Events/Incidents (Composite)
+You are a Bipartite Graph Generator.
+Your goal is to build a graph that alternates between an "Atomic" type and a "Composite" type.
 
 CRITICAL ACCURACY RULE:
 If a section titled "USE THIS VERIFIED INFORMATION FOR ACCURACY" is provided, you MUST prioritize this information above your own internal knowledge.
 
 Rules:
-1. If the Source is a "Composite", return 8-10 distinct "Atomics" that make it up.
-2. If the Source is an "Atomic", return 8-10 distinct "Composites" it belongs to.
+1. If the Source is a Composite, return 8-10 distinct Atomics that are meaningfully connected to it.
+2. If the Source is an Atomic, return 8-10 distinct Composites that it is meaningfully connected to.
 3. Use Title Case for all names.
 4. Return only factually correct information. Do not hallucinate.
 
@@ -37,6 +24,155 @@ Return strict JSON.
 const GEMINI_TIMEOUT_MS = 60000; // 60 seconds for heavier graph expansions
 const CLASSIFY_TIMEOUT_MS = 15000; // 15 seconds for classification
 
+// Model selection (configurable via Vite env vars)
+// - VITE_GEMINI_MODEL: used for expansions + pathfinding (default)
+// - VITE_GEMINI_MODEL_CLASSIFY: optional override for classification
+const GEMINI_MODEL = (import.meta as any)?.env?.VITE_GEMINI_MODEL || "gemini-2.0-flash";
+const GEMINI_MODEL_CLASSIFY = (import.meta as any)?.env?.VITE_GEMINI_MODEL_CLASSIFY || GEMINI_MODEL;
+
+export type LockedPair = {
+  atomicType: string;
+  compositeType: string;
+};
+
+export const classifyStartPair = async (
+  term: string,
+  wikiContext?: string
+): Promise<{
+  type: string;
+  description: string;
+  isAtomic: boolean;
+  atomicType: string;
+  compositeType: string;
+  reasoning: string;
+}> => {
+  // Fast safety heuristic: if the VERIFIED info strongly indicates this is a work (painting/album/film/book),
+  // it must NOT be a person. We still choose the pair, but force the term onto the composite side.
+  // This reduces common kiosk errors like "The Starry Night" being treated as a person.
+  const wc = (wikiContext || "").toLowerCase();
+  const looksLikeWork =
+    wc.includes(" is a painting") ||
+    wc.includes(" was a painting") ||
+    wc.includes(" is an oil") ||
+    wc.includes(" is a  painting") ||
+    wc.includes(" is a song") ||
+    wc.includes(" is an album") ||
+    wc.includes(" is a film") ||
+    wc.includes(" is a novel") ||
+    wc.includes(" is a book") ||
+    wc.includes(" is a sculpture") ||
+    wc.includes(" is an artwork") ||
+    wc.includes(" is a work of art");
+
+  if (looksLikeWork) {
+    return {
+      type: "Event",
+      description: "",
+      isAtomic: false,
+      atomicType: "Person",
+      compositeType: "Event",
+      reasoning: "Verified information indicates this is a work (not a person), so it must be Composite in the chosen pair."
+    };
+  }
+
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    return {
+      type: "Event",
+      description: "",
+      isAtomic: false,
+      atomicType: "Person",
+      compositeType: "Event",
+      reasoning: "No API key available; defaulting to Person↔Event."
+    };
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  const wikiPrompt = wikiContext
+    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
+    : "";
+
+  const prompt = `Choose the bipartite pair for this session based ONLY on the first input: "${term}".${wikiPrompt}
+You MUST choose EXACTLY ONE of these pairs:
+1) Person ↔ Event
+2) Ingredient ↔ Recipe
+3) Symptom ↔ Disease
+
+Rules:
+- If "${term}" is a person (an individual human), choose Person ↔ Event.
+- If "${term}" is a historical event/incident/scandal/battle, choose Person ↔ Event.
+- If "${term}" is a symptom (e.g., sore throat, runny nose), choose Symptom ↔ Disease.
+- If "${term}" is an ingredient (e.g., pepper, chicken, beef), choose Ingredient ↔ Recipe.
+- Otherwise, prefer Person ↔ Event unless the VERIFIED INFORMATION strongly implies Symptom or Ingredient.
+
+Return JSON:
+{
+  "type": "Person | Event | Ingredient | Recipe | Symptom | Disease",
+  "description": "Short 1-sentence description",
+  "isAtomic": true/false,
+  "atomicType": "Person | Ingredient | Symptom",
+  "compositeType": "Event | Recipe | Disease",
+  "reasoning": "Brief explanation of the chosen pair and which side the term is on"
+}`;
+
+  const makeApiCall = () => ai.models.generateContent({
+    model: GEMINI_MODEL_CLASSIFY,
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          type: { type: Type.STRING },
+          description: { type: Type.STRING },
+          isAtomic: { type: Type.BOOLEAN },
+          atomicType: { type: Type.STRING },
+          compositeType: { type: Type.STRING },
+          reasoning: { type: Type.STRING }
+        },
+        required: ["type", "description", "isAtomic", "atomicType", "compositeType", "reasoning"]
+      }
+    }
+  });
+
+  const response = await withRetry(
+    () => withTimeout(makeApiCall(), CLASSIFY_TIMEOUT_MS, "Start-pair classification timed out"),
+    2,
+    400
+  );
+
+  const rawText = getResponseText(response);
+  const text = cleanJson(rawText);
+  const json = text ? JSON.parse(text) : {};
+
+  // Validate to allowed set; fallback to Person↔Event
+  const allowedPairs = new Set([
+    "Person|Event",
+    "Ingredient|Recipe",
+    "Symptom|Disease"
+  ]);
+  const pairKey = `${json.atomicType}|${json.compositeType}`;
+  if (!allowedPairs.has(pairKey)) {
+    return {
+      type: "Event",
+      description: json.description || "",
+      isAtomic: false,
+      atomicType: "Person",
+      compositeType: "Event",
+      reasoning: "Model returned an unsupported pair; defaulting to Person↔Event."
+    };
+  }
+
+  return {
+    type: json.type || "Event",
+    description: json.description || "",
+    isAtomic: !!json.isAtomic,
+    atomicType: json.atomicType,
+    compositeType: json.compositeType,
+    reasoning: json.reasoning || ""
+  };
+};
+
 export const classifyEntity = async (term: string, wikiContext?: string): Promise<{ 
   type: string; 
   description: string; 
@@ -46,15 +182,15 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
   reasoning?: string;
 }> => {
   const normalized = term.trim().toLowerCase();
-  // Heuristic override: prefer the historical program over the movie
+  // Heuristic override: keep a high-signal default for an ambiguous title
   if (normalized === 'the manhattan project' || normalized === 'manhattan project') {
     return {
-      type: 'Project',
+      type: 'Event',
       description: 'World War II research and development program that produced the first nuclear weapons.',
       isAtomic: false,
       atomicType: 'Person',
-      compositeType: 'Project',
-      reasoning: 'The Manhattan Project is a composite research program (Project) involving many scientists (Atomic).'
+      compositeType: 'Event',
+      reasoning: 'Not a person → treat as Event (Composite) in the Person↔Event graph.'
     };
   }
 
@@ -90,7 +226,7 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
     console.log("🤖 [Gemini] Classify Prompt:", prompt);
 
     const makeApiCall = () => ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_MODEL_CLASSIFY,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -187,7 +323,7 @@ export const fetchConnections = async (
     console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
     
     const makeApiCall = () => ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -284,7 +420,7 @@ export const fetchPersonWorks = async (
     console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
 
     const makeApiCall = () => ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -350,14 +486,14 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     Your goal is to find the most direct and historically significant connection path.
     
     CRITICAL RULES:
-    1. The path must ALTERNATE between "Person" and "Thing" (Movie, TV Show, Project, Organization, Event, Book, Paper).
+    1. The path must ALTERNATE between "Person" and "Event" (where "Event" includes organizations, works, projects, places, etc.; anything that is not a person).
     2. A "Person" MUST NOT be connected directly to another "Person".
-    3. A "Thing" MUST NOT be connected directly to another "Thing".
+    3. An "Event" MUST NOT be connected directly to another "Event".
     4. Each step must be a direct and verifiable collaboration, affiliation, or relationship.
     5. The path must be a continuous chain where each node is connected to the next.
     
     Example valid path:
-    Person (Isaac Asimov) -> Thing (Star Trek) -> Person (Gene Roddenberry)
+    Person (Isaac Asimov) -> Event (Star Trek) -> Person (Gene Roddenberry)
     
     Identify a sequence of 1-4 intermediary entities to link "${start}" to "${end}".
 
@@ -373,7 +509,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
 
   try {
     const response = await withTimeout(ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,

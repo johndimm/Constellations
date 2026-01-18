@@ -88,14 +88,15 @@
         <h1>Discussion & Future Work</h1>
 <h2>Discussion: what Constellations is (and is not)</h2>
 <p>Constellations is designed for <b>exploration</b>, not inference. While bipartite network analysis offers statistical models for affiliation data, Constellations operates in an open-world setting with locally constructed neighborhoods and focuses on user experience: recall, curiosity, and sensemaking.</p>
-<h2>Limitations (draft)</h2>
+<h2>Limitations</h2>
 <ul>
-<li><b>Open-world ambiguity</b>: many entities have ambiguous names; disambiguation is imperfect.</li>
-<li><b>Recency and knowledge gaps</b>: recent events may not be represented reliably without external context.</li>
-<li><b>Evidence quality</b>: evidence snippets can be missing, weak, or not fully verifiable without additional checks.</li>
-<li><b>Domain variance</b>: some domains are naturally “clean” bipartite graphs (films), while others are noisier (politics).</li>
+<li><b>Open-world ambiguity and name collisions</b>: many entities share names (e.g., people vs works with the same title). Lightweight context helps, but disambiguation remains imperfect and can propagate errors into expansion.</li>
+<li><b>Model knowledge gaps and recency</b>: LLMs can be outdated, and Wikipedia coverage varies; the system can misclassify entities or miss important neighbors without stronger retrieval and verification.</li>
+<li><b>Evidence is supportive, not definitive</b>: a single snippet and link is often enough for user judgment, but it does not guarantee the edge is correct. Automated snippet verification and multi-source provenance are not yet implemented.</li>
+<li><b>Domain variance</b>: some domains naturally form clean affiliation structures (e.g., actors↔films), while others exhibit weaker “membership” semantics or higher noise. Session-level pair locking reduces drift but can also constrain legitimate cross-type exploration.</li>
+<li><b>Scalability and layout stability</b>: force-directed layouts are effective for small local neighborhoods but can become unstable or visually dense under repeated bulk expansion, motivating multi-resolution views and clustering.</li>
 </ul>
-<h2>Future work directions (draft)</h2>
+<h2>Future work directions</h2>
 <h3>Better expansion ranking (bipartite-aware)</h3>
 <p>Use bipartite-inspired heuristics for ranking and diversity:</p>
 <ul>
@@ -110,6 +111,8 @@
 <li>automated verification that the snippet exists in the claimed source,</li>
 <li>user feedback loops (confirm/reject edges).</li>
 </ul>
+<h3>Pair learning and “soft locks”</h3>
+<p>The current system chooses among a small set of bipartite pairs and locks the choice for the session. A natural extension is to treat pair selection as a probabilistic belief state: maintain a small set of candidate pairings with confidence, allow controlled switching only when confidence crosses a threshold, and preserve previously drawn edges by freezing node partitions once placed.</p>
 <h3>Global “map-like” exploration (joint embedding)</h3>
 <p>Inspired by joint displays of affiliation networks, a long-term direction is to place a very large two-mode graph into a shared 2D space (“knowledge cartography”), enabling map-like exploration at multiple zoom levels. A practical approach would require multi-resolution embeddings and approximate optimization rather than exact global minimization.</p>
 <h3>Domain packs and curatorial modes</h3>

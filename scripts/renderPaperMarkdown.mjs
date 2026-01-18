@@ -14,12 +14,23 @@ function esc(s) {
     .replaceAll("'", "&#39;");
 }
 
+function resolveAssetUrl(url) {
+  const u = String(url || "").trim();
+  // When opening rendered HTML via file://, root-absolute paths like "/beef.png" break.
+  // The rendered files live at: public/paper/rendered/*.html
+  // Assets live at: public/<asset>
+  // So rewrite "/asset" -> "../../asset"
+  if (u.startsWith("/") && !u.startsWith("//")) return `../../${u.slice(1)}`;
+  return u;
+}
+
 function inline(md) {
   // images ![alt](url) (inline form; block images handled in mdToHtml)
   // Support URLs wrapped in <...> to allow spaces.
   let s = md.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, urlRaw) => {
     let url = String(urlRaw).trim();
     if (url.startsWith("<") && url.endsWith(">")) url = url.slice(1, -1).trim();
+    url = resolveAssetUrl(url);
     const safeAlt = esc(String(alt || "").trim());
     const safeUrl = esc(url);
     return `<img src="${safeUrl}" alt="${safeAlt}" />`;
@@ -28,6 +39,7 @@ function inline(md) {
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, urlRaw) => {
     let url = String(urlRaw).trim();
     if (url.startsWith("<") && url.endsWith(">")) url = url.slice(1, -1).trim();
+    url = resolveAssetUrl(url);
     const safeText = esc(text);
     const safeUrl = esc(url);
     const isExternal = /^https?:\/\//i.test(url);
@@ -95,6 +107,7 @@ function mdToHtml(md) {
       flushList();
       let url = String(img[2]).trim();
       if (url.startsWith("<") && url.endsWith(">")) url = url.slice(1, -1).trim();
+      url = resolveAssetUrl(url);
       const safeUrl = esc(url);
       const alt = String(img[1] || "").trim();
       const safeAlt = esc(alt);

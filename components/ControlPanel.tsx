@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, Download, Upload, Share2, Copy, Users } from 'lucide-react';
+import type { KioskDomain } from '../kioskDomains';
 
 interface ControlPanelProps {
   searchMode: 'explore' | 'connect';
@@ -13,6 +14,15 @@ interface ControlPanelProps {
 
   onSearch: (term: string) => void;
   onPathSearch: (start: string, end: string) => void;
+  // Kiosk/no-typing mode (touch-screen installation)
+  isKioskMode?: boolean;
+  isAdminMode?: boolean;
+  kioskSeedTerms?: string[];
+  onKioskPickTerm?: (term: string) => void;
+  kioskDomains?: KioskDomain[];
+  selectedKioskDomainId?: string;
+  onSelectKioskDomain?: (domainId: string) => void;
+  onUpdateKioskDomains?: (domains: KioskDomain[]) => void;
   onClear: () => void;
   onExpandAllLeafNodes?: () => void;
   isProcessing: boolean;
@@ -48,6 +58,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
   onSearch,
   onPathSearch,
+  isKioskMode = false,
+  isAdminMode = false,
+  kioskSeedTerms = [],
+  onKioskPickTerm,
+  kioskDomains = [],
+  selectedKioskDomainId,
+  onSelectKioskDomain,
+  onUpdateKioskDomains,
   onClear,
   onExpandAllLeafNodes,
   isProcessing,
@@ -73,6 +91,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const [showHelp, setShowHelp] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [showEditDomains, setShowEditDomains] = useState(false);
+  const [editDomainId, setEditDomainId] = useState<string | null>(null);
+  const [newDomainLabel, setNewDomainLabel] = useState('');
+  const [newTerm, setNewTerm] = useState('');
+  const [bulkTerms, setBulkTerms] = useState('');
 
   // Save/Load/Share State
   const [showSave, setShowSave] = useState(false);
@@ -83,6 +106,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isKioskMode) return; // no typing / no submit in kiosk mode
     if (searchMode === 'explore') {
       if (exploreTerm.trim()) {
         onSearch(exploreTerm.trim());
@@ -158,6 +182,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     "Napoleon Bonaparte"
   ];
 
+  useEffect(() => {
+    if (!editDomainId && kioskDomains.length) {
+      setEditDomainId(selectedKioskDomainId || kioskDomains[0].id);
+    }
+  }, [editDomainId, kioskDomains, selectedKioskDomainId]);
+
+  const selectedDomainForEdit = kioskDomains.find(d => d.id === editDomainId) || kioskDomains[0];
+  const selectedDomain = kioskDomains.find(d => d.id === selectedKioskDomainId) || kioskDomains[0];
+
   // Header actions portal removed; all actions live in the control panel for mobile space
   const headerActions = null;
 
@@ -166,7 +199,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       {headerActions}
       <div
         className={`absolute left-3 sm:left-3 z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%+1.5rem)]' : 'translate-x-0'} top-16`}
-        style={{ width: 'calc(100% - 1.5rem)', maxWidth: '34rem' }}
+        style={{ width: 'calc(100% - 1.5rem)', maxWidth: '26rem' }}
       >
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
           {/* Primary actions (panel-local) */}
@@ -218,26 +251,27 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             >
               SHARE
             </button>
-            <button
-              onClick={onClear}
-              className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-red-300 flex items-center gap-1`}
-              title="Clear Graph"
-            >
-              <Trash2 size={14} /> CLEAR
-            </button>
 
             {onExpandAllLeafNodes && (
               <button
                 onClick={onExpandAllLeafNodes}
                 disabled={isProcessing}
-                className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-emerald-300 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed`}
-                title="Expand all unexpanded nodes anywhere in the graph (leaf/frontier expansion)"
+                className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-emerald-300 inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed`}
+                title="Expand everything reachable from the current graph frontier (all unexpanded nodes anywhere)"
               >
-                <Maximize size={14} className="text-emerald-400" /> EXPAND LEAVES
+                <Maximize size={14} className="text-emerald-400" />
+                EXPAND ALL
               </button>
             )}
           </div>
           <div className="flex flex-wrap gap-2 mb-3 text-xs">
+            <button
+              onClick={onClear}
+              className="text-slate-300 hover:text-red-300 p-1.5 rounded-md border border-slate-700 bg-slate-800/80"
+              title="Clear graph"
+            >
+              <Trash2 size={16} />
+            </button>
             <button
               onClick={onToggleTimeline}
               className={`flex items-center gap-1 px-2 py-1 rounded-md uppercase tracking-wider transition-all border shrink-0 ${isTimelineMode
@@ -560,7 +594,82 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
 
             <form onSubmit={handleSubmit} className="relative mb-4 space-y-3">
-              {searchMode === 'explore' ? (
+              {isKioskMode ? (
+                <div className="space-y-2">
+                  {/* Domain selector */}
+                  {kioskDomains.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] text-slate-400 uppercase tracking-wider">Domain</div>
+                        {isAdminMode && onUpdateKioskDomains && (
+                          <button
+                            type="button"
+                            className="text-[11px] text-slate-300 hover:text-white underline"
+                            onClick={() => setShowEditDomains(true)}
+                          >
+                            Edit domains
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {kioskDomains.map(d => (
+                          <button
+                            key={d.id}
+                            type="button"
+                            onClick={() => onSelectKioskDomain?.(d.id)}
+                            className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
+                              (selectedKioskDomainId || kioskDomains[0].id) === d.id
+                                ? 'bg-amber-500 text-slate-900 border-amber-400'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                            }`}
+                            disabled={isProcessing}
+                          >
+                            {d.label}
+                          </button>
+                        ))}
+                      </div>
+                      {selectedDomain?.description && (
+                        <div className="text-[11px] text-slate-400 leading-snug">
+                          <div>{selectedDomain.description}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {searchMode === 'explore' ? (
+                    <div className="text-xs text-slate-300">
+                      Tap a starting point below to begin.
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-300">
+                      Tap a start, then tap an end. (No typing.)
+                    </div>
+                  )}
+
+                  {searchMode === 'connect' && (pathStart || pathEnd) && (
+                    <div className="text-[11px] text-slate-200 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="truncate">
+                          <span className="text-slate-400">Start:</span>{" "}
+                          <span className="text-white font-semibold">{pathStart || "—"}</span>
+                          <span className="text-slate-500">{" "}→{" "}</span>
+                          <span className="text-slate-400">End:</span>{" "}
+                          <span className="text-white font-semibold">{pathEnd || "—"}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-white"
+                          onClick={() => { setPathStart(''); setPathEnd(''); }}
+                          title="Clear selection"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+              searchMode === 'explore' ? (
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <input type="text" value={exploreTerm} onChange={(e) => setExploreTerm(e.target.value)} placeholder="Enter a person or event..." className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-8 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" disabled={isProcessing} />
@@ -598,12 +707,35 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     {isProcessing ? 'Processing... ' : 'Find Connection'}
                   </button>
                 </div>
+              )
               )}
             </form>
 
             {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
 
-            {searchMode === 'explore' && (!hasStarted || isHovered) && (
+            {isKioskMode ? (
+              <div className="space-y-2">
+                <div className="text-[11px] text-slate-400 uppercase tracking-wider">Start here</div>
+                {/* Taller seed area to reduce scrolling on kiosk/touch displays */}
+                <div className="flex flex-wrap gap-1.5 max-h-[55vh] overflow-y-auto pr-1">
+                  {(kioskSeedTerms.length ? kioskSeedTerms : EXAMPLES).map(term => (
+                    <button
+                      key={term}
+                      onClick={() => {
+                        if (onKioskPickTerm) onKioskPickTerm(term);
+                        setHasStarted(true);
+                        if (window.innerWidth < 768) onSetCollapsed(true);
+                      }}
+                      className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-full border border-slate-700 transition-colors"
+                      disabled={isProcessing}
+                    >
+                      {term}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+            searchMode === 'explore' && (!hasStarted || isHovered) && (
               <div className="flex flex-wrap gap-1.5">
                 {EXAMPLES.map(ex => (
                   <button key={ex} onClick={() => { setExploreTerm(ex); onSearch(ex); setHasStarted(true); if (window.innerWidth < 768) onSetCollapsed(true); }} className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-full border border-slate-700 transition-colors">
@@ -611,10 +743,225 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   </button>
                 ))}
               </div>
+            )
             )}
           </div>
         </div>
       </div>
+
+      {/* Edit Domains Modal (admin-only) */}
+      {showEditDomains && isAdminMode && onUpdateKioskDomains && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            onClick={() => setShowEditDomains(false)}
+          />
+          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold">Edit kiosk domains</h3>
+              <button onClick={() => setShowEditDomains(false)} className="text-slate-400 hover:text-white">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-4">
+              <div className="space-y-2">
+                <div className="text-[11px] text-slate-400 uppercase tracking-wider">Domains</div>
+                <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                  {kioskDomains.map(d => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
+                        d.id === (editDomainId || kioskDomains[0]?.id)
+                          ? 'bg-slate-800 border-amber-500 text-white'
+                          : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800'
+                      }`}
+                      onClick={() => setEditDomainId(d.id)}
+                    >
+                      <div className="font-semibold">{d.label}</div>
+                      <div className="text-[11px] text-slate-400">{d.terms.length} starting points</div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="pt-2 border-t border-slate-700">
+                  <div className="text-[11px] text-slate-400 uppercase tracking-wider mb-2">Add domain</div>
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm"
+                      value={newDomainLabel}
+                      onChange={(e) => setNewDomainLabel(e.target.value)}
+                      placeholder="Domain name…"
+                    />
+                    <button
+                      type="button"
+                      className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold"
+                      onClick={() => {
+                        const label = newDomainLabel.trim();
+                        if (!label) return;
+                        const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `domain-${Date.now()}`;
+                        const next = [...kioskDomains, { id, label, terms: [] }];
+                        onUpdateKioskDomains(next);
+                        setNewDomainLabel('');
+                        setEditDomainId(id);
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] text-slate-400 uppercase tracking-wider">Selected</div>
+                    <div className="text-white font-semibold">{selectedDomainForEdit?.label || '—'}</div>
+                  </div>
+                  {selectedDomainForEdit && kioskDomains.length > 1 && (
+                    <button
+                      type="button"
+                      className="text-[11px] text-red-300 hover:text-red-200 underline"
+                      onClick={() => {
+                        const id = selectedDomainForEdit.id;
+                        const next = kioskDomains.filter(d => d.id !== id);
+                        onUpdateKioskDomains(next);
+                        setEditDomainId(next[0]?.id || null);
+                      }}
+                    >
+                      Delete domain
+                    </button>
+                  )}
+                </div>
+
+                {selectedDomainForEdit && (
+                  <>
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Rename</div>
+                      <input
+                        className="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm"
+                        value={selectedDomainForEdit.label}
+                        onChange={(e) => {
+                          const label = e.target.value;
+                          const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id ? { ...d, label } : d);
+                          onUpdateKioskDomains(next);
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Add starting point</div>
+                      <div className="flex gap-2">
+                        <input
+                          className="flex-1 bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm"
+                          value={newTerm}
+                          onChange={(e) => setNewTerm(e.target.value)}
+                          placeholder="e.g., The Godfather"
+                        />
+                        <button
+                          type="button"
+                          className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold"
+                          onClick={() => {
+                            const term = newTerm.trim();
+                            if (!term) return;
+                            const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id
+                              ? { ...d, terms: [...d.terms, term] }
+                              : d
+                            );
+                            onUpdateKioskDomains(next);
+                            setNewTerm('');
+                          }}
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Bulk add (one per line)</div>
+                      <textarea
+                        className="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm h-24"
+                        value={bulkTerms}
+                        onChange={(e) => setBulkTerms(e.target.value)}
+                        placeholder={"LeBron James\nsore throat\nBeef"}
+                      />
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold"
+                          onClick={() => {
+                            const terms = bulkTerms
+                              .split('\n')
+                              .map(s => s.trim())
+                              .filter(Boolean);
+                            if (!terms.length) return;
+                            const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id
+                              ? { ...d, terms: [...d.terms, ...terms] }
+                              : d
+                            );
+                            onUpdateKioskDomains(next);
+                            setBulkTerms('');
+                          }}
+                        >
+                          Add lines
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Starting points</div>
+                      <div className="max-h-56 overflow-y-auto pr-1 space-y-1">
+                        {selectedDomainForEdit.terms.map((t, idx) => (
+                          <div key={`${t}-${idx}`} className="flex items-center justify-between gap-2 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
+                            <div className="text-slate-200 text-sm truncate">{t}</div>
+                            <button
+                              type="button"
+                              className="text-slate-400 hover:text-red-300"
+                              onClick={() => {
+                                const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id
+                                  ? { ...d, terms: d.terms.filter((_, i) => i !== idx) }
+                                  : d
+                                );
+                                onUpdateKioskDomains(next);
+                              }}
+                              title="Remove"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-700 flex items-center justify-between">
+              <button
+                type="button"
+                className="text-[11px] text-slate-300 hover:text-white underline"
+                onClick={() => {
+                  try {
+                    const json = JSON.stringify(kioskDomains, null, 2);
+                    navigator.clipboard.writeText(json);
+                  } catch { }
+                }}
+              >
+                Copy domains JSON
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold"
+                onClick={() => setShowEditDomains(false)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

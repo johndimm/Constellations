@@ -94,11 +94,11 @@
 </ul>
 <p>The UI encodes this alternation with distinct visual forms (e.g., circles vs cards) while keeping interactions consistent across domains.</p>
 <h2>Data flow (high level)</h2>
-<p>1. <b>User query</b>: user enters a seed entity.</p>
+<p>1. <b>User query</b>: in kiosk mode (default), the user taps a curated seed entity (no typing); in non-kiosk mode, the user can type a query.</p>
 <p>2. <b>Context retrieval</b>: fetch lightweight context (e.g., Wikipedia summary) to help disambiguation and mitigate model knowledge gaps.</p>
-<p>3. <b>Type classification</b>: determine whether the seed is Atomic or Composite and identify the bipartite pair labels (AtomicType↔CompositeType).</p>
-<p>4. <b>Expansion</b>: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition.</p>
-<p>5. <b>Evidence attachment</b>: each proposed neighbor includes an evidence snippet + page title; selecting an edge reveals the evidence (“why is this connected?”).</p>
+<p>3. <b>Start-pair classification (locked)</b>: choose a bipartite pair from the first input (currently one of Person↔Event, Ingredient↔Recipe, Symptom↔Disease), then <b>lock it for the entire graph</b> (no switching).</p>
+<p>4. <b>Expansion</b>: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition, conditioned on the locked pair.</p>
+<p>5. <b>Evidence attachment</b>: each proposed neighbor includes an evidence snippet + page title; selecting an edge reveals the supporting citation.</p>
 <p>6. <b>Caching</b>: store nodes and edges (with evidence) in a database to reduce repeated calls and support persistence.</p>
 <h2>Bipartite constraint and “events as meetings”</h2>
 <p>The original domain (people↔events) is motivated by an event-centric view: an event is any construct that brings multiple people into relation. This framing generalizes naturally to other domains by choosing a Composite that aggregates multiple Atomics and for which the inverse membership relation is meaningful (e.g., actors in films; ingredients in recipes).</p>
@@ -113,29 +113,30 @@
 <h2>Figures (screenshots)</h2>
 <p>The experience is dynamic (the graph reconfigures as nodes are added; users can drag nodes to reshape local structure). A few static screenshots help convey the interaction model:</p>
 <p>In Figure 1, expanding a composite (film) reveals connected atomic entities (people) and supporting evidence.</p>
-<figure><img src="/godfather-brando.png" alt="Figure 1. The Godfather expansion (screenshot)" /><figcaption>Figure 1. The Godfather expansion (screenshot)</figcaption></figure>
+<figure><img src="../../godfather-brando.png" alt="Figure 1. The Godfather expansion (screenshot)" /><figcaption>Figure 1. The Godfather expansion (screenshot)</figcaption></figure>
 <p>Figure 2 illustrates the timeline view, where temporal metadata provides a second organizing lens alongside the network layout.</p>
-<figure><img src="/godfather-timeline.png" alt="Figure 2. Timeline view example (screenshot)" /><figcaption>Figure 2. Timeline view example (screenshot)</figcaption></figure>
+<figure><img src="../../godfather-timeline.png" alt="Figure 2. Timeline view example (screenshot)" /><figcaption>Figure 2. Timeline view example (screenshot)</figcaption></figure>
 <p>Figure 3 shows a path-seeking example: finding a bipartite path between two entities.</p>
-<figure><img src="/John%20Von%20Neumann%20to%20Geoffrey%20Hinton.png" alt="Figure 3. Path-seeking example (screenshot)" /><figcaption>Figure 3. Path-seeking example (screenshot)</figcaption></figure>
+<figure><img src="../../John%20Von%20Neumann%20to%20Geoffrey%20Hinton.png" alt="Figure 3. Path-seeking example (screenshot)" /><figcaption>Figure 3. Path-seeking example (screenshot)</figcaption></figure>
 <p>Figure 4 shows the people browser used to seed exploration.</p>
-<figure><img src="/people.png" alt="Figure 4. Browse People (screenshot)" /><figcaption>Figure 4. Browse People (screenshot)</figcaption></figure>
+<figure><img src="../../people.png" alt="Figure 4. Browse People (screenshot)" /><figcaption>Figure 4. Browse People (screenshot)</figcaption></figure>
 <h3>Cross-domain examples (Atomic↔Composite generalization)</h3>
 <p>Figures 5–7 show the same interaction model applied across domains.</p>
-<figure><img src="/beef.png" alt="Figure 5. Culinary: Beef (screenshot)" /><figcaption>Figure 5. Culinary: Beef (screenshot)</figcaption></figure>
-<figure><img src="/LeBron%20James.png" alt="Figure 6. Sports: LeBron James (screenshot)" /><figcaption>Figure 6. Sports: LeBron James (screenshot)</figcaption></figure>
-<figure><img src="/sore%20throat.png" alt="Figure 7. Medicine: Sore Throat (screenshot)" /><figcaption>Figure 7. Medicine: Sore Throat (screenshot)</figcaption></figure>
+<figure><img src="../../beef.png" alt="Figure 5. Culinary: Beef (screenshot)" /><figcaption>Figure 5. Culinary: Beef (screenshot)</figcaption></figure>
+<figure><img src="../../LeBron%20James.png" alt="Figure 6. Sports: LeBron James (screenshot)" /><figcaption>Figure 6. Sports: LeBron James (screenshot)</figcaption></figure>
+<figure><img src="../../sore%20throat.png" alt="Figure 7. Medicine: Sore Throat (screenshot)" /><figcaption>Figure 7. Medicine: Sore Throat (screenshot)</figcaption></figure>
 <p>For motion, the repo includes a short demo video: <code>/demo.mp4</code>.</p>
 <h3>Demo video (in-browser)</h3>
 <p>The embedded video can render as a black frame in some contexts, so we include a representative still frame instead:</p>
-<figure><img src="/demo-frame.png" alt="Figure 8. Demo frame (click through to watch the video)" /><figcaption>Figure 8. Demo frame (click through to watch the video)</figcaption></figure>
-<p><a href="/demo.mp4">Watch the demo video</a></p>
+<figure><img src="../../demo-frame.png" alt="Figure 8. Demo frame (click through to watch the video)" /><figcaption>Figure 8. Demo frame (click through to watch the video)</figcaption></figure>
+<p><a href="../../demo.mp4">Watch the demo video</a></p>
 <h2>Interaction design: low-friction branching</h2>
 <p>Constellations is optimized for low commitment per step:</p>
 <ul>
 <li>expanding a node is a single click,</li>
 <li>backing up (choosing a different node) is immediate,</li>
-<li>bulk operations allow quick frontier growth (e.g., expand all leaf/frontier nodes across the whole graph).</li>
+<li>bulk operations allow quick frontier growth (e.g., expand all frontier nodes across the whole graph),</li>
+<li>when a node’s first expansion yields very few neighbors, the UI can automatically request “expand more” once to reduce repeated clicks.</li>
 </ul>
 <p>This interaction model encourages “try and see” exploration, where users do not need to decide a path “once and for all.”</p>
 <h2>Caching and persistence</h2>
@@ -145,18 +146,15 @@
 <li><b>edges</b> (role/label and evidence metadata).</li>
 </ul>
 <p>Caching supports repeated browsing, saving/loading graphs, and revisiting a previously explored frontier with evidence intact.</p>
-<h2>Implementation notes (to expand later)</h2>
+<h2>Implementation notes</h2>
+<p>The current implementation is a client-side React application with a small cache backend. While the core ideas are model- and stack-agnostic, a few design choices matter for reproducibility and user experience:</p>
 <ul>
-<li><b>Graph rendering</b>: force-directed layout with interaction primitives (hover highlight, edge selection).</li>
-<li><b>Expansion strategy</b>: request a bounded number of neighbors (8–10) to keep the interface comprehensible.</li>
-<li><b>Guardrails</b>: enforce named-entity outputs and require per-edge evidence in the LLM schema to improve interpretability.</li>
-<li><b>Failure modes</b>: ambiguity, generic outputs, and recency; mitigations include context-first classification and evidence requirements.</li>
-</ul>
-<h2>Implementation notes (to expand later)</h2>
-<ul>
-<li>Graph rendering and interaction model (click/hover, progressive expansion).</li>
-<li>Schema/caching (nodes, edges, evidence stored in edge metadata).</li>
-<li>Failure modes (ambiguity, generic outputs, recency) and mitigations (context-first classification; strict output schema; evidence requirement).</li>
+<li><b>Graph rendering and interaction</b>: a force-directed node-link layout supports direct manipulation (dragging nodes), hover highlighting, and edge selection for evidence inspection. Nodes are visually differentiated by partition (Atomic vs Composite) to reinforce alternation.</li>
+<li><b>Bounded neighborhood expansion</b>: each expansion requests a small number of neighbors (typically 8–10) to avoid hairball growth and to keep the choice set cognitively manageable.</li>
+<li><b>LLM output guardrails</b>: expansions are constrained to named entities on the opposite partition and require per-edge evidence fields (a short snippet plus a source page title/URL). This does not guarantee correctness, but it makes edges inspectable.</li>
+<li><b>Context-first disambiguation</b>: before classification/expansion, the system fetches lightweight context (e.g., a Wikipedia summary) to reduce ambiguity and mitigate model knowledge gaps.</li>
+<li><b>Session-level pair locking</b>: after the first query, the chosen Atomic↔Composite pair is locked for the remainder of the graph exploration to reduce mid-graph switching and preserve stable semantics for expansion prompts.</li>
+<li><b>Caching and persistence</b>: nodes and edges (including evidence) are cached to reduce repeated LLM calls and to enable saving/loading graphs with evidence intact.</li>
 </ul>
       </div>
     </div>
