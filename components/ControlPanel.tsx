@@ -437,12 +437,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 </ul>
                 <div className="pt-2 border-t border-slate-700 flex flex-col gap-2">
                   <a
-                    href="/paper/rendered/paper.html"
+                    href="/paper/rendered/paper.pdf"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-slate-200 hover:text-white transition-colors font-medium"
                   >
-                    <LinkIcon size={14} /> Read the paper (draft)
+                    <LinkIcon size={14} /> Read the paper (PDF)
                   </a>
                   <a
                     href="https://www.linkedin.com/in/johndimm/"

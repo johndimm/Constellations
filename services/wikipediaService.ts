@@ -377,9 +377,22 @@ export const fetchWikipediaSummary = async (
       return null;
     };
 
+    // If the caller provided an explicit disambiguated title, honor it BEFORE stripping "(...)"
+    // (e.g., "Chris Freeman (businessman)" should not resolve to the musician).
+    const trimmedQuery = query.trim();
+    if (trimmedQuery.includes("(") && trimmedQuery.includes(")")) {
+      const direct = await tryDirectLookup(trimmedQuery);
+      if (direct?.extract) return direct;
+    }
+
     const contextIndicatesMusic = (ctx?: string) => {
       const c = (ctx || "").toLowerCase();
       return /\b(music|musician|album|song|artist|band|pop|rock|hip hop|rap|r\&b|jazz)\b/.test(c);
+    };
+
+    const contextIndicatesBusiness = (ctx?: string) => {
+      const c = (ctx || "").toLowerCase();
+      return /\b(business|businessman|businesswoman|entrepreneur|investor|venture|vc|private equity|founder|co-founder|ceo|executive|chairman|president|startup|company|technology|tech|product|innovation)\b/.test(c);
     };
 
     const looksLikeRoyalTitleDefinition = (extract?: string | null) => {
@@ -449,11 +462,19 @@ export const fetchWikipediaSummary = async (
 
         // Music disambiguation: prefer musician/band pages over generic title definitions.
         const musicCtx = contextIndicatesMusic(context);
+        const bizCtx = contextIndicatesBusiness(context);
         if (musicCtx) {
           if (title.includes("(musician)") || title.includes("(singer)") || title.includes("(band)")) s += 1600;
           if (/\b(singer|musician|songwriter|rapper|band)\b/.test(snippet)) s += 800;
           // Penalize royalty-title definition pages when user context is music.
           if (title === normalized && /\b(male ruler|monarch|royal|noble)\b/.test(snippet)) s -= 1600;
+        }
+        // Business disambiguation: prefer entrepreneur/business pages; penalize musicians.
+        if (bizCtx) {
+          if (title.includes("(businessman)") || title.includes("(entrepreneur)") || title.includes("(businesswoman)")) s += 1600;
+          if (/\b(entrepreneur|businessman|businesswoman|investor|executive|chief executive|ceo|founder|co-founder)\b/.test(snippet)) s += 900;
+          if (title.includes("(musician)") || title.includes("(singer)") || title.includes("(band)")) s -= 1400;
+          if (/\b(singer|musician|songwriter|rapper|band)\b/.test(snippet)) s -= 900;
         }
 
         // 2. Context matching
@@ -520,6 +541,14 @@ export const fetchWikipediaSummary = async (
       const page = Object.values(pages)[0] as any;
       if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
         const fullExtract = page.extract || "";
+        // Guard: if a title that looks like an org/venue redirects to a person page, ignore it.
+        // Example: "WNDR Museum" redirects to a person page; that breaks org searches.
+        if (looksLikeOrgTitle(cleanQuery) && String(page.title || "").toLowerCase() !== cleanQuery.toLowerCase()) {
+          if (looksLikePersonExtract(fullExtract)) {
+            console.log(`⚠️ [Wiki] Ignoring redirect mismatch for org-ish query "${cleanQuery}" -> "${page.title}"`);
+            return { extract: null, pageid: null, title: null };
+          }
+        }
         // Split by double newline to get the first paragraph
         let paragraphs = fullExtract.split(/\n\n|\r\n\r\n/);
         let firstParagraph = paragraphs[0].trim();
@@ -599,6 +628,22 @@ export const fetchWikipediaSummary = async (
   return { extract: null, pageid: null, title: null };
 };
 
+// Heuristics to avoid "bad redirects" (e.g. org title -> person page).
+const looksLikeOrgTitle = (s: string) =>
+  /\b(museum|company|co\.|inc\.|inc|llc|ltd|limited|foundation|university|college|school|hospital|clinic|studio|agency|association|society|museum|gallery|team|club)\b/i.test(
+    String(s || "")
+  );
+
+const looksLikePersonExtract = (s: string) => {
+  const t = String(s || "").toLowerCase();
+  if (!t) return false;
+  if (/\bborn\s+\d{4}\b/.test(t)) return true;
+  // common lead-sentence patterns
+  if (/\b(is|was)\s+(an?|the)\s+(american|british|canadian|australian|irish|scottish|english|french|german|italian|spanish)\s+/.test(t))
+    return true;
+  return false;
+};
+
 // Fetch a longer plain-text extract (not just the intro) to help find evidence snippets.
 // Returns at most maxChars characters of the page extract.
 export const fetchWikipediaExtract = async (
@@ -613,10 +658,180 @@ export const fetchWikipediaExtract = async (
     if (!pages) return { extract: null, pageid: null, title: null };
     const page = Object.values(pages)[0] as any;
     if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
+      // Guard: if a title that looks like an org/venue redirects to a person page, ignore it.
+      if (looksLikeOrgTitle(title) && String(page.title || "").toLowerCase() !== String(title).toLowerCase()) {
+        const full = String(page.extract || "");
+        if (looksLikePersonExtract(full)) return { extract: null, pageid: null, title: null };
+      }
       return { extract: page.extract || null, pageid: page.pageid || null, title: page.title || null };
     }
   } catch (e) {
     console.warn("fetchWikipediaExtract failed:", title, e);
   }
   return { extract: null, pageid: null, title: null };
+};
+
+type WikidataKeyPeople = {
+  wikidataId: string;
+  founders: string[];
+  directors: string[];
+  ceos: string[];
+  keyPeople: string[];
+};
+
+const extractWikidataItemIds = (claims: any, prop: string): string[] => {
+  const arr = claims?.[prop] || [];
+  const ids: string[] = [];
+  for (const c of arr) {
+    const v = c?.mainsnak?.datavalue?.value;
+    const id = v?.id;
+    if (typeof id === "string" && /^Q\d+$/.test(id)) ids.push(id);
+  }
+  return ids;
+};
+
+const fetchWikidataLabels = async (ids: string[], signal: AbortSignal): Promise<Record<string, string>> => {
+  const out: Record<string, string> = {};
+  const uniq = Array.from(new Set(ids)).filter(Boolean);
+  for (let i = 0; i < uniq.length; i += 50) {
+    const chunk = uniq.slice(i, i + 50);
+    try {
+      const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=labels&languages=en&ids=${encodeURIComponent(chunk.join("|"))}&origin=*`;
+      const res = await fetch(url, { signal });
+      const data = await res.json();
+      const entities = data?.entities || {};
+      for (const [id, ent] of Object.entries<any>(entities)) {
+        const label = ent?.labels?.en?.value;
+        if (label) out[id] = label;
+      }
+    } catch {
+      // ignore partial failures
+    }
+  }
+  return out;
+};
+
+const resolveWikidataIdBySearch = async (label: string, signal: AbortSignal): Promise<string | null> => {
+  try {
+    const url = `https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&limit=8&search=${encodeURIComponent(label)}&origin=*`;
+    const res = await fetch(url, { signal });
+    const data = await res.json();
+    const results: any[] = data?.search || [];
+    if (!results.length) return null;
+
+    const normalized = label.trim().toLowerCase();
+    const mustContainMuseum = /\bmuseum\b/i.test(label);
+    const scored = results.map(r => {
+      const lab = String(r?.label || "");
+      const desc = String(r?.description || "");
+      const l = lab.trim().toLowerCase();
+      const d = desc.trim().toLowerCase();
+      let s = 0;
+      if (l === normalized) s += 1000;
+      if (l.includes(normalized)) s += 300;
+      if (mustContainMuseum && (l.includes("museum") || d.includes("museum"))) s += 500;
+      if (looksLikeOrgTitle(label) && (d.includes("museum") || d.includes("company") || d.includes("organisation") || d.includes("organization"))) s += 120;
+      return { id: r?.id, score: s };
+    }).sort((a, b) => b.score - a.score);
+
+    const best = scored[0]?.id;
+    return typeof best === "string" && /^Q\d+$/.test(best) ? best : null;
+  } catch {
+    return null;
+  }
+};
+
+export const fetchWikidataKeyPeopleForTitle = async (title: string): Promise<WikidataKeyPeople | null> => {
+  const cacheKey = `wikidata_key_people|${(title || "").trim().toLowerCase()}`;
+  if (!(window as any).__wikidataPeopleCache) (window as any).__wikidataPeopleCache = new Map<string, WikidataKeyPeople | null>();
+  const cache: Map<string, WikidataKeyPeople | null> = (window as any).__wikidataPeopleCache;
+  if (cache.has(cacheKey)) return cache.get(cacheKey) || null;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  const signal = controller.signal;
+
+  try {
+    // 1) Resolve Wikidata Q-id from the English Wikipedia page.
+    let wikidataId: string | null = null;
+    try {
+      const pagepropsUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+      const ppRes = await fetch(pagepropsUrl, { signal });
+      const ppData = await ppRes.json();
+      const pages = ppData?.query?.pages;
+      if (pages) {
+        const page = Object.values(pages)[0] as any;
+        const resolvedTitle = String(page?.title || "");
+        const candidate = page?.pageprops?.wikibase_item;
+        // If the "Wikipedia title" redirects to an unrelated person page, ignore it and fall back to Wikidata search.
+        const mismatch =
+          looksLikeOrgTitle(title) &&
+          resolvedTitle &&
+          resolvedTitle.toLowerCase() !== String(title).toLowerCase() &&
+          !/\bmuseum\b/i.test(resolvedTitle);
+        if (!mismatch && typeof candidate === "string" && /^Q\d+$/.test(candidate)) {
+          wikidataId = candidate;
+        }
+      }
+    } catch {
+      // ignore and fall back to search
+    }
+
+    // Fall back: label search (handles Wikipedia redirects like "WNDR Museum" -> a person).
+    if (!wikidataId) {
+      wikidataId = await resolveWikidataIdBySearch(title, signal);
+    }
+    if (!wikidataId) {
+      cache.set(cacheKey, null);
+      return null;
+    }
+
+    // 2) Pull key-people claims.
+    const entityUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${encodeURIComponent(wikidataId)}&origin=*`;
+    const entRes = await fetch(entityUrl, { signal });
+    const entData = await entRes.json();
+    const entity = entData?.entities?.[wikidataId];
+    const claims = entity?.claims;
+    if (!claims) {
+      cache.set(cacheKey, null);
+      return null;
+    }
+
+    // Wikidata properties:
+    // - P112: founder
+    // - P1037: director/manager
+    // - P169: chief executive officer
+    // - P3342: significant person / key person
+    const founderIds = extractWikidataItemIds(claims, "P112");
+    const directorIds = extractWikidataItemIds(claims, "P1037");
+    const ceoIds = extractWikidataItemIds(claims, "P169");
+    const keyPersonIds = extractWikidataItemIds(claims, "P3342");
+
+    const labelMap = await fetchWikidataLabels(
+      [...founderIds, ...directorIds, ...ceoIds, ...keyPersonIds],
+      signal
+    );
+
+    const toLabels = (ids: string[]) =>
+      Array.from(new Set(ids.map(id => labelMap[id]).filter((x): x is string => typeof x === "string" && x.trim().length > 0)));
+
+    const result: WikidataKeyPeople = {
+      wikidataId,
+      founders: toLabels(founderIds),
+      directors: toLabels(directorIds),
+      ceos: toLabels(ceoIds),
+      keyPeople: toLabels(keyPersonIds)
+    };
+
+    const hasAny =
+      result.founders.length || result.directors.length || result.ceos.length || result.keyPeople.length;
+
+    cache.set(cacheKey, hasAny ? result : null);
+    return hasAny ? result : null;
+  } catch {
+    cache.set(cacheKey, null);
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 };

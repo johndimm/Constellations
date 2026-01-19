@@ -125,7 +125,8 @@
 </ul>
 <h3>Participants</h3>
 <ul>
-<li>Mixed expertise: casual users + a small number of domain enthusiasts (e.g., film).</li>
+<li>Mixed expertise: casual users + a small number of domain enthusiasts (e.g., film history or music).</li>
+<li>Target N=12–20 for an initial formative study; optional follow-up N=30+ for confirmatory comparisons.</li>
 </ul>
 <h3>Tasks (examples)</h3>
 <ul>
@@ -133,11 +134,13 @@
 <li><b>Discovery</b>: “Find 3 new films you want to watch next; explain why.”</li>
 <li><b>Frontier navigation</b>: “Keep expanding until you hit a boundary where you no longer recognize most nodes; describe what you found.”</li>
 <li><b>Evidence use</b>: “Given a surprising edge, use the evidence panel to decide whether you trust it enough to expand further.”</li>
+<li><b>Kiosk interaction (optional)</b>: “Using only taps (no typing), start from curated seeds and build a small ‘story’ of 8–12 nodes you would show someone else.”</li>
 </ul>
 <h3>Conditions (ablation)</h3>
 <ul>
 <li>With vs without <b>edge evidence</b> (hide evidence panel).</li>
 <li>With vs without <b>bipartite enforcement</b> (optional, if a safe relaxed mode exists) or compare to a baseline interface (e.g., search + Wikipedia navigation).</li>
+<li>With vs without <b>session-level pair locking</b> (when multiple pairs are enabled): measure whether locking reduces user-reported confusion and drift.</li>
 </ul>
 <h3>Measures</h3>
 <ul>
@@ -145,12 +148,14 @@
 <li>Self-reported recall/discovery (Likert + short explanations).</li>
 <li>Perceived orientation (NASA-TLX subset or simpler “I felt lost” scale).</li>
 <li>Evidence interaction frequency (edge clicks, “open source” clicks).</li>
+<li>Neighborhood quality proxies: duplicate rate, generic-node rate, and fraction of expansions producing ≥k meaningful neighbors.</li>
 </ul>
 <h3>Qualitative prompts (examples)</h3>
 <ul>
 <li>“Describe a moment where you changed direction quickly—what triggered it?”</li>
 <li>“Describe a moment where an edge’s evidence changed your decision to explore further.”</li>
 <li>“What did the system surface that you felt was ‘on the edge’ of your memory?”</li>
+<li>“Did you notice the Atomic↔Composite alternation? Did it help you predict what would happen when you clicked?”</li>
 </ul>
 <h2>Study 2: Log-based / offline quality evaluation</h2>
 <h3>Goal</h3>
@@ -159,6 +164,7 @@
 <li><b>Named-entity quality</b> (avoid generic phrases).</li>
 <li><b>Diversity</b> (avoid near-duplicates).</li>
 <li><b>Evidence availability</b> (fraction of edges with evidence snippets).</li>
+<li><b>Stability under repeated use</b> (cache hits; consistency of expansions for the same seed).</li>
 </ul>
 <h3>Sample design</h3>
 <p>Select a set of seeds across domains (films prioritized), run multiple expansions, and evaluate with:</p>
@@ -171,6 +177,12 @@
 <ul>
 <li>Track the point during exploration where a participant reports low recognition.</li>
 <li>Quantify as a function of depth/expansions and node familiarity labels.</li>
+</ul>
+<h2>Analysis plan (lightweight)</h2>
+<ul>
+<li>Use within-subject comparisons where possible (evidence on/off; lock on/off), counterbalanced across participants.</li>
+<li>Quantitative: paired tests on time/steps/backtracks and Likert outcomes; report effect sizes with confidence intervals.</li>
+<li>Qualitative: thematic analysis of “frontier” moments, evidence-driven decisions, and breakdowns (ambiguity, drift, low-signal expansions).</li>
 </ul>
       </div>
     </div>

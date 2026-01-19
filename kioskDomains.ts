@@ -139,6 +139,9 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
     label: "History",
     description: "People ↔ Events.",
     terms: [
+      "Francis Fukuyama",
+      "Yuval Noah Harari",
+      "Jared Diamond",
       "Julius Caesar",
       "Cleopatra",
       "Alexander the Great",
@@ -234,6 +237,38 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
       "The Two Fridas",
       "Claude Monet",
       "Impressionism"
+    ]
+  },
+  {
+    id: "philosophy",
+    label: "Philosophy",
+    description: "Philosophers, schools, and foundational works (ancient → modern).",
+    terms: [
+      // Ancients
+      "Socrates",
+      "Plato",
+      "Aristotle",
+      "Epicurus",
+      "Zeno of Citium",
+      "Cicero",
+      "Seneca the Younger",
+      "Marcus Aurelius",
+      "Plotinus",
+
+      // Early modern / modern canon (high-signal entry points)
+      "René Descartes",
+      "David Hume",
+      "Immanuel Kant",
+
+      // Analytic tradition + 20th century
+      "Gottlob Frege",
+      "Bertrand Russell",
+      "Ludwig Wittgenstein",
+      "W. V. O. Quine",
+      "Hilary Putnam",
+      "Thomas Nagel",
+      "Saul Kripke",
+      "John Rawls"
     ]
   }
 ];

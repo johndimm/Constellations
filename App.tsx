@@ -4,9 +4,9 @@ import ControlPanel from './components/ControlPanel';
 import Sidebar from './components/Sidebar';
 import NodeContextMenu from './components/NodeContextMenu';
 import { GraphNode, GraphLink, PathResponse } from './types';
-import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, type LockedPair } from './services/geminiService';
+import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, type LockedPair } from './services/geminiService';
 import { getApiKey } from './services/aiUtils';
-import { fetchWikipediaImage, fetchWikipediaSummary, fetchWikipediaExtract } from './services/wikipediaService';
+import { fetchWikipediaImage, fetchWikipediaSummary, fetchWikipediaExtract, fetchWikidataKeyPeopleForTitle } from './services/wikipediaService';
 import { Key, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react';
 import {
     KioskDomain,
@@ -319,6 +319,15 @@ const App: React.FC = () => {
     const kioskSeedTerms = selectedKioskDomain?.terms || [];
 
     const buildWikiUrl = (title: string) => `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`;
+    const looksLikeWikipediaTitle = (t: unknown) => {
+        const s = String(t || '').trim();
+        if (!s) return false;
+        if (/^https?:\/\//i.test(s)) return false;
+        // Web page titles frequently include " - " separators; Wikipedia titles rarely do.
+        if (s.includes(' - ')) return false;
+        if (s.length > 90) return false;
+        return true;
+    };
 
     // Keep selectedNode in sync with latest node data (e.g., wikiSummary, images)
     useEffect(() => {
@@ -997,6 +1006,37 @@ const App: React.FC = () => {
             // For evidence snippets, sometimes the intro won't include the related entity name.
             // Fetch a longer extract once per expansion (cheap-ish) and reuse it.
             const sourceLong = (await fetchWikipediaExtract(node.title, 6000)).extract || wiki.extract || '';
+            const hasReliableWikipediaForThisTitle = !!(sourceLong && String(sourceLong).trim().length > 0);
+
+            // For orgs/venues/etc, Wikipedia text often omits founders/directors.
+            // Augment verified context using structured Wikidata properties when available.
+            let verifiedContext = sourceLong;
+            try {
+                const pair = lockedPairRef.current || { atomicType: "Person", compositeType: "Event" };
+                const expandingComposite = !(currentIsAtomic ?? currentType.toLowerCase() === 'person');
+                if (pair.atomicType.toLowerCase() === 'person' && expandingComposite) {
+                    const wd = await fetchWikidataKeyPeopleForTitle(node.title);
+                    if (wd) {
+                        const lines: string[] = [];
+                        if (wd.founders.length) lines.push(`Founders: ${wd.founders.join(', ')}`);
+                        if (wd.directors.length) lines.push(`Directors/Managers: ${wd.directors.join(', ')}`);
+                        if (wd.ceos.length) lines.push(`Chief Executive Officers: ${wd.ceos.join(', ')}`);
+                        if (wd.keyPeople.length) lines.push(`Key People: ${wd.keyPeople.join(', ')}`);
+                        if (lines.length) {
+                            verifiedContext = `${verifiedContext}\n\nWIKIDATA (structured properties for "${node.title}", ${wd.wikidataId}):\n${lines.map(l => `- ${l}`).join('\n')}\n`;
+                        }
+                    } else {
+                        // Last-resort fallback: grounded web lookup for org leadership (official Gemini tool).
+                        // Only run if we have very little verified context to avoid excessive calls.
+                        if ((verifiedContext || '').trim().length < 400) {
+                            const grounded = await fetchOrgKeyPeopleBlockViaSearch(node.title);
+                            if (grounded) verifiedContext = `${verifiedContext}\n\n${grounded}\n`;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Non-fatal: continue without Wikidata augmentation
+            }
 
             let results: any[] = [];
             const isPerson = currentIsAtomic ?? currentType.toLowerCase() === 'person';
@@ -1005,11 +1045,11 @@ const App: React.FC = () => {
 
             if (isPerson) {
                 // Pass a longer verified extract when available so the LLM can pick evidence sentences.
-                let data = await fetchPersonWorks(node.title, neighborNames, sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                let data = await fetchPersonWorks(node.title, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 // If exclusions made the result set empty, retry once without exclusions.
                 if ((!data.works || data.works.length === 0) && neighborNames.length > 0) {
                     console.log(`↩️ [Expand] empty result with exclusions; retrying without exclusions for "${node.title}"`);
-                    data = await fetchPersonWorks(node.title, [], sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                    data = await fetchPersonWorks(node.title, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 }
                 results = (data.works || [])
                     .filter(w => typeof (w as any)?.entity === 'string' && (w as any).entity.trim().length > 0)
@@ -1026,7 +1066,15 @@ const App: React.FC = () => {
                             kind: 'ai',
                             pageTitle: (w as any).evidencePageTitle || node.title,
                             snippet: (w as any).evidenceSnippet || '',
-                            url: buildWikiUrl((w as any).evidencePageTitle || node.title)
+                            url: looksLikeWikipediaTitle((w as any).evidencePageTitle || node.title)
+                                ? (
+                                    // If the evidence points at the current node title but we know Wikipedia has no usable page/extract,
+                                    // suppress the link (e.g., WNDR Museum redirecting to a person).
+                                    ((String((w as any).evidencePageTitle || node.title) === node.title) && !hasReliableWikipediaForThisTitle)
+                                        ? undefined
+                                        : buildWikiUrl((w as any).evidencePageTitle || node.title)
+                                )
+                                : undefined
                         }
                     },
                     edge_label: w.role || null
@@ -1034,11 +1082,11 @@ const App: React.FC = () => {
                 console.log(`✅ [Expand] Found ${results.length} connections for atomic "${node.title}"`);
             } else {
                 // Pass a longer verified extract when available so the LLM can pick evidence sentences.
-                let data = await fetchConnections(node.title, undefined, neighborNames, sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                let data = await fetchConnections(node.title, undefined, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 // If exclusions made the result set empty, retry once without exclusions.
                 if ((!data.people || data.people.length === 0) && neighborNames.length > 0) {
                     console.log(`↩️ [Expand] empty result with exclusions; retrying without exclusions for "${node.title}"`);
-                    data = await fetchConnections(node.title, undefined, [], sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                    data = await fetchConnections(node.title, undefined, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 }
                 if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
                 
@@ -1057,7 +1105,13 @@ const App: React.FC = () => {
                             kind: 'ai',
                             pageTitle: (p as any).evidencePageTitle || node.title,
                             snippet: (p as any).evidenceSnippet || '',
-                            url: buildWikiUrl((p as any).evidencePageTitle || node.title)
+                            url: looksLikeWikipediaTitle((p as any).evidencePageTitle || node.title)
+                                ? (
+                                    ((String((p as any).evidencePageTitle || node.title) === node.title) && !hasReliableWikipediaForThisTitle)
+                                        ? undefined
+                                        : buildWikiUrl((p as any).evidencePageTitle || node.title)
+                                )
+                                : undefined
                         }
                     },
                     edge_label: p.role || null
@@ -1093,7 +1147,15 @@ const App: React.FC = () => {
             } else {
                 // Get Wikipedia info for all results to help disambiguate
                 const resultsWithWiki = await Promise.all(results.map(async r => {
-                    const rWiki = await fetchWikipediaSummary(r.title, node.title);
+                    // Provide richer disambiguation context to avoid overwriting (e.g., "Chris Freeman (businessman)" -> musician).
+                    const contextHint = [
+                        node.title,
+                        r.type,
+                        r.edge_label || r.role,
+                        r.description,
+                        r.edge_meta?.evidence?.snippet
+                    ].filter(Boolean).join(' · ').slice(0, 280);
+                    const rWiki = await fetchWikipediaSummary(r.title, contextHint);
                     // Do NOT guess evidence in the application layer. If the model didn't provide evidence,
                     // we explicitly mark it as missing.
                     const evidence = r.edge_meta?.evidence || { kind: 'none' as const };
@@ -1112,6 +1174,19 @@ const App: React.FC = () => {
 
                 let nodesToUse = resultsWithWiki;
                 let isCacheHit = false;
+
+                // Filter obvious junk list pages that frequently appear for businesspeople
+                // (e.g., "companies acquired by Google") unless the user explicitly asked for lists.
+                const isBadListPage = (t?: string) => {
+                    const s = String(t || '').toLowerCase();
+                    if (!s) return false;
+                    if (s.startsWith('list of ')) return true;
+                    if (s.includes('acquired by google') || s.includes('companies acquired by google') || s.includes('acquisitions by google')) return true;
+                    return false;
+                };
+                if (!String(exploreTerm || '').toLowerCase().startsWith('list of ')) {
+                    nodesToUse = nodesToUse.filter((n: any) => !isBadListPage(n.title));
+                }
 
                 if (cacheEnabled) {
                     // Fetch existing cache first to merge
@@ -1173,6 +1248,81 @@ const App: React.FC = () => {
                 const existingByNorm = new Map<string, GraphNode>(
                     currentNodesForDedupe.map(n => [baseDedupeKey(n as any), n])
                 );
+
+                // Evidence/role validation:
+                // If a role claim (e.g., President/CEO/Director) isn't backed by the verified context we fetched,
+                // drop the claim and hide the evidence to avoid false positives.
+                const normalizeForEvidence = (s: unknown) =>
+                    String(s || '')
+                        .toLowerCase()
+                        .replace(/[“”"]/g, '"')
+                        .replace(/[’‘]/g, "'")
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                // IMPORTANT: Only treat Wikipedia extract text as "verified" for snippet matching.
+                // Model-generated grounded blocks can still hallucinate phrases; do not accept them as evidence.
+                const verifiedNorm = normalizeForEvidence(sourceLong);
+                const roleLooksLikeJobTitle = (s: unknown) =>
+                    /\b(president|ceo|chief|director|manager|founder|co-founder|curator|chairman|head)\b/i.test(String(s || ''));
+                const parentheticalLooksLikeJobTitle = (title: unknown) => {
+                    const s = String(title || '');
+                    const m = s.match(/\(([^)]+)\)\s*$/);
+                    if (!m) return false;
+                    return roleLooksLikeJobTitle(m[1]);
+                };
+                const stripJobTitleParen = (title: string) => title.replace(/\s*\(([^)]+)\)\s*$/, '').trim();
+                const isEvidenceBacked = (snippet: unknown) => {
+                    const sn = normalizeForEvidence(snippet);
+                    if (!sn) return false;
+                    if (!verifiedNorm) return false;
+                    // Require verbatim-ish containment inside verified context.
+                    return verifiedNorm.includes(sn);
+                };
+                const looksLikeSpecificPersonName = (title: unknown) => {
+                    const s = String(title || '').trim();
+                    if (!s) return false;
+                    const lower = s.toLowerCase();
+                    if (/\b(celebrity|celeb|celebrities|guests|visitors|staff|team)\b/.test(lower)) return false;
+                    // Allow parenthetical disambiguation, but evaluate the base name.
+                    const base = s.replace(/\s*\(.*\)\s*$/, '').trim();
+                    const parts = base.split(/\s+/).filter(Boolean);
+                    // Heuristic: person names are usually 2+ tokens, each starting with a letter.
+                    if (parts.length < 2) return false;
+                    if (parts.some(p => p.length < 2)) return false;
+                    return true;
+                };
+                const sanitizeEvidenceAndRole = (cn: any) => {
+                    const e = cn?.edge_meta?.evidence;
+                    const hasEvidence = e && e.kind && e.kind !== 'none' && (e.snippet || e.pageTitle);
+                    if (!hasEvidence) return cn;
+
+                    const pageTitle = String(e.pageTitle || '');
+                    const snippet = String(e.snippet || '');
+                    const pageLooksNonWiki = pageTitle.includes(' - ') || /^https?:\/\//i.test(pageTitle);
+                    const backed = isEvidenceBacked(snippet);
+
+                    if (!backed || pageLooksNonWiki) {
+                        const next = { ...cn };
+                        // Drop unverified evidence.
+                        next.edge_meta = { ...(next.edge_meta || {}), evidence: { kind: 'none' } };
+                        // Drop role label if it looks like a job-title claim.
+                        if (roleLooksLikeJobTitle(next.edge_label)) next.edge_label = null;
+                        // If the node title itself is just a job-title parenthetical (unverified), strip it.
+                        if (typeof next.title === 'string' && parentheticalLooksLikeJobTitle(next.title)) {
+                            next.title = stripJobTitleParen(next.title);
+                        }
+                        return next;
+                    }
+                    return cn;
+                };
+
+                nodesToUse = nodesToUse.map(sanitizeEvidenceAndRole);
+                // Drop generic/non-person "people" like "Celebrity" that slip through.
+                nodesToUse = nodesToUse.filter((cn: any) => {
+                    const t = String(cn?.type || '').toLowerCase();
+                    if (t === 'person' && !looksLikeSpecificPersonName(cn?.title)) return false;
+                    return true;
+                });
                 const processedNodes = nodesToUse.map(cn => {
                     const norm = baseDedupeKey(cn as any);
                     const existing = existingByNorm.get(norm);
@@ -1237,7 +1387,15 @@ const App: React.FC = () => {
                         target: cn.id,
                         id: `${node.id}-${cn.id}`,
                         label: cn.edge_label || undefined,
-                        evidence: cn.edge_meta?.evidence || { kind: 'none' }
+                        evidence: (() => {
+                            const e = cn.edge_meta?.evidence || { kind: 'none' as const };
+                            // If the evidence claims "From: <this node>" but Wikipedia has no usable page,
+                            // never keep/restore an old stale URL from cache.
+                            if (e?.url && e.pageTitle && String(e.pageTitle) === String(node.title) && !hasReliableWikipediaForThisTitle) {
+                                return { kind: 'none' as const };
+                            }
+                            return e;
+                        })()
                     }));
                     const isAtomicForId = new Map<number, boolean>();
                     updatedNodes.forEach(n => {
@@ -1349,7 +1507,7 @@ const App: React.FC = () => {
             const startC = await classifyStartPair(term);
             const chosenPair: LockedPair = { atomicType: startC.atomicType, compositeType: startC.compositeType };
             setLockedPair(chosenPair);
-            const { type, description: geminiDescription, isAtomic, reasoning } = startC;
+            let { type, description: geminiDescription, isAtomic, reasoning } = startC;
             console.log(`Type: ${type}, Atomic: ${isAtomic}, LockedPair: ${chosenPair.atomicType}/${chosenPair.compositeType}`);
 
             // 2. Fetch Wikipedia summary for display/disambiguation (not for classification).
@@ -1375,13 +1533,22 @@ const App: React.FC = () => {
                         body: JSON.stringify({
                             title: canonicalTitle,
                             type,
-                            description: wiki.extract || geminiDescription || '',
+                            description: (() => {
+                                // Don’t let the classifier’s “bipartite pair” instructional text become the node description.
+                                const d = String(geminiDescription || '').trim();
+                                const looksInstructional =
+                                    /\bbipartite\b/i.test(d) ||
+                                    /\bappropriate\b/i.test(d) && /\bpair\b/i.test(d) ||
+                                    /\batomic\b/i.test(d) ||
+                                    /\bcomposite\b/i.test(d);
+                                return wiki.extract || (looksInstructional ? '' : d) || '';
+                            })(),
                             wikipedia_id: wiki.pageid?.toString(),
                             is_atomic: isAtomic, // sending the atomic flag
                             meta: {
                                 classification_reasoning: reasoning,
-                                atomic_type: atomicType,
-                                composite_type: compositeType
+                                atomic_type: chosenPair.atomicType,
+                                composite_type: chosenPair.compositeType
                             }
                         })
                     });
@@ -1405,7 +1572,15 @@ const App: React.FC = () => {
                 type: type,
                 is_atomic: isAtomic,
                 wikipedia_id: wiki.pageid?.toString(),
-                description: wiki.extract || geminiDescription || '',
+                description: (() => {
+                    const d = String(geminiDescription || '').trim();
+                    const looksInstructional =
+                        /\bbipartite\b/i.test(d) ||
+                        /\bappropriate\b/i.test(d) && /\bpair\b/i.test(d) ||
+                        /\batomic\b/i.test(d) ||
+                        /\bcomposite\b/i.test(d);
+                    return wiki.extract || (looksInstructional ? '' : d) || '';
+                })(),
                 x: dimensions.width / 2,
                 y: dimensions.height / 2,
                 expanded: false,

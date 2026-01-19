@@ -421,6 +421,11 @@ export const fetchPersonWorks = async (
        
        CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, or specific historical event/incident. 
        DO NOT return descriptive phrases, facts, or achievements.
+       
+       BUSINESSPERSON GUARDRAIL:
+       - If "${nodeName}" appears to be an entrepreneur/business executive/investor, return ONLY organizations/companies/projects where they had a DIRECT ROLE (founder/co-founder/CEO/executive/chairman/partner/board member).
+       - DO NOT return generic "companies acquired by X" lists unless "${nodeName}" personally founded/led the acquired company or was a named executive involved.
+       - Prefer fewer, higher-confidence entities over a long list of weakly-related acquisitions.
 
        SPECIAL CASE (art): If "${nodeName}" is an artist (painter/sculptor/architect/photographer), include their major named artworks as returned entities.
        - These artworks may be primarily made by a single person; that is OK.
@@ -652,6 +657,109 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
     };
   } catch (e) {
     console.warn("AI title lookup failed", e);
+    return null;
+  }
+};
+
+// Optional: grounded lookup for org leadership using Google Search tool.
+// NOTE: This cannot use responseSchema/responseMimeType; we parse JSON from text.
+export const fetchOrgKeyPeopleBlockViaSearch = async (orgName: string): Promise<string | null> => {
+  const apiKey = await getApiKey();
+  if (!apiKey) return null;
+
+  const name = String(orgName || "").trim();
+  if (!name) return null;
+
+  const ai = new GoogleGenAI({ apiKey });
+  const prompt = `Use Google Search to find reputable sources about "${name}".
+
+Goal: extract founders and key leadership/creative roles for the organization/museum/venue.
+
+Return STRICT JSON only (no prose):
+{
+  "founders": [{"name": "Full Name", "evidence": "Short quote or paraphrase", "sourceUrl": "https://...", "sourceTitle": "Page title"}],
+  "keyPeople": [{"name": "Full Name", "role": "Role", "evidence": "Short quote or paraphrase", "sourceUrl": "https://...", "sourceTitle": "Page title"}]
+}
+
+Rules:
+- Prefer sources that explicitly state founder/creative director/CEO/etc.
+- If the founder is not explicitly stated, leave founders empty.
+- Only include people that are clearly tied to "${name}" (avoid name collisions).
+- If unsure, omit.`;
+
+  try {
+    const response = await withRetry(
+      () =>
+        withTimeout(
+          ai.models.generateContent({
+            model: GEMINI_MODEL,
+            contents: prompt,
+            config: {
+              systemInstruction: "You are a careful research assistant. Use Google Search for grounding and do not invent facts.",
+              tools: [{ googleSearch: {} }]
+            }
+          }),
+          20000,
+          "Org key-people search timed out"
+        ),
+      2,
+      600
+    );
+
+    const text = cleanJson(getResponseText(response));
+    if (!text) return null;
+    const json = JSON.parse(text) as any;
+    const founders = Array.isArray(json?.founders) ? json.founders : [];
+    const keyPeople = Array.isArray(json?.keyPeople) ? json.keyPeople : [];
+
+    const f = founders
+      .filter((x: any) => x?.name && typeof x.name === "string")
+      .slice(0, 10)
+      .map((x: any) => ({
+        name: String(x.name).trim(),
+        evidence: x?.evidence ? String(x.evidence).trim() : "",
+        sourceTitle: x?.sourceTitle ? String(x.sourceTitle).trim() : "",
+        sourceUrl: x?.sourceUrl ? String(x.sourceUrl).trim() : ""
+      }))
+      .filter((x: any) => x.name);
+
+    const kp = keyPeople
+      .filter((x: any) => x?.name && typeof x.name === "string")
+      .slice(0, 15)
+      .map((x: any) => ({
+        name: String(x.name).trim(),
+        role: x?.role ? String(x.role).trim() : "",
+        evidence: x?.evidence ? String(x.evidence).trim() : "",
+        sourceTitle: x?.sourceTitle ? String(x.sourceTitle).trim() : "",
+        sourceUrl: x?.sourceUrl ? String(x.sourceUrl).trim() : ""
+      }))
+      .filter((x: any) => x.name);
+
+    if (f.length === 0 && kp.length === 0) return null;
+
+    const lines: string[] = [];
+    if (f.length) {
+      lines.push(`Founders: ${f.map(x => x.name).join(", ")}`);
+    }
+    if (kp.length) {
+      lines.push(
+        `Key People: ${kp
+          .map(x => (x.role ? `${x.name} (${x.role})` : x.name))
+          .join(", ")}`
+      );
+    }
+    const sources = [...f, ...kp]
+      .map(x => (x.sourceUrl ? `${x.sourceTitle || "Source"} — ${x.sourceUrl}` : ""))
+      .filter(Boolean);
+    const uniqueSources = Array.from(new Set(sources)).slice(0, 8);
+
+    return [
+      `GOOGLE_SEARCH_GROUNDED (for "${name}")`,
+      ...lines.map(l => `- ${l}`),
+      ...(uniqueSources.length ? ["Sources:", ...uniqueSources.map(s => `- ${s}`)] : [])
+    ].join("\n");
+  } catch (e) {
+    console.warn("Org key-people search failed:", name, e);
     return null;
   }
 };

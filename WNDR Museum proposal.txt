@@ -1,0 +1,49 @@
+Constellations @ WNDR Museum — Proposal (Draft)
+
+Overview
+Constellations is an interactive, AI-powered “knowledge explorer” that lets guests quickly navigate the Wikipedia information space through an evidence-backed, bipartite graph (People ↔ Events / Ingredients ↔ Recipes / Symptoms ↔ Diseases). It’s designed for low-friction, playful discovery: tap to expand, inspect the “why” behind connections, and follow curiosity.
+
+Why WNDR
+WNDR is built around participatory, curiosity-driven experiences. Constellations fits naturally as a “playable” knowledge installation: it’s visually engaging, invites experimentation, and supports both short interactions and longer “I can’t stop clicking” sessions.
+
+Guest experience (what visitors do)
+- Start from a featured seed (e.g., an artist, work, movement, or WNDR-related concept)
+- Tap to expand the graph and reveal connected entities
+- Click edges to see evidence/citations (the “why”)
+- Switch between network and timeline views to see a story unfold over time
+
+Proposed collaboration
+1) Deploy Constellations on a public-facing touchscreen kiosk (no install; runs in Chrome).
+2) Create a WNDR-specific domain pack:
+   - A curated seed list: featured artists, exhibits, themes, and “jumping off” concepts.
+   - Optional: rotating “Today’s starting points” to align with programming/seasonality.
+3) Iterate quickly based on staff/guest feedback (what’s fun, what confuses people, what seeds perform best).
+
+Technical requirements
+- Large touchscreen display running a modern Chromium browser (Chrome/Chromium)
+- Reliable internet connection (required for live retrieval + AI expansion)
+- Optional: keyboard disabled / kiosk mode
+
+Notes / limitations (so expectations are clear)
+- Works best for entities that are well-covered by Wikipedia and have stable naming.
+- Evidence is shown to support interpretation and verification; the system is designed to reduce hallucinations, but it’s still an AI-assisted experience.
+
+Success signals (simple, measurable)
+- Median session length (people often spend 10+ minutes on first use)
+- “Depth” of exploration (expansions per session)
+- Repeat engagement (do guests return to try a new seed?)
+- Qualitative: “surprise discoveries” / “frontier moments” (what did guests find that they didn’t expect?)
+
+Links
+- WNDR example graph: https://constellations-delta.vercel.app/?q=WNDR%20Museum
+- Paper (PDF draft): https://constellations-delta.vercel.app/paper/rendered/paper.pdf
+- Demo video (low-res): https://constellations-delta.vercel.app/demo.mp4
+- LinkedIn reactions/post: https://www.linkedin.com/feed/update/urn:li:activity:7409328608910946304/
+
+About me
+- LinkedIn: https://www.linkedin.com/in/johndimm/
+- Resume: https://johndimm.vercel.app/cv/2025/johndimm_classic.pdf
+
+Next step
+If you’re open to it, I’d love a 20-minute call to discuss placement (where it would live), the WNDR-specific seed list, and a lightweight pilot timeline (e.g., 2–4 weeks). I can provide a kiosk-friendly configuration and a first-pass WNDR domain pack quickly.
+
