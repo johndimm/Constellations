@@ -174,6 +174,14 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
   };
 
   try {
+    // Attempt 0: If the exact title is already disambiguated (e.g. "Prince (musician)"),
+    // try that page directly before any base-title search heuristics.
+    // This prevents cases where baseTitle/context search accidentally chooses a generic definition page ("Prince").
+    if (query.includes("(") && query.includes(")")) {
+      const direct = await fetchPageImage(query, controller.signal);
+      if (direct) return direct;
+    }
+
     // If the query looks like a specific Commons file, skip search and go straight to info
     if (query.toLowerCase().startsWith('file:') || query.toLowerCase().startsWith('image:')) {
       console.log(`🔍 [ImageSearch] Direct file lookup: "${query}"`);
@@ -369,12 +377,44 @@ export const fetchWikipediaSummary = async (
       return null;
     };
 
-    // Try exact clean query first.
-    const exact = await tryDirectLookup(cleanQuery);
-    if (exact?.extract) {
-      console.log(`✅ [Wiki] Direct lookup succeeded for "${exact.title}" (preferred over search)`);
-      return exact;
-    }
+    const contextIndicatesMusic = (ctx?: string) => {
+      const c = (ctx || "").toLowerCase();
+      return /\b(music|musician|album|song|artist|band|pop|rock|hip hop|rap|r\&b|jazz)\b/.test(c);
+    };
+
+    const looksLikeRoyalTitleDefinition = (extract?: string | null) => {
+      const e = (extract || "").toLowerCase();
+      if (!e) return false;
+      // Common for "Prince", "Duke", etc. pages that are definitions rather than the intended proper noun.
+      return (
+        e.includes(" is a male ruler") ||
+        e.includes(" is a female ruler") ||
+        e.includes(" is a title") ||
+        e.includes(" is a royal") ||
+        e.includes(" member of a monarch") ||
+        e.includes(" ranked below a king") ||
+        e.includes(" of a monarch's") ||
+        e.includes(" of a monarch’s")
+      );
+    };
+
+    // Generic-definition pages often steal ambiguous entertainment titles (e.g., "Euphoria" the feeling
+    // vs. "Euphoria (TV series)"). When we have context (like "Zendaya"), we should prefer contextual search.
+    const looksLikeGenericAbstractDefinition = (extract?: string | null) => {
+      const e = (extract || "").toLowerCase().trim();
+      if (!e) return false;
+      // Keep this narrow: emotions/feelings/states/conditions rather than historical eras, etc.
+      return (
+        e.includes(" is a feeling of") ||
+        e.includes(" is an emotion") ||
+        e.includes(" is a mental state") ||
+        e.includes(" is a psychological state") ||
+        e.includes(" is a state of") ||
+        e.includes(" is a feeling ") ||
+        e.includes(" is the feeling ") ||
+        e.includes(" is an experience of")
+      );
+    };
 
     const searchQuery = context ? `${cleanQuery} ${context}` : query;
     const avoidMedia = /\b(project|program|programme|operation|war|battle|campaign|treaty|scandal|scientist)\b/i.test(cleanQuery);
@@ -392,11 +432,28 @@ export const fetchWikipediaSummary = async (
         const snippet = (r.snippet || '').toLowerCase();
         let s = 0;
 
+        // Strongly penalize "List of ..." style pages unless the user explicitly asked for a list.
+        // These are common false positives for people (e.g., "List of awards and nominations received by Zendaya").
+        const queryWantsList = normalized.startsWith("list of ") || normalized.includes("awards") || normalized.includes("nominations") || normalized.includes("filmography") || normalized.includes("discography");
+        const isListPage = title.startsWith("list of ") || title.includes(" awards and nominations") || title.includes(" filmography") || title.includes(" discography");
+        if (isListPage && !queryWantsList) {
+          s -= 2500;
+        }
+
         // 1. Title matching (exact or with parenthetical disambiguation)
         if (title === normalized) {
           s += 1000;
         } else if (title.startsWith(normalized + " (")) {
           s += 450;
+        }
+
+        // Music disambiguation: prefer musician/band pages over generic title definitions.
+        const musicCtx = contextIndicatesMusic(context);
+        if (musicCtx) {
+          if (title.includes("(musician)") || title.includes("(singer)") || title.includes("(band)")) s += 1600;
+          if (/\b(singer|musician|songwriter|rapper|band)\b/.test(snippet)) s += 800;
+          // Penalize royalty-title definition pages when user context is music.
+          if (title === normalized && /\b(male ruler|monarch|royal|noble)\b/.test(snippet)) s -= 1600;
         }
 
         // 2. Context matching

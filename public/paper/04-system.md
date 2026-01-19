@@ -9,7 +9,7 @@ Constellations is an interactive graph explorer that constructs a small, local g
 The UI encodes this alternation with distinct visual forms (e.g., circles vs cards) while keeping interactions consistent across domains.
 
 ## Data flow (high level)
-1. **User query**: in kiosk mode (default), the user taps a curated seed entity (no typing); in non-kiosk mode, the user can type a query.
+1. **User query**: the user can start from a curated domain seed or type an arbitrary query.
 2. **Context retrieval**: fetch lightweight context (e.g., Wikipedia summary) to help disambiguation and mitigate model knowledge gaps.
 3. **Start-pair classification (locked)**: choose a bipartite pair from the first input (currently one of Person↔Event, Ingredient↔Recipe, Symptom↔Disease), then **lock it for the entire graph** (no switching).
 4. **Expansion**: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition, conditioned on the locked pair.

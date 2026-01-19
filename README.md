@@ -23,10 +23,10 @@ Constellations now **locks a single bipartite pair per graph**, chosen from the 
 
 This makes exploration more reliable (no mid-graph “ontology drift”), while still supporting multiple domains.
 
-### Kiosk mode (default)
-Constellations is optimized for touch displays and public installations:
-- **No typing by default**: users start from curated “Start here” seeds and expand by tapping.
-- **Old typing UI**: add `?kiosk=0`
+### Domains + text input (single unified UI)
+Constellations supports both free text search and curated domain seed lists in the same UI:
+- **Pick a domain** and tap a seed to begin quickly.
+- **Or type** any query to start from an arbitrary entity.
 - **Curate domains/seeds in-app**: add `?admin=1`
 
 ### Universal Examples:

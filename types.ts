@@ -53,6 +53,7 @@ export interface GeminiEntity {
 
 export interface GeminiPerson {
   name: string;
+  wikipediaTitle?: string; // Canonical Wikipedia page title (may include disambiguation parentheses)
   role: string; // Role in the source node
   description: string; // Brief bio
   evidenceSnippet?: string; // 1 sentence from provided verified text (preferred)
@@ -66,6 +67,7 @@ export interface GeminiResponse {
 
 export interface PersonWork {
   entity: string;
+  wikipediaTitle?: string; // Canonical Wikipedia page title (may include disambiguation parentheses)
   type: string;
   description: string;
   role: string;

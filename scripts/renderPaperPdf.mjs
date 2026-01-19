@@ -3,65 +3,84 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = "/Users/johndimm/projects/Constellations";
-const PAPER_HTML = path.join(ROOT, "public", "paper", "rendered", "paper.html");
-const OUT_PDF = path.join(ROOT, "public", "paper", "rendered", "paper.pdf");
-const USER_DATA_DIR = path.join(ROOT, ".chrome-pdf-profile");
+const PAPER_DIR = path.join(ROOT, "public", "paper");
+const OUT_DIR = path.join(PAPER_DIR, "rendered");
 
-function findChrome() {
+function run(cmd, args, opts = {}) {
+  const res = spawnSync(cmd, args, { stdio: "inherit", ...opts });
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    const msg = `Command failed: ${cmd} ${args.join(" ")} (exit=${res.status})`;
+    throw new Error(msg);
+  }
+}
+
+function findChromeBinary() {
   const candidates = [
-    process.env.CHROME_PATH,
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  ].filter(Boolean);
-
-  for (const p of candidates) {
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "google-chrome",
+    "chromium",
+    "chromium-browser"
+  ];
+  for (const c of candidates) {
     try {
-      fs.accessSync(p, fs.constants.X_OK);
-      return p;
-    } catch {
-      // keep looking
-    }
+      if (c.startsWith("/")) {
+        if (fs.existsSync(c)) return c;
+      } else {
+        const r = spawnSync("which", [c], { encoding: "utf8" });
+        if (r.status === 0 && (r.stdout || "").trim()) return c;
+      }
+    } catch { }
   }
   return null;
 }
 
+function toFileUrl(p) {
+  // Minimal file:// URL builder that tolerates spaces.
+  return "file://" + encodeURI(p);
+}
+
 function main() {
-  const chrome = findChrome();
+  // 1) Ensure HTML is up to date.
+  run("node", [path.join(ROOT, "scripts", "renderPaperMarkdown.mjs")], { cwd: ROOT });
+
+  // 2) Print paper.html to PDF using headless Chrome.
+  const chrome = findChromeBinary();
   if (!chrome) {
-    console.error(
-      "Could not find Google Chrome. Set CHROME_PATH or install Chrome to generate a PDF."
-    );
-    process.exit(1);
+    throw new Error('Could not find Chrome/Chromium. Install Google Chrome or adjust scripts/renderPaperPdf.mjs.');
   }
 
-  if (!fs.existsSync(PAPER_HTML)) {
-    console.error(`Missing rendered HTML: ${PAPER_HTML}\nRun: npm run render:paper`);
-    process.exit(1);
+  const paperHtml = path.join(OUT_DIR, "paper.html");
+  const outPdf = path.join(OUT_DIR, "constellations.pdf");
+  if (!fs.existsSync(paperHtml)) {
+    throw new Error(`Missing rendered HTML: ${paperHtml}. Run npm run render:paper first.`);
   }
 
-  // Ensure Chrome does not touch system profile/crashpad locations (important under sandboxing).
-  fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+  // Remove any previous PDF so we don't confuse the user if printing fails.
+  try { fs.unlinkSync(outPdf); } catch { }
 
-  const fileUrl = `file://${PAPER_HTML}`;
   const args = [
-    "--headless=new",
+    "--headless",
     "--disable-gpu",
     "--no-first-run",
     "--no-default-browser-check",
-    "--disable-extensions",
-    `--user-data-dir=${USER_DATA_DIR}`,
-    "--disable-crash-reporter",
-    "--disable-breakpad",
-    "--print-to-pdf-no-header",
-    `--print-to-pdf=${OUT_PDF}`,
-    fileUrl,
+    "--allow-file-access-from-files",
+    `--print-to-pdf=${outPdf}`,
+    "--virtual-time-budget=8000",
+    toFileUrl(paperHtml)
   ];
 
-  const res = spawnSync(chrome, args, { stdio: "inherit" });
-  if (res.status !== 0) {
-    process.exit(res.status ?? 1);
-  }
+  console.log(`\n🖨️  Printing PDF via Chrome: ${chrome}`);
+  console.log(`📄 Input: ${paperHtml}`);
+  console.log(`✅ Output: ${outPdf}\n`);
 
-  console.log(`Wrote ${OUT_PDF}`);
+  run(chrome, args, { cwd: ROOT });
+
+  if (!fs.existsSync(outPdf)) {
+    throw new Error(`Expected PDF not found at ${outPdf}`);
+  }
+  console.log(`Done: ${outPdf}`);
 }
 
 main();

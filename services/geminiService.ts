@@ -46,32 +46,18 @@ export const classifyStartPair = async (
   compositeType: string;
   reasoning: string;
 }> => {
-  // Fast safety heuristic: if the VERIFIED info strongly indicates this is a work (painting/album/film/book),
-  // it must NOT be a person. We still choose the pair, but force the term onto the composite side.
-  // This reduces common kiosk errors like "The Starry Night" being treated as a person.
-  const wc = (wikiContext || "").toLowerCase();
-  const looksLikeWork =
-    wc.includes(" is a painting") ||
-    wc.includes(" was a painting") ||
-    wc.includes(" is an oil") ||
-    wc.includes(" is a  painting") ||
-    wc.includes(" is a song") ||
-    wc.includes(" is an album") ||
-    wc.includes(" is a film") ||
-    wc.includes(" is a novel") ||
-    wc.includes(" is a book") ||
-    wc.includes(" is a sculpture") ||
-    wc.includes(" is an artwork") ||
-    wc.includes(" is a work of art");
-
-  if (looksLikeWork) {
+  // String-level safety heuristic (no Wikipedia required):
+  // Disambiguated titles like "Discover (Daft Punk album)" must never be treated as Person.
+  // Treat common work/media parentheticals as Composite/Event in the temporary Person↔Event model.
+  const t = term.trim();
+  if (/\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(t)) {
     return {
       type: "Event",
       description: "",
       isAtomic: false,
       atomicType: "Person",
       compositeType: "Event",
-      reasoning: "Verified information indicates this is a work (not a person), so it must be Composite in the chosen pair."
+      reasoning: "Title contains an explicit work/media disambiguator (e.g., '(album)'); treating it as Composite in Person↔Event."
     };
   }
 
@@ -88,11 +74,8 @@ export const classifyStartPair = async (
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const wikiPrompt = wikiContext
-    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
-    : "";
 
-  const prompt = `Choose the bipartite pair for this session based ONLY on the first input: "${term}".${wikiPrompt}
+  const prompt = `Choose the bipartite pair for this session based ONLY on the first input: "${term}".
 You MUST choose EXACTLY ONE of these pairs:
 1) Person ↔ Event
 2) Ingredient ↔ Recipe
@@ -101,9 +84,12 @@ You MUST choose EXACTLY ONE of these pairs:
 Rules:
 - If "${term}" is a person (an individual human), choose Person ↔ Event.
 - If "${term}" is a historical event/incident/scandal/battle, choose Person ↔ Event.
+- If "${term}" is a named work (album, song, book, novel, film, painting, sculpture, artwork), choose Person ↔ Event and set isAtomic=false and type="Event".
+- If "${term}" contains an explicit disambiguator like "(album)" / "(song)" / "(film)" / "(book)", it is NOT a person: choose Person ↔ Event and set isAtomic=false and type="Event".
+- If "${term}" is an organization/institution/committee (NOT an individual human), choose Person ↔ Event and set isAtomic=false and type="Event".
 - If "${term}" is a symptom (e.g., sore throat, runny nose), choose Symptom ↔ Disease.
 - If "${term}" is an ingredient (e.g., pepper, chicken, beef), choose Ingredient ↔ Recipe.
-- Otherwise, prefer Person ↔ Event unless the VERIFIED INFORMATION strongly implies Symptom or Ingredient.
+- Otherwise, prefer Person ↔ Event unless it clearly implies Symptom or Ingredient.
 
 Return JSON:
 {
@@ -182,6 +168,20 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
   reasoning?: string;
 }> => {
   const normalized = term.trim().toLowerCase();
+
+  // String-level safety heuristic (no Wikipedia required):
+  // Disambiguated titles like "... (album)" must never be treated as Person.
+  if (/\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(term.trim())) {
+    return {
+      type: "Event",
+      description: "",
+      isAtomic: false,
+      atomicType: "Person",
+      compositeType: "Event",
+      reasoning: "Title contains an explicit work/media disambiguator (e.g., '(album)'); treating it as Composite in Person↔Event."
+    };
+  }
+
   // Heuristic override: keep a high-signal default for an ambiguous title
   if (normalized === 'the manhattan project' || normalized === 'manhattan project') {
     return {
@@ -199,7 +199,7 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
     console.error("❌ [Gemini] classifyEntity: No API key found");
     return { type: 'Event', description: '', isAtomic: false };
   }
-  console.log(`🧪 [Gemini] classify start`, { term, hasWiki: !!wikiContext, timeoutMs: CLASSIFY_TIMEOUT_MS });
+  console.log(`🧪 [Gemini] classify start`, { term, timeoutMs: CLASSIFY_TIMEOUT_MS });
   const ai = new GoogleGenAI({ apiKey });
 
   const wikiPrompt = wikiContext
@@ -208,8 +208,15 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
 
   try {
     const prompt = `Classify "${term}". ${wikiPrompt}
-      Determine if it is "Atomic" (a fundamental building block like a person, ingredient, or symptom) 
-      or "Composite" (a collection or event like a movie, recipe, or disease).
+      Determine if it is "Atomic" (a fundamental building block like an individual human person, ingredient, or symptom)
+      or "Composite" (a collection/group/institution/work/event like a movie, recipe, disease, organization, or historical incident).
+
+      IMPORTANT:
+      - "Person" means an individual human only.
+      - Organizations, institutions, committees, societies, companies, and museums are NOT persons.
+      - In the Person↔Event pairing, treat organizations as "Event" (Composite), NOT "Person".
+      - In the Person↔Event pairing, treat named works (albums, songs, books, novels, films, paintings, artworks) as "Event" (Composite), NOT "Person".
+      - If the title explicitly contains a disambiguator like "(album)" / "(film)" / "(book)", it is a work: treat it as "Event" (Composite).
       
       Identify the relevant Bipartite Pair this belongs to (e.g. Actor/Movie, Ingredient/Recipe, Symptom/Disease, Person/Event).
       
@@ -302,13 +309,25 @@ export const fetchConnections = async (
 
   const atomicLabel = atomicType || "ATOMIC entity";
   const compositeLabel = compositeType || "COMPOSITE entity";
+  const personOnlyRule =
+    (atomicType || "").trim().toLowerCase() === "person"
+      ? `\nCRITICAL: The atomic side is "Person" meaning individual human beings only.\n- Return ONLY specific individual people with proper names (e.g., "Jane Doe"), not categories or groups.\n- DO NOT return organizations, institutions, committees, councils, companies, museums, foundations, agencies, or any group entities.\n- DO NOT return generic or collective phrases like "Various Local Artists", "Local Artists", "Staff", "Visitors", "Students", "Members", "Volunteers", "Team", "The Public", "Curators".\n- If you cannot find enough specific individual humans, return fewer.`
+      : "";
+  const workSourceHint =
+    (compositeType || "").trim().toLowerCase() === "event"
+      ? `\nIf the Source is a named work (e.g., artwork/painting/sculpture/album/book/film), return people directly connected to the work (creator, depicted subject/model if distinct, commissioners/patrons, notable collectors/owners, curators/restorers/biographers explicitly associated). Do NOT invent names; if only the creator is reliably connected, return only that person.`
+      : "";
 
   try {
     const prompt = `${contextualPrompt}${wikiPrompt}${excludePrompt}
       This is a ${compositeLabel}. 
       Return 8-10 key ${atomicLabel} entities (participants, victims, investigators, stars, ingredients, etc.) that make up this composite.
+      ${personOnlyRule}
+      ${workSourceHint}
 
-      IMPORTANT: For each returned entity, also provide a 1-sentence evidence snippet.
+      IMPORTANT: For each returned entity, also provide:
+      - wikipediaTitle: the canonical English Wikipedia article title for that entity (use parenthetical disambiguation when needed, e.g. "Euphoria (TV series)", "Prince (musician)").
+      - a 1-sentence evidence snippet.
       - If VERIFIED INFORMATION text is provided, the evidence snippet MUST be copied verbatim from that text and should contain BOTH the source title and the returned entity name when possible.
       - Set evidencePageTitle to the Wikipedia article title the snippet is from (usually the source).
       - If you cannot find a good verbatim quote in VERIFIED INFORMATION, still return evidenceSnippet as a brief, explicit rationale (no quotes) and set evidencePageTitle to the most relevant page title (usually the source).
@@ -338,6 +357,7 @@ export const fetchConnections = async (
                 type: Type.OBJECT,
                 properties: {
                   name: { type: Type.STRING },
+                  wikipediaTitle: { type: Type.STRING, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
                   role: { type: Type.STRING, description: "Role in the requested Source Node" },
                   description: { type: Type.STRING, description: "Short 1-sentence bio" },
                   evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
@@ -402,7 +422,24 @@ export const fetchPersonWorks = async (
        CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, or specific historical event/incident. 
        DO NOT return descriptive phrases, facts, or achievements.
 
-       IMPORTANT: For each returned entity, also provide a 1-sentence evidence snippet.
+       SPECIAL CASE (art): If "${nodeName}" is an artist (painter/sculptor/architect/photographer), include their major named artworks as returned entities.
+       - These artworks may be primarily made by a single person; that is OK.
+       - Set the returned item's "type" field to "Artwork" (or "Architecture" / "Sculpture" / "Painting" when clearly applicable).
+       - ALSO include a few multi-person art-world composites when applicable (e.g., key exhibitions featuring the artist, major movements the artist is associated with, or well-known patronage/collector contexts) to avoid dead-end single-person works.
+       - If you include those, set their type to "Event" or "Exhibition" or "Movement" as appropriate.
+       - QUOTA: For an artist, return AT LEAST 6 specific named works by the artist (paintings, sculptures, buildings, photo series).
+       - Movements/periods/styles (e.g., "Impressionism", "Modernism") must be at most 1 item total, and only if you also returned >=6 works.
+       - Do NOT return only movements/periods/styles; the primary goal is to list the artist's works.
+       - Prefer the artist's works over generic groupings. For painters, return paintings/series by name (e.g., "Water Lilies", "Impression, Sunrise", "Haystacks", "Rouen Cathedral series").
+
+       SPECIAL CASE (academia/math): If "${nodeName}" is a mathematician/scientist/researcher, include major named papers (often coauthored).
+       - Papers are valid ${compositeLabel} in this system.
+       - Prefer coauthored papers when possible (they connect to multiple people).
+       - Set the returned item's "type" to "Paper" when returning papers.
+
+       IMPORTANT: For each returned entity, also provide:
+       - wikipediaTitle: the canonical English Wikipedia article title for that entity (use parenthetical disambiguation when needed, e.g. "Euphoria (TV series)", "The Godfather", "A Streetcar Named Desire (1951 film)").
+       - a 1-sentence evidence snippet.
        - If VERIFIED INFORMATION text is provided, the evidence snippet MUST be copied verbatim from that text and should contain BOTH the source name and the returned entity name when possible.
        - Set evidencePageTitle to the Wikipedia article title the snippet is from (usually the source).
        - If you cannot find a good verbatim quote in VERIFIED INFORMATION, still return evidenceSnippet as a brief, explicit rationale (no quotes) and set evidencePageTitle to the most relevant page title (usually the source).
@@ -411,7 +448,9 @@ export const fetchPersonWorks = async (
        - For a Person involved in a recent event: Return the named Event or Incident (e.g. "Killing of Renee Good", "2026 Minneapolis Protests").
        - For an Ingredient (e.g. "Chicken"): Return specific Recipes.
        - For a Player: Return specific Teams.
-       - For an Actor: Return specific Movies.`;
+       - For an Actor: Return specific Movies.
+       - For an Artist: Return specific major Artworks (e.g., "Mona Lisa", "The Last Supper") and optionally a few key Exhibitions/Movements.
+       - For a Mathematician: Return specific named Papers (often coauthored).`;
 
   try {
     const prompt = `${wikiPrompt}${contextPrompt}
@@ -434,6 +473,7 @@ export const fetchPersonWorks = async (
                 type: Type.OBJECT,
                 properties: {
                   entity: { type: Type.STRING },
+                  wikipediaTitle: { type: Type.STRING, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
                   type: { type: Type.STRING },
                   description: { type: Type.STRING, description: "Short 1-sentence description" },
                   role: { type: Type.STRING, nullable: true },

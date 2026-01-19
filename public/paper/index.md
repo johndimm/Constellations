@@ -18,3 +18,11 @@ This directory is a living draft in Markdown. Start with the outline, then itera
 - Prefer editing these `.md` files directly in Cursor.
 - `index.html` still exists for browsing in a normal web browser at `/paper/index.html`.
 
+## Build (HTML + PDF)
+- Render HTML: `npm run render:paper`
+- Render HTML + export PDF (uses headless Google Chrome): `npm run render:paper:pdf`
+
+## Build (TeX PDF, 2-column)
+- Generate LaTeX from the Markdown draft: `npm run render:paper:tex`
+- Generate LaTeX + compile PDF (TeX 2-column): `npm run render:paper:tex:pdf`
+- Output: `public/paper/rendered/paper.pdf`

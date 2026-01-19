@@ -61,6 +61,10 @@
 
       /* Print-friendly: black on white, no dark backgrounds */
       @media print {
+        @page {
+          size: letter;
+          margin: 0.75in;
+        }
         :root {
           --bg: #ffffff;
           --card: #ffffff;
@@ -71,13 +75,36 @@
           --border: rgba(0, 0, 0, 0.2);
         }
         body { background: #ffffff !important; color: #000000 !important; }
+        body {
+          font-family: "Times New Roman", Times, serif !important;
+          font-size: 10pt !important;
+          line-height: 1.35 !important;
+        }
         .nav { display: none !important; }
-        .content { border: none !important; background: #ffffff !important; }
+        .wrap { max-width: none !important; padding: 0 !important; }
+        .content { border: none !important; background: #ffffff !important; padding: 0 !important; }
         a { text-decoration: underline !important; }
         pre { background: #ffffff !important; }
         figure { break-inside: avoid; page-break-inside: avoid; }
-        img { border: 1px solid rgba(0,0,0,0.15) !important; }
+        img { border: 1px solid rgba(0,0,0,0.15) !important; max-width: 100% !important; border-radius: 4px !important; }
         video { display: none !important; }
+
+        /* Academic two-column layout for paper.html */
+        .paper-two-col {
+          column-count: 2;
+          column-gap: 0.28in;
+          column-fill: auto;
+        }
+        .paper-header {
+          column-span: all;
+          margin-bottom: 10pt;
+        }
+        .paper-header h1 { margin: 0 0 6pt 0; font-size: 16pt; }
+        .paper-header p { margin: 0 0 4pt 0; }
+        h2 { font-size: 12pt; margin: 10pt 0 4pt; }
+        h3 { font-size: 11pt; margin: 8pt 0 3pt; }
+        p { text-align: justify; }
+        h2, h3 { break-after: avoid; page-break-after: avoid; }
       }
     </style>
   </head>
@@ -94,7 +121,7 @@
 </ul>
 <p>The UI encodes this alternation with distinct visual forms (e.g., circles vs cards) while keeping interactions consistent across domains.</p>
 <h2>Data flow (high level)</h2>
-<p>1. <b>User query</b>: in kiosk mode (default), the user taps a curated seed entity (no typing); in non-kiosk mode, the user can type a query.</p>
+<p>1. <b>User query</b>: the user can start from a curated domain seed or type an arbitrary query.</p>
 <p>2. <b>Context retrieval</b>: fetch lightweight context (e.g., Wikipedia summary) to help disambiguation and mitigate model knowledge gaps.</p>
 <p>3. <b>Start-pair classification (locked)</b>: choose a bipartite pair from the first input (currently one of Person↔Event, Ingredient↔Recipe, Symptom↔Disease), then <b>lock it for the entire graph</b> (no switching).</p>
 <p>4. <b>Expansion</b>: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition, conditioned on the locked pair.</p>

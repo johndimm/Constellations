@@ -10,7 +10,9 @@
     "start:cache": "tsx server.ts",
     "fetch:top-bios": "node scripts/fetchTopBiographies.js",
     "render:paper": "node scripts/renderPaperMarkdown.mjs",
-    "render:paper:pdf": "npm run render:paper && node scripts/renderPaperPdf.mjs"
+    "render:paper:pdf": "node scripts/renderPaperPdf.mjs",
+    "render:paper:tex": "node scripts/renderPaperTex.mjs",
+    "render:paper:tex:pdf": "node scripts/renderPaperTex.mjs && latexmk -pdf -interaction=nonstopmode -halt-on-error -jobname=paper -outdir=public/paper/rendered public/paper/tex/constellations.tex"
   },
   "dependencies": {
     "@google/genai": "^1.33.0",

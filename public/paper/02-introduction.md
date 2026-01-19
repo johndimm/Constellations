@@ -11,7 +11,7 @@ This paper contributes an interactive exploration system and a design framing fo
 ## Contributions
 - **A bipartite exploration interface** that enforces Atomic↔Composite alternation as a domain-general interaction primitive for click-to-expand exploration.
 - **A session-level locking mechanism for bipartite pair selection**: the system chooses an Atomic↔Composite pairing from the first query and locks it for the session to reduce mid-graph “ontology drift.”
-- **A kiosk-first interaction mode** (no typing) designed for touch displays, where users start from curated seeds and drive exploration by tapping.
+- **Domains + text input in one interface**: users can start from curated domain seeds or type any query, enabling both guided and open-ended exploration.
 - **Evidence-backed edges** that make edge inspection a first-class interaction via short snippets and source links.
 - **An LLM-assisted, on-demand graph construction pipeline** that builds local neighborhoods without requiring a precomputed knowledge graph.
 - **An evaluation plan** targeting exploration outcomes (recall, discovery, orientation, and trust), rather than accuracy alone.

@@ -61,6 +61,10 @@
 
       /* Print-friendly: black on white, no dark backgrounds */
       @media print {
+        @page {
+          size: letter;
+          margin: 0.75in;
+        }
         :root {
           --bg: #ffffff;
           --card: #ffffff;
@@ -71,13 +75,36 @@
           --border: rgba(0, 0, 0, 0.2);
         }
         body { background: #ffffff !important; color: #000000 !important; }
+        body {
+          font-family: "Times New Roman", Times, serif !important;
+          font-size: 10pt !important;
+          line-height: 1.35 !important;
+        }
         .nav { display: none !important; }
-        .content { border: none !important; background: #ffffff !important; }
+        .wrap { max-width: none !important; padding: 0 !important; }
+        .content { border: none !important; background: #ffffff !important; padding: 0 !important; }
         a { text-decoration: underline !important; }
         pre { background: #ffffff !important; }
         figure { break-inside: avoid; page-break-inside: avoid; }
-        img { border: 1px solid rgba(0,0,0,0.15) !important; }
+        img { border: 1px solid rgba(0,0,0,0.15) !important; max-width: 100% !important; border-radius: 4px !important; }
         video { display: none !important; }
+
+        /* Academic two-column layout for paper.html */
+        .paper-two-col {
+          column-count: 2;
+          column-gap: 0.28in;
+          column-fill: auto;
+        }
+        .paper-header {
+          column-span: all;
+          margin-bottom: 10pt;
+        }
+        .paper-header h1 { margin: 0 0 6pt 0; font-size: 16pt; }
+        .paper-header p { margin: 0 0 4pt 0; }
+        h2 { font-size: 12pt; margin: 10pt 0 4pt; }
+        h3 { font-size: 11pt; margin: 8pt 0 3pt; }
+        p { text-align: justify; }
+        h2, h3 { break-after: avoid; page-break-after: avoid; }
       }
     </style>
   </head>

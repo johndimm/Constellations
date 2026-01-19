@@ -10,6 +10,7 @@ import { fetchWikipediaImage, fetchWikipediaSummary, fetchWikipediaExtract } fro
 import { Key, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react';
 import {
     KioskDomain,
+    hasLocalKioskDomains,
     loadKioskDomains,
     saveKioskDomains,
     loadSelectedKioskDomainId,
@@ -19,12 +20,27 @@ import {
 const BrowsePeople = lazy(() => import('./components/BrowsePeople'));
 const PeopleBrowserSidebar = lazy(() => import('./components/PeopleBrowserSidebar'));
 
-// Normalize string for deduplication: lower case, remove 'the ', remove punctuation
-const normalizeForDedup = (str: string) => {
-    return str.trim().toLowerCase()
-        .replace(/^the\s+/i, '') // Remove leading "The "
-        .replace(/[^\w\s]/g, '') // Remove punctuation like quotes/dots
-        .replace(/\s+/g, ' ');   // Collapse spaces
+// Normalize string for deduplication:
+// - Unicode normalize (so visually-identical strings match)
+// - strip zero-width chars + NBSP
+// - lower case
+// - remove leading "the "
+// - remove punctuation (Unicode-aware)
+// - collapse whitespace
+const normalizeForDedup = (str: unknown) => {
+    let s = String(str ?? '');
+    try {
+        // Normalize to reduce visually-identical variants (e.g., curly quotes, composed accents)
+        s = s.normalize('NFKC');
+    } catch { }
+    return s
+        .replace(/[\u200B-\u200D\uFEFF]/g, '') // zero-width chars
+        .replace(/\u00A0/g, ' ')              // NBSP -> space
+        .trim()
+        .toLowerCase()
+        .replace(/^the\s+/i, '')              // Remove leading "The "
+        .replace(/[^\p{L}\p{N}\s]/gu, '')     // Remove punctuation (keep letters/numbers)
+        .replace(/\s+/g, ' ');                // Collapse spaces
 };
 
 const canonicalType = (t?: string) => {
@@ -32,6 +48,21 @@ const canonicalType = (t?: string) => {
     if (!norm) return '';
     if (['film', 'movie', 'film series'].includes(norm) || norm.startsWith('film ')) return 'movie';
     if (norm === 'tv show' || norm === 'tv series' || norm === 'television series') return 'tv';
+    // Collapse most "work-like" composites into a single bucket to avoid dupes like
+    // play/film/book adaptations returning as separate nodes with the same title.
+    if ([
+        'work',
+        'event', // keep explicit Event as-is (handled by return norm)
+        'book', 'novel', 'short story', 'story', 'essay',
+        'play', 'theatre', 'theater', 'musical',
+        'movie', 'tv', 'episode', 'series',
+        'song', 'track', 'album', 'record', 'single',
+        'painting', 'artwork', 'sculpture', 'photograph',
+        'opera', 'ballet', 'symphony', 'concerto', 'composition', 'piece'
+    ].includes(norm)) {
+        // If it's literally 'event', keep it distinct. Otherwise bucket as 'work'.
+        return norm === 'event' ? 'event' : 'work';
+    }
     return norm;
 };
 
@@ -44,11 +75,22 @@ const dedupeKey = (title: string, type?: string, wikipediaId?: string | null) =>
     return `${normTitle}|${normType}`;
 };
 
-// Helper to get base dedupe key (normalized title + type, ignoring wikipedia_id)
-const baseDedupeKey = (title: string, type?: string) => {
-    const normType = canonicalType(type);
-    const normTitle = normalizeForDedup(title);
-    return `${normTitle}|${normType}`;
+// Helper to get base dedupe key.
+// Key insight: duplicates often happen when type metadata is missing/inconsistent on Atomics.
+// To avoid duplicates like "Euclid" appearing twice, we dedupe Atomics by title only (within the Atomic partition),
+// and Composites by title+type (to avoid merging distinct things that share a title).
+const baseDedupeKey = (node: { title: string; type?: string; is_atomic?: boolean; is_person?: boolean }) => {
+    const normTitle = normalizeForDedup(node.title);
+    const isAtomic =
+        node.is_atomic ??
+        node.is_person ??
+        ((node.type || '').trim().toLowerCase() === 'person');
+    if (isAtomic) return `a|${normTitle}`;
+    const normType = canonicalType(node.type);
+    // If type is missing, dedupe by title only (we'll merge any typed variant into this bucket).
+    // This avoids duplicates like identical works where one node has type metadata and the other doesn't.
+    if (!normType) return `c|${normTitle}`;
+    return `c|${normTitle}|${normType}`;
 };
 
 // Merge duplicate nodes (same normalized title/type) and remap links accordingly.
@@ -93,15 +135,26 @@ const dedupeGraph = (
     };
 
     nodes.forEach(n => {
-        // Use base key (normalized title + type) for case-insensitive deduplication
-        const key = baseDedupeKey(n.title, n.type);
-        const existing = dedupMap.get(key);
+        // Use a partition-aware key for case-insensitive deduplication
+        const key = baseDedupeKey(n as any);
+        // For composites, if we have a typed key but there's already a type-missing bucket for the same title,
+        // merge into that bucket so "missing type" acts like a wildcard.
+        let existing = dedupMap.get(key);
+        let targetKey = key;
+        if (!existing && key.startsWith('c|') && key.split('|').length === 3) {
+            const titleOnlyKey = key.split('|').slice(0, 2).join('|'); // "c|<title>"
+            const wildcard = dedupMap.get(titleOnlyKey);
+            if (wildcard) {
+                existing = wildcard;
+                targetKey = titleOnlyKey;
+            }
+        }
         if (!existing) {
             dedupMap.set(key, n);
             idRemap.set(n.id, n.id);
         } else {
             const merged = mergeNode(existing, n);
-            dedupMap.set(key, merged);
+            dedupMap.set(targetKey, merged);
             idRemap.set(n.id, merged.id);
             idRemap.set(existing.id, merged.id);
         }
@@ -169,6 +222,34 @@ const App: React.FC = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
     const [selectedLink, setSelectedLink] = useState<GraphLink | null>(null);
+    // Prevent sidebar from showing stale edge evidence after graph resets/loads.
+    useEffect(() => {
+        if (!selectedLink) return;
+        const currentLinks = graphDataRef.current.links || [];
+        const selId = (selectedLink as any)?.id;
+        const getId = (v: number | GraphNode) => (typeof v === 'number' ? v : v.id);
+        const fallbackSelKey = (() => {
+            try {
+                const s = getId((selectedLink as any).source);
+                const t = getId((selectedLink as any).target);
+                return `${s}-${t}`;
+            } catch {
+                return null;
+            }
+        })();
+        const exists = currentLinks.some(l => {
+            if (selId && (l as any).id === selId) return true;
+            if (!fallbackSelKey) return false;
+            try {
+                const s = getId((l as any).source);
+                const t = getId((l as any).target);
+                return `${s}-${t}` === fallbackSelKey;
+            } catch {
+                return false;
+            }
+        });
+        if (!exists) setSelectedLink(null);
+    }, [links, selectedLink]);
     const [isCompact, setIsCompact] = useState(false);
     const [isTimelineMode, setIsTimelineMode] = useState(false);
     const [isTextOnly, setIsTextOnly] = useState(false);
@@ -210,17 +291,6 @@ const App: React.FC = () => {
     const lockedPairRef = useRef<LockedPair>(lockedPair);
     useEffect(() => { lockedPairRef.current = lockedPair; }, [lockedPair]);
 
-    // Kiosk / no-typing mode: DEFAULT ON.
-    // Disable via `?kiosk=0` (restores the old typing UI).
-    const [isKioskMode] = useState(() => {
-        try {
-            const params = new URLSearchParams(window.location.search);
-            return params.get('kiosk') !== '0';
-        } catch {
-            return true;
-        }
-    });
-
     // Admin mode: enables editing kiosk domains in-app (requires keyboard/mouse)
     const [isAdminMode] = useState(() => {
         try {
@@ -237,15 +307,16 @@ const App: React.FC = () => {
     );
 
     useEffect(() => {
-        // Persist domains + selection for kiosk installs
+        // Admin workflow: domains become editable once copied to localStorage.
+        // Outside admin, we only persist if a local copy already exists (i.e., user previously customized).
+        const persistEnabled = isAdminMode || hasLocalKioskDomains();
+        if (!persistEnabled) return;
         try { saveKioskDomains(kioskDomains); } catch { }
         try { saveSelectedKioskDomainId(selectedKioskDomainId); } catch { }
     }, [kioskDomains, selectedKioskDomainId]);
 
     const selectedKioskDomain = kioskDomains.find(d => d.id === selectedKioskDomainId) || kioskDomains[0];
     const kioskSeedTerms = selectedKioskDomain?.terms || [];
-
-    const [pendingKioskConnect, setPendingKioskConnect] = useState<{ start: string; end: string } | null>(null);
 
     const buildWikiUrl = (title: string) => `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`;
 
@@ -398,18 +469,49 @@ const App: React.FC = () => {
         }
     }, [cacheEnabled, cacheBaseUrl]);
 
-    const loadNodeImage = useCallback(async (nodeId: number, title: string, context?: string, fallbackNode?: Partial<GraphNode> & { id: number; type?: string; title: string }) => {
+    // Prevent image "flapping" from concurrent fetches: only the latest request for a node can win.
+    const imageReqTokenRef = useRef<Map<number, number>>(new Map());
+
+    const loadNodeImage = useCallback(async (
+        nodeId: number,
+        title: string,
+        context?: string,
+        fallbackNode?: Partial<GraphNode> & { id: number; type?: string; title: string },
+        opts?: { force?: boolean }
+    ) => {
         if (isTextOnly) return;
+
+        const force = !!opts?.force;
+        const current = graphDataRef.current.nodes.find(n => n.id === nodeId);
+        // If we already have an image (or already tried) and this isn't a forced refresh, do nothing.
+        if (!force) {
+            if (current?.imageUrl) return;
+            if (current?.fetchingImage) return;
+            if (current?.imageChecked) return;
+        }
+
+        const nextToken = (imageReqTokenRef.current.get(nodeId) || 0) + 1;
+        imageReqTokenRef.current.set(nodeId, nextToken);
 
         setGraphData(prev => ({
             ...prev,
-            nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n)
+            // Mark checked immediately to prevent other auto-loaders from racing in.
+            nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: true, imageChecked: true } : n)
         }));
+
         const url = await fetchWikipediaImage(title, context);
+        // If a newer request started after this one, ignore this result.
+        if ((imageReqTokenRef.current.get(nodeId) || 0) !== nextToken) return;
+
         if (url) {
             setGraphData(prev => ({
                 ...prev,
-                nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n)
+                nodes: prev.nodes.map(n => {
+                    if (n.id !== nodeId) return n;
+                    // Don't overwrite an image that was already set by a newer forced request.
+                    if (!force && n.imageUrl) return { ...n, fetchingImage: false, imageChecked: true };
+                    return { ...n, imageUrl: url, fetchingImage: false, imageChecked: true };
+                })
             }));
             saveCacheNodeMeta(nodeId, { imageUrl: url }, fallbackNode);
         } else {
@@ -432,10 +534,25 @@ const App: React.FC = () => {
         setNotification({ message: `AI is looking for ${node.title}'s correct photo...`, type: 'success' });
 
         try {
+            // Bypass any cached null image results for this node (common for ambiguous titles like "Prince").
+            try {
+                const imgCache: Map<string, string | null> | undefined = (window as any).__wikiImageCache;
+                if (imgCache && typeof imgCache.delete === 'function') {
+                    imgCache.delete(node.title.trim().toLowerCase());
+                }
+            } catch { }
+
             const aiSuggestion = await findWikipediaTitle(node.title, node.description);
             if (aiSuggestion) {
                 const { title: betterTitle, imageHint } = aiSuggestion;
                 console.log(`🤖 AI suggested better Wikipedia title for ${node.title}: "${betterTitle}"`, imageHint ? `(Hint: ${imageHint})` : '');
+                try {
+                    const imgCache: Map<string, string | null> | undefined = (window as any).__wikiImageCache;
+                    if (imgCache && typeof imgCache.delete === 'function') {
+                        if (betterTitle) imgCache.delete(betterTitle.trim().toLowerCase());
+                        if (imageHint) imgCache.delete(imageHint.trim().toLowerCase());
+                    }
+                } catch { }
                 
                 // If AI gave a specific image hint (filename), try that first
                 if (imageHint) {
@@ -453,13 +570,10 @@ const App: React.FC = () => {
                 }
 
                 // Otherwise use the better title
-                const url = await fetchWikipediaImage(betterTitle, node.type);
-                if (url) {
-                    setGraphData(prev => ({
-                        ...prev,
-                        nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n)
-                    }));
-                    saveCacheNodeMeta(nodeId, { imageUrl: url });
+                // Use the unified loader with force=true so it cannot be overwritten by any in-flight auto-load.
+                await loadNodeImage(nodeId, betterTitle, node.type, undefined, { force: true });
+                const updated = graphDataRef.current.nodes.find(n => n.id === nodeId);
+                if (updated?.imageUrl) {
                     setNotification({ message: "Better photo found!", type: 'success' });
                     return;
                 }
@@ -479,6 +593,7 @@ const App: React.FC = () => {
     const handleClear = () => {
         setGraphData({ nodes: [], links: [] });
         setSelectedNode(null);
+        setSelectedLink(null);
         // Do not clear search terms as per user request
         // setExploreTerm('');
         // setPathStart('');
@@ -547,13 +662,6 @@ const App: React.FC = () => {
                 nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
             };
         });
-        // Prevent repeated requests for the same node while a fetch is in flight
-        // by marking its image as checked during this operation.
-        const markChecked = () => setGraphData(prev => ({
-            ...prev,
-            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, imageChecked: true } : n)
-        }));
-        markChecked();
         const loadingGuard = setTimeout(() => {
             setGraphData(prev => ({
                 ...prev,
@@ -627,7 +735,7 @@ const App: React.FC = () => {
                     nodeUpdates.set(node.id, { is_atomic: inferred });
                 } else {
                     console.log(`🧠 [Expand] Classifying node "${node.title}" for partition only (pair locked to ${pair.atomicType}/${pair.compositeType})...`);
-                    const classification = await classifyEntity(node.title, wiki.extract || node.wikiSummary);
+                    const classification = await classifyEntity(node.title);
                     currentIsAtomic = classification.isAtomic;
                     nodeUpdates.set(node.id, {
                         ...(typeof (node.is_atomic ?? (node as any).is_person) === 'boolean' ? {} : { is_atomic: classification.isAtomic }),
@@ -871,10 +979,6 @@ const App: React.FC = () => {
 
                             validCached.forEach((cn, idx) => {
                                 if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
-                                    setGraphData(prev => ({
-                                        ...prev,
-                                        nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, imageChecked: true } : n)
-                                    }));
                                     setTimeout(() => loadNodeImage(cn.id, cn.title), 200 * idx);
                                 }
                             });
@@ -907,9 +1011,12 @@ const App: React.FC = () => {
                     console.log(`↩️ [Expand] empty result with exclusions; retrying without exclusions for "${node.title}"`);
                     data = await fetchPersonWorks(node.title, [], sourceLong || wiki.extract || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 }
-                results = (data.works || []).map(w => ({ 
-                    title: w.entity, 
-                    type: currentCompositeType, 
+                results = (data.works || [])
+                    .filter(w => typeof (w as any)?.entity === 'string' && (w as any).entity.trim().length > 0)
+                    .map(w => ({ 
+                    title: (w as any).wikipediaTitle || w.entity,
+                    // Allow the model to type works more specifically (e.g., Artwork) even in the Person↔Event session model.
+                    type: (w as any).type || currentCompositeType, 
                     description: w.description, 
                     year: w.year ?? undefined, 
                     role: w.role ?? undefined,
@@ -937,8 +1044,10 @@ const App: React.FC = () => {
                 
                 // Use the atomic type identified during classification if available, else default to 'Person'
                 const atomicTypeToUse = currentAtomicType || 'Person';
-                results = (data.people || []).map(p => ({ 
-                    title: p.name, 
+                results = (data.people || [])
+                    .filter(p => typeof (p as any)?.name === 'string' && (p as any).name.trim().length > 0)
+                    .map(p => ({ 
+                    title: (p as any).wikipediaTitle || p.name, 
                     type: atomicTypeToUse, 
                     description: p.description, 
                     role: p.role,
@@ -970,6 +1079,7 @@ const App: React.FC = () => {
                     setError(`No connections found for "${node.title}".`);
                     setGraphData({ nodes: [], links: [] });
                     setSelectedNode(null);
+                    setSelectedLink(null);
                     setExpandingNodeId(null); // Clear if no results
                     setNewChildNodeIds(new Set());
                 } else {
@@ -989,7 +1099,9 @@ const App: React.FC = () => {
                     const evidence = r.edge_meta?.evidence || { kind: 'none' as const };
 
                     return { 
-                        ...r, 
+                        ...r,
+                        // Use Wikipedia's resolved title to avoid ambiguous nodes (e.g., "Euphoria" -> "Euphoria (TV series)")
+                        title: (rWiki.title || r.title),
                         wikipedia_id: rWiki.pageid?.toString(), 
                         description: rWiki.extract || r.description,
                         meta: { ...(r.meta || {}), wikiSummary: rWiki.extract || undefined },
@@ -1059,10 +1171,10 @@ const App: React.FC = () => {
                 // Use baseDedupeKey for case-insensitive matching regardless of wikipedia_id
                 const currentNodesForDedupe = nodesOverride || graphDataRef.current.nodes;
                 const existingByNorm = new Map<string, GraphNode>(
-                    currentNodesForDedupe.map(n => [baseDedupeKey(n.title, n.type), n])
+                    currentNodesForDedupe.map(n => [baseDedupeKey(n as any), n])
                 );
                 const processedNodes = nodesToUse.map(cn => {
-                    const norm = baseDedupeKey(cn.title, cn.type);
+                    const norm = baseDedupeKey(cn as any);
                     const existing = existingByNorm.get(norm);
                     const idToUse = existing ? existing.id : (cn.id ?? Math.floor(Math.random() * 1000000));
                     if (!existing) {
@@ -1182,11 +1294,6 @@ const App: React.FC = () => {
 
                 processedNodes.forEach((cn, idx) => {
                     if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
-                        // mark as checked to avoid duplicate requests while queued
-                        setGraphData(prev => ({
-                            ...prev,
-                            nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, imageChecked: true } : n)
-                        }));
                         setTimeout(() => loadNodeImage(cn.id, cn.title), 300 * (idx + 1));
                     }
                 });
@@ -1216,6 +1323,7 @@ const App: React.FC = () => {
             }));
             // Clear selection and expanding node on error
             setSelectedNode(null);
+            setSelectedLink(null);
             setExpandingNodeId(null);
             setNewChildNodeIds(new Set());
         } finally {
@@ -1229,21 +1337,33 @@ const App: React.FC = () => {
         setError(null);
         setSearchId(prev => prev + 1);
         setPathNodeIds([]); // Clear path highlighting when starting a new search
+        setSelectedLink(null);
 
         try {
             console.log(`🔎 Starting search for: "${term}"`);
 
-            // 1. Get Wikipedia metadata first to provide context for classification
-            const wiki = await fetchWikipediaSummary(term);
-            const truncatedWiki = wiki.extract ? (wiki.extract.length > 100 ? wiki.extract.substring(0, 100) + "..." : wiki.extract) : "none";
-            console.log(`Wiki summary: "${truncatedWiki}"`);
-
-            // 2. Choose the locked pair for this session based on the first input (no switching after this).
-            const startC = await classifyStartPair(term, wiki.extract || undefined);
+            // 1. Get Wikipedia metadata first to provide context for classification.
+            // Use the selected domain label as a disambiguation hint (e.g., "Popular Music" makes "Prince" resolve to the musician).
+            // 1. Choose the locked pair for this session based on the first input (no switching after this).
+            // Note: classification is handled by the LLM; we do not require a Wikipedia lookup for typing.
+            const startC = await classifyStartPair(term);
             const chosenPair: LockedPair = { atomicType: startC.atomicType, compositeType: startC.compositeType };
             setLockedPair(chosenPair);
             const { type, description: geminiDescription, isAtomic, reasoning } = startC;
             console.log(`Type: ${type}, Atomic: ${isAtomic}, LockedPair: ${chosenPair.atomicType}/${chosenPair.compositeType}`);
+
+            // 2. Fetch Wikipedia summary for display/disambiguation (not for classification).
+            const wiki = await fetchWikipediaSummary(term, selectedKioskDomain?.label);
+            const canonicalTitle = (wiki.title || term).trim();
+            // Never replace the user's input with list-style Wikipedia titles (these are often wrong for people).
+            const lowerCanon = canonicalTitle.toLowerCase();
+            const safeExploreTerm =
+                (lowerCanon.startsWith('list of ') || lowerCanon.includes('awards and nominations') || lowerCanon.includes('filmography') || lowerCanon.includes('discography'))
+                    ? term
+                    : canonicalTitle;
+            setExploreTerm(safeExploreTerm);
+            const truncatedWiki = wiki.extract ? (wiki.extract.length > 100 ? wiki.extract.substring(0, 100) + "..." : wiki.extract) : "none";
+            console.log(`Wiki summary: "${truncatedWiki}"`);
 
             // 3. Upsert to DB to get serial ID
             let nodeId: number = -1;
@@ -1253,7 +1373,7 @@ const App: React.FC = () => {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
-                            title: term.trim(),
+                            title: canonicalTitle,
                             type,
                             description: wiki.extract || geminiDescription || '',
                             wikipedia_id: wiki.pageid?.toString(),
@@ -1281,7 +1401,7 @@ const App: React.FC = () => {
 
             const startNode: GraphNode = {
                 id: nodeId,
-                title: term.trim(),
+                title: canonicalTitle,
                 type: type,
                 is_atomic: isAtomic,
                 wikipedia_id: wiki.pageid?.toString(),
@@ -1325,6 +1445,7 @@ const App: React.FC = () => {
             // Clear screen first as requested
             setGraphData({ nodes: [], links: [] });
             setSelectedNode(null);
+            setSelectedLink(null);
             setPathNodeIds([]); // Clear previous path highlighting
 
         // Helper to clamp node positions within viewport bounds
@@ -1346,8 +1467,8 @@ const App: React.FC = () => {
 
             // 2. Classify and Upsert endpoints with context
             const [startC, endC] = await Promise.all([
-                classifyEntity(start, startWiki.extract || undefined),
-                classifyEntity(end, endWiki.extract || undefined)
+                classifyEntity(start),
+                classifyEntity(end)
             ]);
 
             const upsertNodeLocal = async (title: string, type: string, description: string, wiki: any) => {
@@ -1807,19 +1928,6 @@ const App: React.FC = () => {
         }
     };
 
-    // Kiosk connect mode: when both endpoints are picked by tapping, kick off the search.
-    useEffect(() => {
-        if (!pendingKioskConnect) return;
-        const { start, end } = pendingKioskConnect;
-        setPendingKioskConnect(null);
-        // Ensure UI reflects the endpoints even if search clears the graph
-        setSearchMode('connect');
-        setPathStart(start);
-        setPathEnd(end);
-        handlePathSearch(start, end);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pendingKioskConnect]);
-
     // Load initial graph based on URL params (static or live)
     useEffect(() => {
         const checkParams = async () => {
@@ -2207,33 +2315,6 @@ const App: React.FC = () => {
             loadNodeImage(node.id, node.title);
         }
 
-        // Kiosk connect mode: taps pick start, then end, and automatically run "Connect 2".
-        // In this mode we avoid expanding nodes on tap; taps are selection, not exploration.
-        if (isKioskMode && searchMode === 'connect') {
-            const title = node.title;
-
-            // Keep sidebar selection behavior (but no expansion)
-            setSelectedNode(node);
-            setSelectedLink(null);
-            setContextMenu(null);
-            setExpandingNodeId(null);
-            setNewChildNodeIds(new Set());
-
-            // Pick endpoints
-            if (!pathStart || (pathStart && pathEnd)) {
-                setPathStart(title);
-                setPathEnd('');
-                return;
-            }
-            if (!pathEnd && title !== pathStart) {
-                setPathEnd(title);
-                setPendingKioskConnect({ start: pathStart, end: title });
-                return;
-            }
-
-            return;
-        }
-
         // If in connect mode, auto-fill start/end inputs ONLY if they are empty
         if (searchMode === 'connect') {
             setPathStart(prev => prev || node.title);
@@ -2271,7 +2352,7 @@ const App: React.FC = () => {
                 fetchAndExpandNode(node);
             }
         }
-    }, [isKioskMode, searchMode, pathStart, pathEnd, selectedNode, loadNodeImage, fetchAndExpandNode]);
+    }, [searchMode, pathStart, pathEnd, selectedNode, loadNodeImage, fetchAndExpandNode]);
 
     const handleLinkClick = useCallback((link: GraphLink) => {
         try {
@@ -2282,8 +2363,25 @@ const App: React.FC = () => {
                 evidenceSnippetPreview: link.evidence?.snippet ? `${link.evidence.snippet.substring(0, 80)}…` : null
             });
         } catch { }
+        // Ensure the sidebar is visible: Sidebar renders only when selectedNode is set.
+        // If the user clicks a link without selecting a node first, pick a reasonable endpoint.
+        const sid = typeof link.source === 'number' ? link.source : (link.source as GraphNode).id;
+        const tid = typeof link.target === 'number' ? link.target : (link.target as GraphNode).id;
+        const sNode = nodesRef.current.find(n => n.id === sid) || null;
+        const tNode = nodesRef.current.find(n => n.id === tid) || null;
+        const currentSel = selectedNodeRef.current;
+        const chosen =
+            (currentSel && (currentSel.id === sid || currentSel.id === tid))
+                ? currentSel
+                : (sNode || tNode);
+
+        if (chosen) setSelectedNode(chosen);
         setSelectedLink(link);
-        // keep selectedNode as-is; sidebar will show evidence block
+
+        // If the user had collapsed the sidebar, force it open on evidence click.
+        if (sidebarCollapsed) {
+            setSidebarToggleSignal(s => s + 1);
+        }
     }, []);
 
     const handleViewportChange = useCallback((visibleNodes: GraphNode[]) => {
@@ -2556,28 +2654,7 @@ const App: React.FC = () => {
         setShowBrowse(true);
     }, []);
 
-    const handleKioskPickTerm = (term: string) => {
-        // Explore: start a search immediately (no typing)
-        if (searchMode === 'explore') {
-            setExploreTerm(term);
-            // Kiosk: expand only one hop on initial open (avoid overwhelming auto leaf expansion)
-            handleStartSearch(term, 0);
-            return;
-        }
-
-        // Connect: first pick sets start, second pick sets end and runs Connect 2
-        if (!pathStart || (pathStart && pathEnd)) {
-            setPathStart(term);
-            setPathEnd('');
-            return;
-        }
-
-        if (!pathEnd && term !== pathStart) {
-            setPathEnd(term);
-            setPendingKioskConnect({ start: pathStart, end: term });
-            return;
-        }
-    };
+    // Seeds are handled in the ControlPanel by setting exploreTerm and calling onSearch.
 
     if (!isKeyReady) {
         return (
@@ -2680,10 +2757,8 @@ const App: React.FC = () => {
                     setPathEnd={setPathEnd}
                     onSearch={handleStartSearch}
                     onPathSearch={handlePathSearch}
-                    isKioskMode={isKioskMode}
                     isAdminMode={isAdminMode}
                     kioskSeedTerms={kioskSeedTerms}
-                    onKioskPickTerm={handleKioskPickTerm}
                     kioskDomains={kioskDomains}
                     selectedKioskDomainId={selectedKioskDomainId}
                     onSelectKioskDomain={(domainId) => {
@@ -2718,7 +2793,7 @@ const App: React.FC = () => {
                 <Sidebar
                     selectedNode={selectedNode}
                     selectedLink={selectedLink}
-                    onClose={() => { setSelectedNode(null); setContextMenu(null); setPathNodeIds([]); }}
+                    onClose={() => { setSelectedNode(null); setSelectedLink(null); setContextMenu(null); setPathNodeIds([]); }}
                     onCollapseChange={setSidebarCollapsed}
                     externalToggleSignal={sidebarToggleSignal}
                     onFindBetterImage={handleFindBetterImage}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, Download, Upload, Share2, Copy, Users } from 'lucide-react';
+import { DEFAULT_KIOSK_DOMAINS, KIOSK_DOMAINS_STORAGE_KEY, KIOSK_SELECTED_DOMAIN_STORAGE_KEY, saveKioskDomains, saveSelectedKioskDomainId } from '../kioskDomains';
 import type { KioskDomain } from '../kioskDomains';
 
 interface ControlPanelProps {
@@ -14,11 +15,8 @@ interface ControlPanelProps {
 
   onSearch: (term: string) => void;
   onPathSearch: (start: string, end: string) => void;
-  // Kiosk/no-typing mode (touch-screen installation)
-  isKioskMode?: boolean;
   isAdminMode?: boolean;
   kioskSeedTerms?: string[];
-  onKioskPickTerm?: (term: string) => void;
   kioskDomains?: KioskDomain[];
   selectedKioskDomainId?: string;
   onSelectKioskDomain?: (domainId: string) => void;
@@ -58,10 +56,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
   onSearch,
   onPathSearch,
-  isKioskMode = false,
   isAdminMode = false,
   kioskSeedTerms = [],
-  onKioskPickTerm,
   kioskDomains = [],
   selectedKioskDomainId,
   onSelectKioskDomain,
@@ -103,10 +99,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const [showShare, setShowShare] = useState(false);
   const [saveName, setSaveName] = useState('');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const domainsImportRef = React.useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isKioskMode) return; // no typing / no submit in kiosk mode
     if (searchMode === 'explore') {
       if (exploreTerm.trim()) {
         onSearch(exploreTerm.trim());
@@ -187,6 +183,19 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       setEditDomainId(selectedKioskDomainId || kioskDomains[0].id);
     }
   }, [editDomainId, kioskDomains, selectedKioskDomainId]);
+
+  // In admin mode, opening the editor initializes the localStorage copy (so edits are local-only).
+  useEffect(() => {
+    if (!showEditDomains || !isAdminMode) return;
+    try {
+      if (!localStorage.getItem(KIOSK_DOMAINS_STORAGE_KEY)) {
+        saveKioskDomains(kioskDomains);
+      }
+      if (selectedKioskDomainId && !localStorage.getItem(KIOSK_SELECTED_DOMAIN_STORAGE_KEY)) {
+        saveSelectedKioskDomainId(selectedKioskDomainId);
+      }
+    } catch { }
+  }, [showEditDomains, isAdminMode, kioskDomains, selectedKioskDomainId]);
 
   const selectedDomainForEdit = kioskDomains.find(d => d.id === editDomainId) || kioskDomains[0];
   const selectedDomain = kioskDomains.find(d => d.id === selectedKioskDomainId) || kioskDomains[0];
@@ -594,83 +603,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
 
             <form onSubmit={handleSubmit} className="relative mb-4 space-y-3">
-              {isKioskMode ? (
-                <div className="space-y-2">
-                  {/* Domain selector */}
-                  {kioskDomains.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="text-[11px] text-slate-400 uppercase tracking-wider">Domain</div>
-                        {isAdminMode && onUpdateKioskDomains && (
-                          <button
-                            type="button"
-                            className="text-[11px] text-slate-300 hover:text-white underline"
-                            onClick={() => setShowEditDomains(true)}
-                          >
-                            Edit domains
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {kioskDomains.map(d => (
-                          <button
-                            key={d.id}
-                            type="button"
-                            onClick={() => onSelectKioskDomain?.(d.id)}
-                            className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
-                              (selectedKioskDomainId || kioskDomains[0].id) === d.id
-                                ? 'bg-amber-500 text-slate-900 border-amber-400'
-                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                            }`}
-                            disabled={isProcessing}
-                          >
-                            {d.label}
-                          </button>
-                        ))}
-                      </div>
-                      {selectedDomain?.description && (
-                        <div className="text-[11px] text-slate-400 leading-snug">
-                          <div>{selectedDomain.description}</div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {searchMode === 'explore' ? (
-                    <div className="text-xs text-slate-300">
-                      Tap a starting point below to begin.
-                    </div>
-                  ) : (
-                    <div className="text-xs text-slate-300">
-                      Tap a start, then tap an end. (No typing.)
-                    </div>
-                  )}
-
-                  {searchMode === 'connect' && (pathStart || pathEnd) && (
-                    <div className="text-[11px] text-slate-200 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="truncate">
-                          <span className="text-slate-400">Start:</span>{" "}
-                          <span className="text-white font-semibold">{pathStart || "—"}</span>
-                          <span className="text-slate-500">{" "}→{" "}</span>
-                          <span className="text-slate-400">End:</span>{" "}
-                          <span className="text-white font-semibold">{pathEnd || "—"}</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="text-slate-400 hover:text-white"
-                          onClick={() => { setPathStart(''); setPathEnd(''); }}
-                          title="Clear selection"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-              searchMode === 'explore' ? (
-                <div className="flex gap-2">
+              <div className="space-y-3">
+                {/* Search / connect inputs (always available) */}
+                {searchMode === 'explore' ? (
+                  <div className="flex gap-2">
                   <div className="relative flex-1">
                     <input type="text" value={exploreTerm} onChange={(e) => setExploreTerm(e.target.value)} placeholder="Enter a person or event..." className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-8 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" disabled={isProcessing} />
                     <Search className="absolute left-3 top-3.5 text-slate-400" size={16} />
@@ -707,44 +643,75 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     {isProcessing ? 'Processing... ' : 'Find Connection'}
                   </button>
                 </div>
-              )
               )}
+
+                {/* Domain selector (below text input) */}
+                {kioskDomains.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Domain</div>
+                      {isAdminMode && onUpdateKioskDomains && (
+                        <button
+                          type="button"
+                          className="text-[11px] text-slate-300 hover:text-white underline"
+                          onClick={() => setShowEditDomains(true)}
+                        >
+                          Edit domains
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {kioskDomains.map(d => (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => onSelectKioskDomain?.(d.id)}
+                          className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
+                            (selectedKioskDomainId || kioskDomains[0].id) === d.id
+                              ? 'bg-amber-500 text-slate-900 border-amber-400'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                          }`}
+                          disabled={isProcessing}
+                        >
+                          {d.label}
+                        </button>
+                      ))}
+                    </div>
+                    {selectedDomain?.description && (
+                      <div className="text-[11px] text-slate-400 leading-snug">
+                        <div>{selectedDomain.description}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </form>
 
             {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
 
-            {isKioskMode ? (
-              <div className="space-y-2">
-                <div className="text-[11px] text-slate-400 uppercase tracking-wider">Start here</div>
-                {/* Taller seed area to reduce scrolling on kiosk/touch displays */}
-                <div className="flex flex-wrap gap-1.5 max-h-[55vh] overflow-y-auto pr-1">
-                  {(kioskSeedTerms.length ? kioskSeedTerms : EXAMPLES).map(term => (
-                    <button
-                      key={term}
-                      onClick={() => {
-                        if (onKioskPickTerm) onKioskPickTerm(term);
-                        setHasStarted(true);
-                        if (window.innerWidth < 768) onSetCollapsed(true);
-                      }}
-                      className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-full border border-slate-700 transition-colors"
-                      disabled={isProcessing}
-                    >
-                      {term}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-            searchMode === 'explore' && (!hasStarted || isHovered) && (
-              <div className="flex flex-wrap gap-1.5">
-                {EXAMPLES.map(ex => (
-                  <button key={ex} onClick={() => { setExploreTerm(ex); onSearch(ex); setHasStarted(true); if (window.innerWidth < 768) onSetCollapsed(true); }} className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-full border border-slate-700 transition-colors">
-                    {ex}
+            <div className="space-y-2">
+              <div className="text-[11px] text-slate-400 uppercase tracking-wider">Start here</div>
+              {/* Seed list (domain terms, falling back to examples) */}
+              <div className="flex flex-wrap gap-1.5 max-h-[55vh] overflow-y-auto pr-1">
+                {(kioskSeedTerms.length ? kioskSeedTerms : EXAMPLES).map(term => (
+                  <button
+                    key={term}
+                    type="button"
+                    onClick={() => {
+                      setSearchMode('explore');
+                      setExploreTerm(term);
+                      onSearch(term);
+                      setHasStarted(true);
+                      if (window.innerWidth < 768) onSetCollapsed(true);
+                    }}
+                    className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-full border border-slate-700 transition-colors"
+                    disabled={isProcessing}
+                  >
+                    {term}
                   </button>
                 ))}
               </div>
-            )
-            )}
+            </div>
           </div>
         </div>
       </div>
@@ -756,18 +723,20 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
             onClick={() => setShowEditDomains(false)}
           />
-          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5">
+          {/* The app root uses overflow-hidden, so the modal must provide its own scrolling. */}
+          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 flex flex-col max-h-[85vh]">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-bold">Edit kiosk domains</h3>
+              <h3 className="text-white font-bold">Edit domains</h3>
               <button onClick={() => setShowEditDomains(false)} className="text-slate-400 hover:text-white">
                 <X size={16} />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-4">
-              <div className="space-y-2">
-                <div className="text-[11px] text-slate-400 uppercase tracking-wider">Domains</div>
-                <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+            <div className="min-h-0 overflow-y-auto pr-1 overscroll-contain">
+              <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-4">
+                <div className="space-y-2">
+                  <div className="text-[11px] text-slate-400 uppercase tracking-wider">Domains</div>
+                  <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
                   {kioskDomains.map(d => (
                     <button
                       key={d.id}
@@ -783,57 +752,57 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       <div className="text-[11px] text-slate-400">{d.terms.length} starting points</div>
                     </button>
                   ))}
-                </div>
+                  </div>
 
-                <div className="pt-2 border-t border-slate-700">
-                  <div className="text-[11px] text-slate-400 uppercase tracking-wider mb-2">Add domain</div>
-                  <div className="flex gap-2">
-                    <input
-                      className="flex-1 bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm"
-                      value={newDomainLabel}
-                      onChange={(e) => setNewDomainLabel(e.target.value)}
-                      placeholder="Domain name…"
-                    />
-                    <button
-                      type="button"
-                      className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold"
-                      onClick={() => {
-                        const label = newDomainLabel.trim();
-                        if (!label) return;
-                        const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `domain-${Date.now()}`;
-                        const next = [...kioskDomains, { id, label, terms: [] }];
-                        onUpdateKioskDomains(next);
-                        setNewDomainLabel('');
-                        setEditDomainId(id);
-                      }}
-                    >
-                      Add
-                    </button>
+                  <div className="pt-2 border-t border-slate-700">
+                    <div className="text-[11px] text-slate-400 uppercase tracking-wider mb-2">Add domain</div>
+                    <div className="flex gap-2">
+                      <input
+                        className="flex-1 bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm"
+                        value={newDomainLabel}
+                        onChange={(e) => setNewDomainLabel(e.target.value)}
+                        placeholder="Domain name…"
+                      />
+                      <button
+                        type="button"
+                        className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold"
+                        onClick={() => {
+                          const label = newDomainLabel.trim();
+                          if (!label) return;
+                          const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `domain-${Date.now()}`;
+                          const next = [...kioskDomains, { id, label, terms: [] }];
+                          onUpdateKioskDomains(next);
+                          setNewDomainLabel('');
+                          setEditDomainId(id);
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-[11px] text-slate-400 uppercase tracking-wider">Selected</div>
-                    <div className="text-white font-semibold">{selectedDomainForEdit?.label || '—'}</div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Selected</div>
+                      <div className="text-white font-semibold">{selectedDomainForEdit?.label || '—'}</div>
+                    </div>
+                    {selectedDomainForEdit && kioskDomains.length > 1 && (
+                      <button
+                        type="button"
+                        className="text-[11px] text-red-300 hover:text-red-200 underline"
+                        onClick={() => {
+                          const id = selectedDomainForEdit.id;
+                          const next = kioskDomains.filter(d => d.id !== id);
+                          onUpdateKioskDomains(next);
+                          setEditDomainId(next[0]?.id || null);
+                        }}
+                      >
+                        Delete domain
+                      </button>
+                    )}
                   </div>
-                  {selectedDomainForEdit && kioskDomains.length > 1 && (
-                    <button
-                      type="button"
-                      className="text-[11px] text-red-300 hover:text-red-200 underline"
-                      onClick={() => {
-                        const id = selectedDomainForEdit.id;
-                        const next = kioskDomains.filter(d => d.id !== id);
-                        onUpdateKioskDomains(next);
-                        setEditDomainId(next[0]?.id || null);
-                      }}
-                    >
-                      Delete domain
-                    </button>
-                  )}
-                </div>
 
                 {selectedDomainForEdit && (
                   <>
@@ -935,22 +904,122 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
                   </>
                 )}
+                </div>
               </div>
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-700 flex items-center justify-between">
-              <button
-                type="button"
-                className="text-[11px] text-slate-300 hover:text-white underline"
-                onClick={() => {
-                  try {
-                    const json = JSON.stringify(kioskDomains, null, 2);
-                    navigator.clipboard.writeText(json);
-                  } catch { }
-                }}
-              >
-                Copy domains JSON
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="text-[11px] px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700"
+                  onClick={() => {
+                    try {
+                      // Explicitly persist current admin edits to localStorage.
+                      saveKioskDomains(kioskDomains);
+                      if (selectedKioskDomainId) saveSelectedKioskDomainId(selectedKioskDomainId);
+                    } catch { }
+                  }}
+                  title="Save domains to local storage"
+                >
+                  Save
+                </button>
+
+                <button
+                  type="button"
+                  className="text-[11px] px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700"
+                  onClick={() => {
+                    try {
+                      const json = JSON.stringify(kioskDomains, null, 2);
+                      const blob = new Blob([json], { type: "application/json" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = "constellations-domains.json";
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      URL.revokeObjectURL(url);
+                    } catch { }
+                  }}
+                  title="Download domains JSON"
+                >
+                  Export
+                </button>
+
+                <button
+                  type="button"
+                  className="text-[11px] px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700"
+                  onClick={() => domainsImportRef.current?.click()}
+                  title="Import domains JSON"
+                >
+                  Import
+                </button>
+
+                <button
+                  type="button"
+                  className="text-[11px] px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-red-200 border border-red-900/50"
+                  onClick={() => {
+                    const ok = window.confirm("Reset domains to the shipped defaults? This overwrites your local edits.");
+                    if (!ok) return;
+                    try {
+                      localStorage.setItem(KIOSK_DOMAINS_STORAGE_KEY, JSON.stringify(DEFAULT_KIOSK_DOMAINS));
+                      // Also reset selection to the first default domain.
+                      const nextId = DEFAULT_KIOSK_DOMAINS[0]?.id;
+                      if (nextId) {
+                        saveSelectedKioskDomainId(nextId);
+                        onSelectKioskDomain?.(nextId);
+                      }
+                    } catch { }
+                    onUpdateKioskDomains([...DEFAULT_KIOSK_DOMAINS]);
+                    setEditDomainId(DEFAULT_KIOSK_DOMAINS[0]?.id || null);
+                  }}
+                  title="Reset local domains to defaults"
+                >
+                  Reset
+                </button>
+
+                <input
+                  ref={domainsImportRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      try {
+                        const parsed = JSON.parse(event.target?.result as string);
+                        if (!Array.isArray(parsed)) throw new Error("Expected an array");
+                        const cleaned: KioskDomain[] = parsed
+                          .filter((d: any) => d && typeof d.id === "string" && typeof d.label === "string" && Array.isArray(d.terms))
+                          .map((d: any) => ({
+                            id: String(d.id),
+                            label: String(d.label),
+                            description: typeof d.description === "string" ? d.description : undefined,
+                            terms: d.terms.map((t: any) => String(t)).filter((t: string) => t.trim().length > 0)
+                          }));
+                        if (!cleaned.length) throw new Error("No valid domains");
+                        onUpdateKioskDomains(cleaned);
+                        setEditDomainId(cleaned[0].id);
+                        onSelectKioskDomain?.(cleaned[0].id);
+                        // Persist immediately in admin workflow
+                        try { saveKioskDomains(cleaned); } catch { }
+                        try { saveSelectedKioskDomainId(cleaned[0].id); } catch { }
+                      } catch (err) {
+                        console.error(err);
+                        alert("Invalid domains JSON");
+                      } finally {
+                        // allow re-import of same file
+                        e.target.value = "";
+                      }
+                    };
+                    reader.readAsText(file);
+                  }}
+                />
+              </div>
+
               <button
                 type="button"
                 className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold"

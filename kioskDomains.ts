@@ -11,20 +11,6 @@ export type KioskDomain = {
 
 export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
   {
-    id: "universal",
-    label: "Universal (unlocked)",
-    description: "Any domain. Allows interesting cross-domain jumps, but can drift into odd abstractions.",
-    terms: [
-      "Michelangelo",
-      "Johann Sebastian Bach",
-      "LeBron James",
-      "sore throat",
-      "Beef",
-      "John von Neumann",
-      "The Godfather"
-    ]
-  },
-  {
     id: "mathematicians",
     label: "Mathematics",
     description: "Mostly mathematicians (people), plus a few foundational ideas.",
@@ -47,13 +33,38 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
     ]
   },
   {
+    id: "literature",
+    label: "Literature",
+    description: "Authors ↔ Books (and book-related events/works).",
+    terms: [
+      "Stephen King",
+      "Cormac McCarthy",
+      "Charles Dickens",
+      "William Shakespeare",
+      "Jane Austen",
+      "Leo Tolstoy",
+      "Fyodor Dostoevsky",
+      "Virginia Woolf",
+      "Franz Kafka",
+      "Gabriel Garcia Marquez",
+      "George Orwell",
+      "Toni Morrison",
+      "J. R. R. Tolkien",
+      "H. P. Lovecraft",
+      "Mary Shelley",
+      "Moby-Dick",
+      "Pride and Prejudice",
+      "1984",
+      "The Road",
+      "Blood Meridian"
+    ]
+  },
+  {
     id: "actors-movies-tv",
     label: "Actors / Movies / TV",
     description: "People ↔ Works (films / TV).",
     terms: [
       "The Godfather",
-      "Al Pacino",
-      "Marlon Brando",
       "Scarface (1983 film)",
       "The Lord of the Rings (film series)",
       "Peter Jackson",
@@ -63,7 +74,16 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
       "Better Call Saul",
       "The Sopranos",
       "Hayao Miyazaki",
-      "Spirited Away"
+      "Spirited Away",
+      "Kevin Bacon",
+      "Zendaya",
+      "Timothée Chalamet",
+      "Florence Pugh",
+      "Margot Robbie",
+      "Ryan Gosling",
+      "Pedro Pascal",
+      "Emma Stone",
+      "Robert Downey Jr."
     ]
   },
   {
@@ -71,15 +91,26 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
     label: "Popular Music",
     description: "Artists, albums, and songs.",
     terms: [
-      "Giant Steps",
-      "Miles Davis",
-      "Kind of Blue",
       "The Beatles",
       "Abbey Road",
       "Beyoncé",
+      "Lemonade (Beyoncé album)",
       "Taylor Swift",
+      "Billie Eilish",
+      "Olivia Rodrigo",
       "Radiohead",
       "Kendrick Lamar",
+      "To Pimp a Butterfly",
+      "DAMN.",
+      "Drake",
+      "Travis Scott",
+      "ASTROWORLD",
+      "Cardi B",
+      "Megan Thee Stallion",
+      "Tyler, the Creator",
+      "Bad Bunny",
+      "Doja Cat",
+      "Lil Nas X",
       "Prince",
       "David Bowie",
       "Daft Punk",
@@ -108,14 +139,28 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
     label: "History",
     description: "People ↔ Events.",
     terms: [
+      "Julius Caesar",
+      "Cleopatra",
+      "Alexander the Great",
+      "Genghis Khan",
+      "Martin Luther",
+      "Protestant Reformation",
+      "George Washington",
+      "American Revolution",
+      "Abraham Lincoln",
+      "American Civil War",
       "Napoleon Bonaparte",
       "French Revolution",
+      "World War II",
+      "Winston Churchill",
+      "Cold War",
+      "Fall of the Berlin Wall",
+      "Mahatma Gandhi",
+      "Indian independence movement",
+      "Nelson Mandela",
+      "Apartheid",
       "Watergate scandal",
       "Apollo 11",
-      "Wright brothers",
-      "First flight (Wright brothers)",
-      "John von Neumann",
-      "Geoffrey Hinton",
       "Renaissance"
     ]
   },
@@ -124,6 +169,17 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
     label: "Science",
     description: "Scientists ↔ Discoveries/Experiments (safe, high-signal).",
     terms: [
+      "Galileo Galilei",
+      "Isaac Newton",
+      "Michael Faraday",
+      "James Clerk Maxwell",
+      "Nikola Tesla",
+      "Louis Pasteur",
+      "Max Planck",
+      "Niels Bohr",
+      "Enrico Fermi",
+      "Richard Feynman",
+      "Richard Dawkins",
       "Marie Curie",
       "radioactivity",
       "Albert Einstein",
@@ -185,6 +241,26 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
 export const KIOSK_DOMAINS_STORAGE_KEY = "constellations_kiosk_domains_v1";
 export const KIOSK_SELECTED_DOMAIN_STORAGE_KEY = "constellations_kiosk_selected_domain_v1";
 
+export function hasLocalKioskDomains(): boolean {
+  try {
+    return !!localStorage.getItem(KIOSK_DOMAINS_STORAGE_KEY);
+  } catch {
+    return false;
+  }
+}
+
+export function clearLocalKioskDomains() {
+  try {
+    localStorage.removeItem(KIOSK_DOMAINS_STORAGE_KEY);
+  } catch { }
+}
+
+export function clearLocalSelectedKioskDomainId() {
+  try {
+    localStorage.removeItem(KIOSK_SELECTED_DOMAIN_STORAGE_KEY);
+  } catch { }
+}
+
 export function loadKioskDomains(): KioskDomain[] {
   try {
     const raw = localStorage.getItem(KIOSK_DOMAINS_STORAGE_KEY);
@@ -203,11 +279,29 @@ export function loadKioskDomains(): KioskDomain[] {
         terms: d.terms.map((t: any) => String(t)).filter((t: string) => t.trim().length > 0)
       }))
       .filter((d: KioskDomain) => d.id.trim().length > 0 && d.label.trim().length > 0);
+ 
+    // Migration: remove the retired "Universal (unlocked)" domain if present in local storage.
+    const cleanedWithoutUniversal = cleaned.filter(d => d.id !== "universal");
+
+    // Migration: keep History focused on "people & events" (remove science/AI figures that accidentally landed there).
+    const HISTORY_REMOVE = new Set([
+      "john von neumann",
+      "john von neuman",
+      "john von neumann ",
+      "geoffrey hinton",
+      "wright brothers",
+      "first flight (wright brothers)"
+    ]);
+    const cleanedWithHistoryFix = cleanedWithoutUniversal.map(d => {
+      if (d.id !== "history") return d;
+      const terms = d.terms.filter(t => !HISTORY_REMOVE.has(t.trim().toLowerCase()));
+      return terms.length === d.terms.length ? d : { ...d, terms };
+    });
 
     // Merge in any NEW default domains/terms without clobbering curated edits.
     // - If a default domain is missing entirely, add it.
     // - If it exists, keep the user's label/lockPair/description, but append any missing default terms.
-    const byId = new Map<string, KioskDomain>(cleaned.map(d => [d.id, d]));
+    const byId = new Map<string, KioskDomain>(cleanedWithHistoryFix.map(d => [d.id, d]));
     DEFAULT_KIOSK_DOMAINS.forEach(def => {
       const existing = byId.get(def.id);
       if (!existing) {
@@ -235,7 +329,7 @@ export function loadKioskDomains(): KioskDomain[] {
       byId.set(def.id, { ...existing, terms: mergedTerms });
     });
 
-    const merged = Array.from(byId.values());
+    const merged = Array.from(byId.values()).filter(d => d.id !== "universal");
     return merged.length ? merged : DEFAULT_KIOSK_DOMAINS;
   } catch {
     return DEFAULT_KIOSK_DOMAINS;
@@ -249,7 +343,7 @@ export function saveKioskDomains(domains: KioskDomain[]) {
 export function loadSelectedKioskDomainId(domains: KioskDomain[]): string {
   try {
     const raw = localStorage.getItem(KIOSK_SELECTED_DOMAIN_STORAGE_KEY);
-    if (raw && domains.some(d => d.id === raw)) return raw;
+    if (raw && raw !== "universal" && domains.some(d => d.id === raw)) return raw;
   } catch { }
   return domains[0]?.id || "history";
 }

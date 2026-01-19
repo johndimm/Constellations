@@ -31,8 +31,8 @@ export function getResponseText(response: any): string {
 }
 
 // Clean JSON response from markdown wrappers
-export function cleanJson(text: string): string {
-  if (!text) return "";
+export function cleanJson(text: unknown): string {
+  if (typeof text !== "string") return "";
   // Remove markdown code blocks if present (e.g. ```json ... ``` or ``` ...)
   return text.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();
 }
