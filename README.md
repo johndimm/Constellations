@@ -20,6 +20,7 @@ Constellations now **locks a single bipartite pair per graph**, chosen from the 
 - **Person ↔ Event**
 - **Ingredient ↔ Recipe**
 - **Symptom ↔ Disease**
+- **Author ↔ Paper**
 
 This makes exploration more reliable (no mid-graph “ontology drift”), while still supporting multiple domains.
 
@@ -79,6 +80,7 @@ For inspiration, I scored the 5,000 "top" biographies from Simple Wikipedia base
 ## Technical Architecture
 
 - **Live Queries**: Uses **Gemini** models to identify connections on the fly (configurable via `VITE_GEMINI_MODEL`).
+- **Multi-source context + metadata**: Uses **Wikipedia/Wikidata** plus **academic corpora/metadata APIs** (currently OpenAlex, with Crossref/DOI metadata as a fallback) when helpful.
 - **Image Logic**: Currently queries **Wikipedia Commons** for images rather than the LLM (which the agents claimed would be too error-prone, though the current way has its own quirks!).
 - **Persistence**: Saved graphs and LLM responses are cached in a **PostgreSQL (Supabase)** database to reduce tokens and speed up recurring paths.
 - **Frontend**: React 19 + Tailwind CSS.

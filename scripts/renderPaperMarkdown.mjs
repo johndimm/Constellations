@@ -285,7 +285,7 @@ function main() {
 
   const files = fs
     .readdirSync(PAPER_DIR)
-    .filter((f) => f.endsWith(".md") && f !== "index.md")
+    .filter((f) => f.endsWith(".md") && f !== "index.md" && f !== "05-evaluation-plan.md")
     .sort();
 
   const navLinks = [
@@ -309,7 +309,6 @@ function main() {
     "02-introduction.md",
     "03-related-work.md",
     "04-system.md",
-    "05-evaluation-plan.md",
     "06-discussion-future-work.md",
     "07-references.md",
     "08-acknowledgements.md",

@@ -8,7 +8,6 @@ This directory is a living draft in Markdown. Start with the outline, then itera
 - [02-introduction.md](./02-introduction.md)
 - [03-related-work.md](./03-related-work.md)
 - [04-system.md](./04-system.md)
-- [05-evaluation-plan.md](./05-evaluation-plan.md)
 - [06-discussion-future-work.md](./06-discussion-future-work.md)
 
 ## References

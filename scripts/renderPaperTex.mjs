@@ -281,7 +281,6 @@ function main() {
     "02-introduction.md",
     "03-related-work.md",
     "04-system.md",
-    "05-evaluation-plan.md",
     "06-discussion-future-work.md",
     "07-references.md",
     "08-acknowledgements.md",

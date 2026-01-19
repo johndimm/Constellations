@@ -121,12 +121,12 @@
     </div>
   
 <h1>Abstract</h1>
-<p>People often explore knowledge by following curiosity—moving from one idea to the next—rather than by asking a single question. We present <b>Constellations</b>, an interactive system for <b>low-friction exploratory navigation</b> that constructs <b>bipartite (Atomic↔Composite)</b> graphs on demand from natural-language queries. Users begin with a single entity and iteratively expand the graph while the system enforces bipartite alternation. To reduce instability from mid-graph ontology drift, Constellations selects a bipartite pair from the first query (currently among Person↔Event, Ingredient↔Recipe, Symptom↔Disease) and <b>locks it for the session</b> (no switching). To support interpretation and trust, Constellations attaches <b>evidence-backed edges</b> (short snippets with source links) so users can inspect the claimed reason behind a connection at any step. We describe the system design, position it relative to work on two-mode/affiliation networks and event-centric cultural heritage modeling, and propose an evaluation plan focused on recall, discovery, and sensemaking during iterative exploration. We argue that evidence-backed bipartite exploration offers a complementary paradigm to search and static knowledge graphs: a lightweight interface for navigating the frontier between what users know and what they might learn next.</p>
+<p>People often explore knowledge by following curiosity—moving from one idea to the next—rather than by asking a single question. We present <b>Constellations</b>, an interactive system for <b>low-friction exploratory navigation</b> that constructs <b>bipartite (Atomic↔Composite)</b> graphs on demand from natural-language queries. Users begin with a single entity and iteratively expand the graph while the system enforces bipartite alternation. To reduce instability from mid-graph ontology drift, Constellations selects a bipartite pair from the first query (currently among Person↔Event, Ingredient↔Recipe, Symptom↔Disease, Author↔Paper) and <b>locks it for the session</b> (no switching). To support interpretation and trust, Constellations attaches <b>evidence-backed edges</b> (short snippets with source links) so users can inspect the claimed reason behind a connection at any step. The system’s primary data sources are <b>Wikipedia/Wikimedia APIs</b> (Wikipedia + Wikidata), academic metadata APIs (e.g., OpenAlex/Crossref), and an <b>LLM</b>; due to deployment constraints it does <b>not</b> rely on general internet search. We describe the system design and position it relative to work on two-mode/affiliation networks and event-centric cultural heritage modeling. We argue that evidence-backed bipartite exploration offers a complementary paradigm to search and static knowledge graphs: a lightweight interface for navigating the frontier between what users know and what they might learn next.</p>
 <h1>Introduction</h1>
 <p>People often explore knowledge by following curiosity—moving from one idea to the next—rather than by asking a single question. We call the boundary this process reveals the <b>knowledge frontier</b>—the set of adjacent ideas that are reachable from a current concept but not yet part of one’s active memory. Interfaces for search, browsing, and encyclopedic reading support directed lookup, but can be less suited to this low-friction, branching process of “what else is nearby?”.</p>
 <p>Constellations is designed for this mode. Starting from a single user-provided entity, the system constructs a small, local graph and supports repeated <b>expand</b> operations that reveal additional connected entities. The key design decision is to enforce a <b>bipartite alternation constraint</b>: nodes alternate between <b>Atomic</b> entities (individuals or elementary concepts) and <b>Composite</b> entities (events, works, groups, conditions, or other aggregations). This constraint yields a stable interaction model across domains: atomic nodes are expanded into composites, and composites into atomics. In the project’s origin domain—history—this corresponds to a simple idea closely aligned with event-centric cultural heritage modeling: <b>events as “meetings”</b> that bring multiple people together. We generalize this to other domains (e.g., films: people↔movies; cooking: ingredients↔recipes; medicine: symptoms↔diseases) without changing the core UI.</p>
 <p>Because the system operates in open-world settings and aims for broad domain coverage, Constellations uses a large language model (LLM) to propose candidate neighbors during expansion. However, exploratory systems that rely on generative models face an immediate interpretability challenge: users naturally ask <b>why</b> a connection exists before deciding whether it is worth pursuing. To address this, Constellations attaches <b>edge evidence</b>: short evidence snippets and source links displayed when an edge is selected. Evidence is treated as support for interpretation and verification, not as proof of causal claims.</p>
-<p>This paper contributes an interactive exploration system and a design framing for bipartite low-friction exploration. We position Constellations relative to two-mode/affiliation networks and event-centric modeling, and we outline an evaluation plan centered on recall, discovery, and sensemaking.</p>
+<p>This paper contributes an interactive exploration system and a design framing for bipartite low-friction exploration. We position Constellations relative to two-mode/affiliation networks and event-centric modeling.</p>
 <h2>Contributions</h2>
 <ul>
 <li><b>A bipartite exploration interface</b> that enforces Atomic↔Composite alternation as a domain-general interaction primitive for click-to-expand exploration.</li>
@@ -134,7 +134,6 @@
 <li><b>Domains + text input in one interface</b>: users can start from curated domain seeds or type any query, enabling both guided and open-ended exploration.</li>
 <li><b>Evidence-backed edges</b> that make edge inspection a first-class interaction via short snippets and source links.</li>
 <li><b>An LLM-assisted, on-demand graph construction pipeline</b> that builds local neighborhoods without requiring a precomputed knowledge graph.</li>
-<li><b>An evaluation plan</b> targeting exploration outcomes (recall, discovery, orientation, and trust), rather than accuracy alone.</li>
 </ul>
 <h2>Why films are an especially good domain (informal motivation)</h2>
 <p>Many domains contain bipartite structure, but films provide a particularly clean and rewarding instance: people↔works with high-quality public metadata, stable naming, and strong Wikipedia coverage. This makes it easy to generate meaningful expansions (directors, co-stars, producers; films in a person’s oeuvre) and to attach interpretable evidence. In contrast, domains like current politics are both more dynamic and more sensitive; they require stricter evidence policies and careful treatment of ambiguity and recency.</p>
@@ -148,6 +147,9 @@
 <h2>Two-mode / affiliation networks (bipartite graphs)</h2>
 <p>Two-mode (bipartite) networks are a long-standing model for situations where actors participate in events or belong to groups. Canonical examples include actors↔movies, authors↔papers, boards↔companies, and other membership/affiliation structures. A key methodological lesson is that naively projecting a bipartite network into one mode (e.g., actor–actor) can introduce artifacts; bipartite structure deserves analysis and visualization in its own right.</p>
 <p>Constellations adopts bipartiteness not primarily as an analytic device, but as an interaction constraint that simplifies exploration: each step alternates between atomic and composite nodes. Joint spatial displays of affiliation networks (e.g., correspondence-analysis-style embeddings) also provide an important precedent for “map-like” knowledge exploration and inform a future direction of large-scale knowledge cartography.</p>
+<h2>Scholarly collaboration and citation graphs</h2>
+<p>“Collaboration graphs” in the scholarly domain—co-authorship networks, citation networks, and related bipartite constructions (authors↔papers; papers↔venues; papers↔keywords)—are a classic and widely studied use case for two-mode graphs. These systems often support search and navigation over a curated academic corpus and can enable tasks like literature discovery, influence tracing, and community/field structure exploration.</p>
+<p>Constellations is conceptually adjacent to this tradition and now supports an <b>Author↔Paper</b> mode backed by an academic-paper corpus API (currently OpenAlex). This enables a classic collaboration-graph workflow (authors, papers, venues) while keeping the same low-friction “expand/backtrack” interaction model. As in other domains, Constellations still avoids general web crawling/search and instead uses a small set of structured sources plus an LLM for open-world neighbor proposal where needed.</p>
 <h2>Event-centric modeling in cultural heritage and museums</h2>
 <p>Event-centric cultural heritage modeling emphasizes events as the connective tissue that relates people, places, objects, and documents. The “historical events as meetings” framing aligns strongly with Constellations’ original person↔event concept: an event is any construct that brings multiple people into relation. In Constellations’ current design, the system selects a bipartite Atomic↔Composite pairing from the seed term and <b>locks it for the session</b> to prevent mid-graph switching, while still enabling cross-domain use via different seeds.</p>
 <h2>LLMs, structured outputs, and evidence/provenance</h2>
@@ -165,16 +167,17 @@
 <h2>Data flow (high level)</h2>
 <p>1. <b>User query</b>: the user can start from a curated domain seed or type an arbitrary query.</p>
 <p>2. <b>Context retrieval</b>: fetch lightweight context (e.g., Wikipedia summary) to help disambiguation and mitigate model knowledge gaps.</p>
-<p>3. <b>Start-pair classification (locked)</b>: choose a bipartite pair from the first input (currently one of Person↔Event, Ingredient↔Recipe, Symptom↔Disease), then <b>lock it for the entire graph</b> (no switching).</p>
+<p>3. <b>Start-pair classification (locked)</b>: choose a bipartite pair from the first input (currently one of Person↔Event, Ingredient↔Recipe, Symptom↔Disease, Author↔Paper), then <b>lock it for the entire graph</b> (no switching).</p>
 <p>4. <b>Expansion</b>: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition, conditioned on the locked pair.</p>
 <p>5. <b>Evidence attachment</b>: each proposed neighbor includes an evidence snippet + page title; selecting an edge reveals the supporting citation.</p>
 <p>6. <b>Caching</b>: store nodes and edges (with evidence) in a database to reduce repeated calls and support persistence.</p>
+<p><b>Sources (important):</b> Constellations is intentionally <b>multi-source</b>: it uses <b>Wikipedia/Wikimedia APIs</b> (Wikipedia + Wikidata), <b>academic corpora/metadata APIs</b> (currently OpenAlex, with Crossref/DOI metadata as a fallback), and an <b>LLM</b>. Due to deployment constraints, the system does <b>not</b> crawl arbitrary websites or run general internet search. Evidence snippets are sourced from Wikipedia page text and/or corpus metadata when available; when the system cannot verify a snippet from available sources, it is shown as missing rather than guessed.</p>
 <h2>Bipartite constraint and “events as meetings”</h2>
 <p>The original domain (people↔events) is motivated by an event-centric view: an event is any construct that brings multiple people into relation. This framing generalizes naturally to other domains by choosing a Composite that aggregates multiple Atomics and for which the inverse membership relation is meaningful (e.g., actors in films; ingredients in recipes).</p>
 <h2>Evidence-backed edges</h2>
 <p>Each edge carries structured evidence:</p>
 <ul>
-<li><b>kind</b>: currently “ai” (LLM-provided) or “none”</li>
+<li><b>kind</b>: currently “wikipedia” (verbatim sentence from a Wikipedia page), “openalex” / “crossref” (corpus metadata), “ai” (model-provided when not verifiable), or “none”</li>
 <li><b>snippet</b>: one sentence</li>
 <li><b>pageTitle + url</b>: where the snippet is claimed to come from (typically a Wikipedia page)</li>
 </ul>
@@ -224,78 +227,6 @@
 <li><b>Context-first disambiguation</b>: before classification/expansion, the system fetches lightweight context (e.g., a Wikipedia summary) to reduce ambiguity and mitigate model knowledge gaps.</li>
 <li><b>Session-level pair locking</b>: after the first query, the chosen Atomic↔Composite pair is locked for the remainder of the graph exploration to reduce mid-graph switching and preserve stable semantics for expansion prompts.</li>
 <li><b>Caching and persistence</b>: nodes and edges (including evidence) are cached to reduce repeated LLM calls and to enable saving/loading graphs with evidence intact.</li>
-</ul>
-<h1>Evaluation (Plan for a First Study)</h1>
-<p>This section outlines a mixed-method evaluation aligned with <b>low-friction, branching exploration</b> rather than accuracy alone. The goal is to evaluate whether Constellations supports recall, discovery, and sensemaking in a way that is difficult to capture with conventional “answer correctness” metrics.</p>
-<h2>Study 1: Task-based user study (qual + quant)</h2>
-<h3>Goal</h3>
-<p>Measure whether Constellations helps users:</p>
-<ul>
-<li>recall forgotten related entities,</li>
-<li>discover new adjacent entities,</li>
-<li>maintain orientation during rapid branching and backtracking,</li>
-<li>and assess connections using evidence.</li>
-</ul>
-<h3>Participants</h3>
-<ul>
-<li>Mixed expertise: casual users + a small number of domain enthusiasts (e.g., film history or music).</li>
-<li>Target N=12–20 for an initial formative study; optional follow-up N=30+ for confirmatory comparisons.</li>
-</ul>
-<h3>Tasks (examples)</h3>
-<ul>
-<li><b>Recall</b>: “Start from a film/person you know. Find 5 related items you had forgotten you knew.”</li>
-<li><b>Discovery</b>: “Find 3 new films you want to watch next; explain why.”</li>
-<li><b>Frontier navigation</b>: “Keep expanding until you hit a boundary where you no longer recognize most nodes; describe what you found.”</li>
-<li><b>Evidence use</b>: “Given a surprising edge, use the evidence panel to decide whether you trust it enough to expand further.”</li>
-<li><b>Kiosk interaction (optional)</b>: “Using only taps (no typing), start from curated seeds and build a small ‘story’ of 8–12 nodes you would show someone else.”</li>
-</ul>
-<h3>Conditions (ablation)</h3>
-<ul>
-<li>With vs without <b>edge evidence</b> (hide evidence panel).</li>
-<li>With vs without <b>bipartite enforcement</b> (optional, if a safe relaxed mode exists) or compare to a baseline interface (e.g., search + Wikipedia navigation).</li>
-<li>With vs without <b>session-level pair locking</b> (when multiple pairs are enabled): measure whether locking reduces user-reported confusion and drift.</li>
-</ul>
-<h3>Measures</h3>
-<ul>
-<li>Task completion (time, steps/expansions, backtracks).</li>
-<li>Self-reported recall/discovery (Likert + short explanations).</li>
-<li>Perceived orientation (NASA-TLX subset or simpler “I felt lost” scale).</li>
-<li>Evidence interaction frequency (edge clicks, “open source” clicks).</li>
-<li>Neighborhood quality proxies: duplicate rate, generic-node rate, and fraction of expansions producing ≥k meaningful neighbors.</li>
-</ul>
-<h3>Qualitative prompts (examples)</h3>
-<ul>
-<li>“Describe a moment where you changed direction quickly—what triggered it?”</li>
-<li>“Describe a moment where an edge’s evidence changed your decision to explore further.”</li>
-<li>“What did the system surface that you felt was ‘on the edge’ of your memory?”</li>
-<li>“Did you notice the Atomic↔Composite alternation? Did it help you predict what would happen when you clicked?”</li>
-</ul>
-<h2>Study 2: Log-based / offline quality evaluation</h2>
-<h3>Goal</h3>
-<p>Assess properties of generated neighborhoods without claiming “truth”:</p>
-<ul>
-<li><b>Named-entity quality</b> (avoid generic phrases).</li>
-<li><b>Diversity</b> (avoid near-duplicates).</li>
-<li><b>Evidence availability</b> (fraction of edges with evidence snippets).</li>
-<li><b>Stability under repeated use</b> (cache hits; consistency of expansions for the same seed).</li>
-</ul>
-<h3>Sample design</h3>
-<p>Select a set of seeds across domains (films prioritized), run multiple expansions, and evaluate with:</p>
-<ul>
-<li>rater checks (human annotation),</li>
-<li>plus simple structural metrics (degree distributions; repetition).</li>
-</ul>
-<h2>Reporting “knowledge frontier”</h2>
-<p>One paper-specific contribution could be operationalizing the “frontier”:</p>
-<ul>
-<li>Track the point during exploration where a participant reports low recognition.</li>
-<li>Quantify as a function of depth/expansions and node familiarity labels.</li>
-</ul>
-<h2>Analysis plan (lightweight)</h2>
-<ul>
-<li>Use within-subject comparisons where possible (evidence on/off; lock on/off), counterbalanced across participants.</li>
-<li>Quantitative: paired tests on time/steps/backtracks and Likert outcomes; report effect sizes with confidence intervals.</li>
-<li>Qualitative: thematic analysis of “frontier” moments, evidence-driven decisions, and breakdowns (ambiguity, drift, low-signal expansions).</li>
 </ul>
 <h1>Discussion & Future Work</h1>
 <h2>Discussion: what Constellations is (and is not)</h2>

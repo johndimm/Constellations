@@ -6,7 +6,7 @@ Constellations is designed for this mode. Starting from a single user-provided e
 
 Because the system operates in open-world settings and aims for broad domain coverage, Constellations uses a large language model (LLM) to propose candidate neighbors during expansion. However, exploratory systems that rely on generative models face an immediate interpretability challenge: users naturally ask **why** a connection exists before deciding whether it is worth pursuing. To address this, Constellations attaches **edge evidence**: short evidence snippets and source links displayed when an edge is selected. Evidence is treated as support for interpretation and verification, not as proof of causal claims.
 
-This paper contributes an interactive exploration system and a design framing for bipartite low-friction exploration. We position Constellations relative to two-mode/affiliation networks and event-centric modeling, and we outline an evaluation plan centered on recall, discovery, and sensemaking.
+This paper contributes an interactive exploration system and a design framing for bipartite low-friction exploration. We position Constellations relative to two-mode/affiliation networks and event-centric modeling.
 
 ## Contributions
 - **A bipartite exploration interface** that enforces Atomic↔Composite alternation as a domain-general interaction primitive for click-to-expand exploration.
@@ -14,7 +14,6 @@ This paper contributes an interactive exploration system and a design framing fo
 - **Domains + text input in one interface**: users can start from curated domain seeds or type any query, enabling both guided and open-ended exploration.
 - **Evidence-backed edges** that make edge inspection a first-class interaction via short snippets and source links.
 - **An LLM-assisted, on-demand graph construction pipeline** that builds local neighborhoods without requiring a precomputed knowledge graph.
-- **An evaluation plan** targeting exploration outcomes (recall, discovery, orientation, and trust), rather than accuracy alone.
 
 ## Why films are an especially good domain (informal motivation)
 Many domains contain bipartite structure, but films provide a particularly clean and rewarding instance: people↔works with high-quality public metadata, stable naming, and strong Wikipedia coverage. This makes it easy to generate meaningful expansions (directors, co-stars, producers; films in a person’s oeuvre) and to attach interpretable evidence. In contrast, domains like current politics are both more dynamic and more sensitive; they require stricter evidence policies and careful treatment of ambiguity and recency.

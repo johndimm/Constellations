@@ -23,7 +23,6 @@ Constellations is an interactive system for **low-friction, branching exploratio
 - **System**: A working interactive graph explorer that supports a small set of Atomic↔Composite pairs and **locks the pair per session** (chosen from the first query) to prevent mid-graph switching.
 - **Design**: A design rationale for bipartite alternation as an exploration constraint (“events as meetings” generalized).
 - **Evidence UI**: Edge-level evidence display as a first-class interaction.
-- **Evaluation plan**: A mixed-method evaluation focused on recall, discovery, and sensemaking during low-friction exploratory navigation.
 
 ## Research questions (draft)
 - **RQ1**: How does a bipartite alternation constraint affect users’ ability to explore quickly (try/backtrack) without getting lost?

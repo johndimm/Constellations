@@ -475,6 +475,34 @@ async function upsertEdge(client: pg.PoolClient, atomicId: number, compositeId: 
 // Routes
 app.get("/health", (_, res) => res.json({ ok: true }));
 
+// ---- External source proxies (to avoid CORS / rate-limit issues) ----
+// Crossref: DOI metadata (papers/authors/venues)
+const crossrefCache = new Map<string, { t: number; json: any }>();
+const CROSSREF_TTL_MS = 1000 * 60 * 30; // 30 min
+app.get("/api/crossref/work", async (req, res) => {
+  const doiRaw = String((req.query as any)?.doi || "").trim();
+  if (!doiRaw) return res.status(400).json({ error: "doi required" });
+  const doi = doiRaw.replace(/^https?:\/\/doi\.org\//i, "");
+  const url = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
+  const key = url;
+  const now = Date.now();
+  const cached = crossrefCache.get(key);
+  if (cached && now - cached.t < CROSSREF_TTL_MS) return res.json(cached.json);
+
+  try {
+    const r = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!r.ok) {
+      const text = await r.text().catch(() => "");
+      return res.status(r.status).json({ error: `Crossref error: ${r.status} ${r.statusText}`, body: text.slice(0, 2000) });
+    }
+    const json = await r.json();
+    crossrefCache.set(key, { t: now, json });
+    return res.json(json);
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || "Crossref request failed" });
+  }
+});
+
 app.post("/init", async (_, res) => {
   const client = await pool.connect();
   try {

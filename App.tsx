@@ -7,6 +7,16 @@ import { GraphNode, GraphLink, PathResponse } from './types';
 import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, type LockedPair } from './services/geminiService';
 import { getApiKey } from './services/aiUtils';
 import { fetchWikipediaImage, fetchWikipediaSummary, fetchWikipediaExtract, fetchWikidataKeyPeopleForTitle } from './services/wikipediaService';
+import {
+    getOpenAlexWork,
+    getTopWorksForAuthor,
+    makeOpenAlexAuthorshipEvidence,
+    openAlexAuthorToAuthorNode,
+    openAlexWorkToPaperNode,
+    searchOpenAlexAuthor,
+    searchOpenAlexWork
+} from './services/openAlexService';
+import { crossrefAuthors, crossrefWorkToPaperNode, fetchCrossrefWorkByDoi, makeCrossrefAuthorshipEvidence } from './services/crossrefService';
 import { Key, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react';
 import {
     KioskDomain,
@@ -206,6 +216,14 @@ const getEnvCacheUrl = () => {
 };
 
 const App: React.FC = () => {
+    const ENABLE_WEB_SEARCH =
+        String((import.meta as any)?.env?.VITE_ENABLE_WEB_SEARCH || '').trim() === '1' ||
+        String((import.meta as any)?.env?.VITE_ENABLE_WEB_SEARCH || '').trim().toLowerCase() === 'true';
+
+    const ENABLE_ACADEMIC_CORPORA =
+        // Default ON when the feature exists; can be disabled for offline demos.
+        String((import.meta as any)?.env?.VITE_ENABLE_ACADEMIC_CORPORA ?? 'true').trim() === '1' ||
+        String((import.meta as any)?.env?.VITE_ENABLE_ACADEMIC_CORPORA ?? 'true').trim().toLowerCase() === 'true';
     // Use local cache server when running locally, regardless of env var
     const envCacheUrl = getEnvCacheUrl();
     const cacheBaseUrl = envCacheUrl ||
@@ -327,6 +345,21 @@ const App: React.FC = () => {
         if (s.includes(' - ')) return false;
         if (s.length > 90) return false;
         return true;
+    };
+
+    const normalizeForEvidence = (s: unknown) =>
+        String(s || '')
+            .toLowerCase()
+            .replace(/[“”"]/g, '"')
+            .replace(/[’‘]/g, "'")
+            .replace(/\s+/g, ' ')
+            .trim();
+
+    const splitIntoSentences = (text: string): string[] => {
+        const t = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!t) return [];
+        // Naive sentence split, good enough for Wikipedia extracts.
+        return t.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
     };
 
     // Keep selectedNode in sync with latest node data (e.g., wikiSummary, images)
@@ -726,6 +759,10 @@ const App: React.FC = () => {
             const pair = lockedPairRef.current || { atomicType: "Person", compositeType: "Event" };
             const currentAtomicType = pair.atomicType;
             const currentCompositeType = pair.compositeType;
+            const isAcademicPair =
+                ENABLE_ACADEMIC_CORPORA &&
+                (String(pair.atomicType || '').toLowerCase() === 'author' ||
+                    String(pair.compositeType || '').toLowerCase() === 'paper');
 
             if (!node.classification_reasoning) {
                 nodeUpdates.set(node.id, {
@@ -1012,9 +1049,8 @@ const App: React.FC = () => {
             // Augment verified context using structured Wikidata properties when available.
             let verifiedContext = sourceLong;
             try {
-                const pair = lockedPairRef.current || { atomicType: "Person", compositeType: "Event" };
                 const expandingComposite = !(currentIsAtomic ?? currentType.toLowerCase() === 'person');
-                if (pair.atomicType.toLowerCase() === 'person' && expandingComposite) {
+                if (!isAcademicPair && pair.atomicType.toLowerCase() === 'person' && expandingComposite) {
                     const wd = await fetchWikidataKeyPeopleForTitle(node.title);
                     if (wd) {
                         const lines: string[] = [];
@@ -1028,7 +1064,7 @@ const App: React.FC = () => {
                     } else {
                         // Last-resort fallback: grounded web lookup for org leadership (official Gemini tool).
                         // Only run if we have very little verified context to avoid excessive calls.
-                        if ((verifiedContext || '').trim().length < 400) {
+                        if (ENABLE_WEB_SEARCH && (verifiedContext || '').trim().length < 400) {
                             const grounded = await fetchOrgKeyPeopleBlockViaSearch(node.title);
                             if (grounded) verifiedContext = `${verifiedContext}\n\n${grounded}\n`;
                         }
@@ -1043,7 +1079,102 @@ const App: React.FC = () => {
 
             console.log(`📡 [Expand] Expanding ${currentType}: "${node.title}" (ID: ${node.id}, WikiID: ${node.wikipedia_id || 'none'})`);
 
-            if (isPerson) {
+            if (isAcademicPair) {
+                const parentIsAtomic = !!(currentIsAtomic ?? node.is_atomic ?? (node as any).is_person);
+
+                // Resolve IDs if missing (we keep them in node.meta).
+                const meta = (node as any).meta || {};
+                const parentAuthorId = String(meta.openAlexAuthorId || '').trim();
+                const parentWorkId = String(meta.openAlexWorkId || '').trim();
+
+                if (parentIsAtomic) {
+                    // Author -> Papers
+                    const author =
+                        parentAuthorId
+                            ? { id: parentAuthorId, display_name: node.title }
+                            : await searchOpenAlexAuthor(node.title);
+                    if (author?.id) {
+                        const works = await getTopWorksForAuthor(author.id, 10);
+                        results = works.map(w => {
+                            const paper = openAlexWorkToPaperNode(w);
+                            return {
+                                ...paper,
+                                edge_label: 'Authored',
+                                edge_meta: {
+                                    evidence: makeOpenAlexAuthorshipEvidence(w, node.title)
+                                }
+                            };
+                        });
+                        // Ensure author node carries the ID for future expansions.
+                        if (!(meta.openAlexAuthorId) && author.id) {
+                            nodeUpdates.set(node.id, { meta: { ...(meta || {}), openAlexAuthorId: author.id, openAlexUrl: author.id, source: 'openalex' } as any });
+                        }
+                    }
+                } else {
+                    // Paper -> Authors
+                    const work =
+                        parentWorkId
+                            ? await getOpenAlexWork(parentWorkId)
+                            : await searchOpenAlexWork(node.title);
+                    if (work?.id) {
+                        const authors = (work.authorships || [])
+                            .map(a => a.author)
+                            .filter(Boolean)
+                            .map(a => ({ id: String(a!.id || ''), display_name: String(a!.display_name || '') }))
+                            .filter(a => a.id && a.display_name);
+
+                        results = authors.slice(0, 12).map(a => {
+                            const authorNode = openAlexAuthorToAuthorNode({ id: a.id, display_name: a.display_name });
+                            return {
+                                ...authorNode,
+                                edge_label: 'Author',
+                                edge_meta: {
+                                    evidence: makeOpenAlexAuthorshipEvidence(work, a.display_name)
+                                }
+                            };
+                        });
+
+                        if (!(meta.openAlexWorkId) && work.id) {
+                            // Store work id + optionally use abstract as description if Wikipedia is missing.
+                            const desc = (node.description || '').trim();
+                            const paperNode = openAlexWorkToPaperNode(work);
+                            nodeUpdates.set(node.id, {
+                                meta: { ...(meta || {}), openAlexWorkId: work.id, doi: (work.doi || undefined), openAlexUrl: work.id, source: 'openalex' } as any,
+                                ...(desc ? {} : { description: paperNode.description, year: paperNode.year })
+                            } as any);
+                        }
+                    } else {
+                        // Fallback: if OpenAlex couldn't resolve the work, try Crossref by DOI.
+                        const doiFromMeta = String(meta.doi || '').trim();
+                        const doiFromTitle = String(node.title || '').trim();
+                        const doiMatch = (doiFromMeta || doiFromTitle).match(/\b10\.\d{4,9}\/\S+\b/i);
+                        const doi = doiMatch ? doiMatch[0] : "";
+                        if (doi) {
+                            const cw = await fetchCrossrefWorkByDoi(doi);
+                            if (cw) {
+                                const authors = crossrefAuthors(cw);
+                                results = authors.slice(0, 12).map(name => ({
+                                    title: name,
+                                    type: "Author",
+                                    description: "",
+                                    is_atomic: true,
+                                    edge_label: "Author",
+                                    edge_meta: { evidence: makeCrossrefAuthorshipEvidence(cw, name) }
+                                }));
+
+                                const desc = (node.description || '').trim();
+                                const paperNode = crossrefWorkToPaperNode(cw);
+                                nodeUpdates.set(node.id, {
+                                    meta: { ...(meta || {}), doi: String(cw.DOI || doi), crossrefUrl: paperNode.meta?.crossrefUrl, source: 'crossref' } as any,
+                                    ...(desc ? {} : { description: paperNode.description, year: paperNode.year })
+                                } as any);
+                            }
+                        }
+                    }
+                }
+
+                console.log(`✅ [Expand] OpenAlex produced ${results.length} academic connections for "${node.title}"`);
+            } else if (isPerson) {
                 // Pass a longer verified extract when available so the LLM can pick evidence sentences.
                 let data = await fetchPersonWorks(node.title, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 // If exclusions made the result set empty, retry once without exclusions.
@@ -1116,6 +1247,47 @@ const App: React.FC = () => {
                     },
                     edge_label: p.role || null
                 }));
+
+                // Wikipedia-backed fallback for works: if the model returns nothing, extract at least the author/creator
+                // from the source page lead sentence (e.g., "is a book by Yuval Noah Harari").
+                if (results.length === 0 && sourceLong) {
+                    const sentences = splitIntoSentences(sourceLong);
+                    const patterns: { role: string; re: RegExp }[] = [
+                        { role: 'Author', re: /\bis (?:an?|the)\s+(?:nonfiction\s+)?(?:book|novel|memoir|biography|essay)\s+by\s+([^.;]+)/i },
+                        { role: 'Author', re: /\bwritten by\s+([^.;]+)/i },
+                        { role: 'Director', re: /\b(?:film|movie)\s+directed by\s+([^.;]+)/i },
+                        { role: 'Creator', re: /\bcreated by\s+([^.;]+)/i },
+                    ];
+                    for (const sent of sentences.slice(0, 4)) {
+                        for (const ptn of patterns) {
+                            const m = sent.match(ptn.re);
+                            if (!m) continue;
+                            const rawName = String(m[1] || '').trim();
+                            // Clean up trailing parentheses/clauses and overly long captures
+                            const name = rawName.split(/,| and | who | which /i)[0].trim();
+                            if (name && name.split(/\s+/).length >= 2) {
+                                results = [{
+                                    title: name,
+                                    type: atomicTypeToUse,
+                                    description: `${ptn.role} associated with ${node.title}.`,
+                                    role: ptn.role,
+                                    is_atomic: true,
+                                    edge_meta: {
+                                        evidence: {
+                                            kind: 'wikipedia',
+                                            pageTitle: node.title,
+                                            snippet: sent,
+                                            url: looksLikeWikipediaTitle(node.title) ? buildWikiUrl(node.title) : undefined
+                                        }
+                                    },
+                                    edge_label: ptn.role
+                                }];
+                                break;
+                            }
+                        }
+                        if (results.length) break;
+                    }
+                }
                 console.log(`✅ [Expand] Found ${results.length} atomic components for composite "${node.title}"`);
             }
 
@@ -1146,6 +1318,12 @@ const App: React.FC = () => {
                 }
             } else {
                 // Get Wikipedia info for all results to help disambiguate
+                const pairForWikiStage = lockedPairRef.current || { atomicType: "Person", compositeType: "Event" };
+                const isAcademicPairForWikiStage =
+                    ENABLE_ACADEMIC_CORPORA &&
+                    (String(pairForWikiStage.atomicType || '').toLowerCase() === 'author' ||
+                        String(pairForWikiStage.compositeType || '').toLowerCase() === 'paper');
+
                 const resultsWithWiki = await Promise.all(results.map(async r => {
                     // Provide richer disambiguation context to avoid overwriting (e.g., "Chris Freeman (businessman)" -> musician).
                     const contextHint = [
@@ -1155,10 +1333,78 @@ const App: React.FC = () => {
                         r.description,
                         r.edge_meta?.evidence?.snippet
                     ].filter(Boolean).join(' · ').slice(0, 280);
-                    const rWiki = await fetchWikipediaSummary(r.title, contextHint);
-                    // Do NOT guess evidence in the application layer. If the model didn't provide evidence,
-                    // we explicitly mark it as missing.
-                    const evidence = r.edge_meta?.evidence || { kind: 'none' as const };
+                    const evidenceKind = String(r.edge_meta?.evidence?.kind || '');
+                    const skipWiki =
+                        isAcademicPairForWikiStage ||
+                        evidenceKind === 'openalex';
+                    const rWiki = skipWiki ? ({ title: r.title, extract: '', pageid: undefined } as any) : await fetchWikipediaSummary(r.title, contextHint);
+
+                    // Evidence handling:
+                    // - The LLM may provide an evidenceSnippet/pageTitle, but it can be wrong or not verifiable.
+                    // - If the snippet is not found in the claimed page's Wikipedia extract, we drop it.
+                    // - If the source page doesn't mention the relationship (common for org -> person),
+                    //   we try to find a sentence on the *target* page that mentions the source title.
+                    const roleLooksLikeJobTitle = (s: unknown) =>
+                        /\b(president|ceo|chief|director|manager|founder|co-founder|curator|chairman|head)\b/i.test(String(s || ''));
+                    const sanitizeTitleParen = (title: string) => title.replace(/\s*\(([^)]+)\)\s*$/, '').trim();
+                    const isParenJobTitle = (title: unknown) => {
+                        const s = String(title || '');
+                        const m = s.match(/\(([^)]+)\)\s*$/);
+                        return !!m && roleLooksLikeJobTitle(m[1]);
+                    };
+
+                    let evidence: any = r.edge_meta?.evidence || { kind: 'none' as const };
+                    const pageTitle = String(evidence?.pageTitle || '');
+                    const snippet = String(evidence?.snippet || '');
+                    const pageLooksNonWiki = pageTitle.includes(' - ') || /^https?:\/\//i.test(pageTitle) || !looksLikeWikipediaTitle(pageTitle);
+
+                    const extractCache: Map<string, string | null> =
+                        ((window as any).__wikiExtractCache ||= new Map<string, string | null>());
+                    const getExtractCached = async (title: string) => {
+                        const key = String(title || '').trim();
+                        if (!key) return null;
+                        if (extractCache.has(key)) return extractCache.get(key) || null;
+                        const ex = (await fetchWikipediaExtract(key, 6000)).extract || null;
+                        extractCache.set(key, ex);
+                        return ex;
+                    };
+
+                    // 1) Validate model-provided evidence against the claimed page (Wikipedia-only).
+                    if (evidence && evidence.kind === 'ai' && snippet && pageTitle && !pageLooksNonWiki) {
+                        const ex = await getExtractCached(pageTitle);
+                        const ok = ex ? normalizeForEvidence(ex).includes(normalizeForEvidence(snippet)) : false;
+                        if (!ok) {
+                            evidence = { kind: 'none' as const };
+                        } else {
+                            evidence = {
+                                ...evidence,
+                                kind: 'wikipedia' as const,
+                                url: buildWikiUrl(pageTitle)
+                            };
+                        }
+                    } else if (pageLooksNonWiki) {
+                        evidence = { kind: 'none' as const };
+                    }
+
+                    // 2) Fallback: if no evidence, try to pull a sentence from the target page mentioning the source.
+                    if ((!evidence || evidence.kind === 'none') && (String(r.type || '').toLowerCase() === 'person')) {
+                        const targetTitle = (rWiki.title || r.title || '').trim();
+                        const targetExtract = targetTitle ? await getExtractCached(targetTitle) : null;
+                        const sourceNeedle = String(node.title || '').trim();
+                        if (targetExtract && sourceNeedle) {
+                            const sentences = splitIntoSentences(targetExtract);
+                            const needleNorm = normalizeForEvidence(sourceNeedle);
+                            const found = sentences.find(s => normalizeForEvidence(s).includes(needleNorm));
+                            if (found) {
+                                evidence = {
+                                    kind: 'wikipedia' as const,
+                                    pageTitle: targetTitle,
+                                    snippet: found,
+                                    url: buildWikiUrl(targetTitle)
+                                };
+                            }
+                        }
+                    }
 
                     return { 
                         ...r,
@@ -1168,7 +1414,16 @@ const App: React.FC = () => {
                         description: rWiki.extract || r.description,
                         meta: { ...(r.meta || {}), wikiSummary: rWiki.extract || undefined },
                         edge_meta: { evidence },
-                        edge_label: r.edge_label || r.role || null
+                        edge_label: (() => {
+                            // If we couldn't verify evidence, don't show job-title role labels.
+                            const lbl = r.edge_label || r.role || null;
+                            if ((!evidence || evidence.kind === 'none') && roleLooksLikeJobTitle(lbl)) return null;
+                            return lbl;
+                        })(),
+                        // If the title itself contained an unverified job-title parenthetical, strip it.
+                        ...(typeof (rWiki.title || r.title) === 'string' && isParenJobTitle(rWiki.title || r.title) && (!evidence || evidence.kind === 'none')
+                            ? { title: sanitizeTitleParen(rWiki.title || r.title) }
+                            : {})
                     };
                 }));
 
@@ -1252,13 +1507,6 @@ const App: React.FC = () => {
                 // Evidence/role validation:
                 // If a role claim (e.g., President/CEO/Director) isn't backed by the verified context we fetched,
                 // drop the claim and hide the evidence to avoid false positives.
-                const normalizeForEvidence = (s: unknown) =>
-                    String(s || '')
-                        .toLowerCase()
-                        .replace(/[“”"]/g, '"')
-                        .replace(/[’‘]/g, "'")
-                        .replace(/\s+/g, ' ')
-                        .trim();
                 // IMPORTANT: Only treat Wikipedia extract text as "verified" for snippet matching.
                 // Model-generated grounded blocks can still hallucinate phrases; do not accept them as evidence.
                 const verifiedNorm = normalizeForEvidence(sourceLong);
@@ -1295,6 +1543,9 @@ const App: React.FC = () => {
                     const e = cn?.edge_meta?.evidence;
                     const hasEvidence = e && e.kind && e.kind !== 'none' && (e.snippet || e.pageTitle);
                     if (!hasEvidence) return cn;
+                    // Non-Wikipedia sources (e.g., OpenAlex) are handled separately and should not be
+                    // invalidated by Wikipedia-only snippet matching.
+                    if (String(e.kind) === 'openalex') return cn;
 
                     const pageTitle = String(e.pageTitle || '');
                     const snippet = String(e.snippet || '');

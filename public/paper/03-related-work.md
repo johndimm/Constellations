@@ -15,6 +15,11 @@ Two-mode (bipartite) networks are a long-standing model for situations where act
 
 Constellations adopts bipartiteness not primarily as an analytic device, but as an interaction constraint that simplifies exploration: each step alternates between atomic and composite nodes. Joint spatial displays of affiliation networks (e.g., correspondence-analysis-style embeddings) also provide an important precedent for “map-like” knowledge exploration and inform a future direction of large-scale knowledge cartography.
 
+## Scholarly collaboration and citation graphs
+“Collaboration graphs” in the scholarly domain—co-authorship networks, citation networks, and related bipartite constructions (authors↔papers; papers↔venues; papers↔keywords)—are a classic and widely studied use case for two-mode graphs. These systems often support search and navigation over a curated academic corpus and can enable tasks like literature discovery, influence tracing, and community/field structure exploration.
+
+Constellations is conceptually adjacent to this tradition and now supports an **Author↔Paper** mode backed by an academic-paper corpus API (currently OpenAlex). This enables a classic collaboration-graph workflow (authors, papers, venues) while keeping the same low-friction “expand/backtrack” interaction model. As in other domains, Constellations still avoids general web crawling/search and instead uses a small set of structured sources plus an LLM for open-world neighbor proposal where needed.
+
 ## Event-centric modeling in cultural heritage and museums
 Event-centric cultural heritage modeling emphasizes events as the connective tissue that relates people, places, objects, and documents. The “historical events as meetings” framing aligns strongly with Constellations’ original person↔event concept: an event is any construct that brings multiple people into relation. In Constellations’ current design, the system selects a bipartite Atomic↔Composite pairing from the seed term and **locks it for the session** to prevent mid-graph switching, while still enabling cross-domain use via different seeds.
 

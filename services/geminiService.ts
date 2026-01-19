@@ -50,6 +50,18 @@ export const classifyStartPair = async (
   // Disambiguated titles like "Discover (Daft Punk album)" must never be treated as Person.
   // Treat common work/media parentheticals as Composite/Event in the temporary Person↔Event model.
   const t = term.trim();
+  // Academic heuristics (no model required):
+  // If the seed looks like a paper/DOI/arXiv query, default to Author↔Paper so the system can use an academic corpus.
+  if (/\b10\.\d{4,9}\/\S+\b/i.test(t) || /\barxiv\b|arxiv:\s*\d{4}\.\d{4,5}/i.test(t)) {
+    return {
+      type: "Paper",
+      description: "",
+      isAtomic: false,
+      atomicType: "Author",
+      compositeType: "Paper",
+      reasoning: "Seed looks like an academic paper identifier (DOI/arXiv); selecting Author↔Paper."
+    };
+  }
   if (/\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(t)) {
     return {
       type: "Event",
@@ -80,6 +92,7 @@ You MUST choose EXACTLY ONE of these pairs:
 1) Person ↔ Event
 2) Ingredient ↔ Recipe
 3) Symptom ↔ Disease
+4) Author ↔ Paper
 
 Rules:
 - If "${term}" is a person (an individual human), choose Person ↔ Event.
@@ -87,17 +100,18 @@ Rules:
 - If "${term}" is a named work (album, song, book, novel, film, painting, sculpture, artwork), choose Person ↔ Event and set isAtomic=false and type="Event".
 - If "${term}" contains an explicit disambiguator like "(album)" / "(song)" / "(film)" / "(book)", it is NOT a person: choose Person ↔ Event and set isAtomic=false and type="Event".
 - If "${term}" is an organization/institution/committee (NOT an individual human), choose Person ↔ Event and set isAtomic=false and type="Event".
+- If "${term}" looks like an academic paper (paper title, DOI, arXiv ID) or an academic author, choose Author ↔ Paper.
 - If "${term}" is a symptom (e.g., sore throat, runny nose), choose Symptom ↔ Disease.
 - If "${term}" is an ingredient (e.g., pepper, chicken, beef), choose Ingredient ↔ Recipe.
 - Otherwise, prefer Person ↔ Event unless it clearly implies Symptom or Ingredient.
 
 Return JSON:
 {
-  "type": "Person | Event | Ingredient | Recipe | Symptom | Disease",
+  "type": "Person | Event | Ingredient | Recipe | Symptom | Disease | Author | Paper",
   "description": "Short 1-sentence description",
   "isAtomic": true/false,
-  "atomicType": "Person | Ingredient | Symptom",
-  "compositeType": "Event | Recipe | Disease",
+  "atomicType": "Person | Ingredient | Symptom | Author",
+  "compositeType": "Event | Recipe | Disease | Paper",
   "reasoning": "Brief explanation of the chosen pair and which side the term is on"
 }`;
 
@@ -135,7 +149,8 @@ Return JSON:
   const allowedPairs = new Set([
     "Person|Event",
     "Ingredient|Recipe",
-    "Symptom|Disease"
+    "Symptom|Disease",
+    "Author|Paper"
   ]);
   const pairKey = `${json.atomicType}|${json.compositeType}`;
   if (!allowedPairs.has(pairKey)) {

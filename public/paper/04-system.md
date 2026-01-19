@@ -11,17 +11,19 @@ The UI encodes this alternation with distinct visual forms (e.g., circles vs car
 ## Data flow (high level)
 1. **User query**: the user can start from a curated domain seed or type an arbitrary query.
 2. **Context retrieval**: fetch lightweight context (e.g., Wikipedia summary) to help disambiguation and mitigate model knowledge gaps.
-3. **Start-pair classification (locked)**: choose a bipartite pair from the first input (currently one of Person↔Event, Ingredient↔Recipe, Symptom↔Disease), then **lock it for the entire graph** (no switching).
+3. **Start-pair classification (locked)**: choose a bipartite pair from the first input (currently one of Person↔Event, Ingredient↔Recipe, Symptom↔Disease, Author↔Paper), then **lock it for the entire graph** (no switching).
 4. **Expansion**: call the LLM to propose 8–10 neighbors on the opposite side of the bipartite partition, conditioned on the locked pair.
 5. **Evidence attachment**: each proposed neighbor includes an evidence snippet + page title; selecting an edge reveals the supporting citation.
 6. **Caching**: store nodes and edges (with evidence) in a database to reduce repeated calls and support persistence.
+
+**Sources (important):** Constellations is intentionally **multi-source**: it uses **Wikipedia/Wikimedia APIs** (Wikipedia + Wikidata), **academic corpora/metadata APIs** (currently OpenAlex, with Crossref/DOI metadata as a fallback), and an **LLM**. Due to deployment constraints, the system does **not** crawl arbitrary websites or run general internet search. Evidence snippets are sourced from Wikipedia page text and/or corpus metadata when available; when the system cannot verify a snippet from available sources, it is shown as missing rather than guessed.
 
 ## Bipartite constraint and “events as meetings”
 The original domain (people↔events) is motivated by an event-centric view: an event is any construct that brings multiple people into relation. This framing generalizes naturally to other domains by choosing a Composite that aggregates multiple Atomics and for which the inverse membership relation is meaningful (e.g., actors in films; ingredients in recipes).
 
 ## Evidence-backed edges
 Each edge carries structured evidence:
-- **kind**: currently “ai” (LLM-provided) or “none”
+- **kind**: currently “wikipedia” (verbatim sentence from a Wikipedia page), “openalex” / “crossref” (corpus metadata), “ai” (model-provided when not verifiable), or “none”
 - **snippet**: one sentence
 - **pageTitle + url**: where the snippet is claimed to come from (typically a Wikipedia page)
 

@@ -8,6 +8,7 @@ export interface GraphNode extends SimulationNodeDatum {
   is_person?: boolean; // DEPRECATED: use is_atomic
   wikipedia_id?: string;
   description?: string;
+  meta?: Record<string, any>; // Optional source-specific metadata (e.g., OpenAlex IDs)
   imageUrl?: string | null; // URL for the node image
   year?: number; // Year of occurrence (for timeline view)
   expanded?: boolean; // Whether we have already fetched connections for this node
@@ -34,7 +35,7 @@ export interface GraphLink extends SimulationLinkDatum<GraphNode> {
   id: string; // Unique link ID
   label?: string; // Role or connection description
   evidence?: {
-    kind: 'wikipedia' | 'ai' | 'none';
+    kind: 'wikipedia' | 'openalex' | 'crossref' | 'ai' | 'none';
     // Human-readable page title where the snippet came from (usually source or target)
     pageTitle?: string;
     // Copyable snippet (typically 1 sentence)

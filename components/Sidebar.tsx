@@ -110,7 +110,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
                         rel="noopener noreferrer"
                         className="text-xs text-amber-300 hover:text-amber-200"
                       >
-                        Open Source
+                        View Source
                       </a>
                     )}
                   </div>
@@ -192,6 +192,28 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
 
               {/* Action Buttons */}
               <div className="pt-4 border-t border-slate-800 flex flex-col gap-2">
+                {(selectedNode as any)?.meta?.openAlexUrl && (
+                  <a
+                    href={(selectedNode as any).meta.openAlexUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm"
+                  >
+                    <ExternalLink size={16} />
+                    <span>View on OpenAlex</span>
+                  </a>
+                )}
+                {(selectedNode as any)?.meta?.doi && (
+                  <a
+                    href={`https://doi.org/${String((selectedNode as any).meta.doi).replace(/^https?:\/\/doi\\.org\\//i, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm"
+                  >
+                    <ExternalLink size={16} />
+                    <span>View DOI</span>
+                  </a>
+                )}
                 <a
                   href={`https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(selectedNode.title)}`}
                   target="_blank"
