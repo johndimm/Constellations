@@ -114,7 +114,8 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
       "Prince",
       "David Bowie",
       "Daft Punk",
-      "Discovery (Daft Punk album)"
+      "Discovery (Daft Punk album)",
+      "Giant Steps (album)"
     ]
   },
   {
@@ -128,6 +129,12 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
       "Pyotr Ilyich Tchaikovsky",
       "Frédéric Chopin",
       "Igor Stravinsky",
+      "Yo-Yo Ma",
+      "Glenn Gould",
+      "Maria Callas",
+      "Luciano Pavarotti",
+      "Gustavo Dudamel",
+      "Hilary Hahn",
       "The Rite of Spring",
       "The Magic Flute",
       "Symphony No. 5 (Beethoven)",
@@ -314,7 +321,7 @@ export function loadKioskDomains(): KioskDomain[] {
         terms: d.terms.map((t: any) => String(t)).filter((t: string) => t.trim().length > 0)
       }))
       .filter((d: KioskDomain) => d.id.trim().length > 0 && d.label.trim().length > 0);
- 
+
     // Migration: remove the retired "Universal (unlocked)" domain if present in local storage.
     const cleanedWithoutUniversal = cleaned.filter(d => d.id !== "universal");
 

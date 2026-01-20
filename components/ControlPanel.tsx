@@ -174,7 +174,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const EXAMPLES = [
     "The Godfather",
     "Watergate Scandal",
-    "Giant Steps",
+    "Giant Steps (album)",
     "Napoleon Bonaparte"
   ];
 
@@ -207,116 +207,152 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     <>
       {headerActions}
       <div
-        className={`absolute left-3 sm:left-3 z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%+1.5rem)]' : 'translate-x-0'} top-16`}
+        className={`absolute left-0 z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%-24px)]' : 'translate-x-[12px] sm:translate-x-[16px]'} top-16`}
         style={{ width: 'calc(100% - 1.5rem)', maxWidth: '26rem' }}
       >
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative">
-          {/* Primary actions (panel-local) */}
-          <div className="flex flex-wrap gap-2 mb-2 text-xs">
-            <button
-              onClick={() => {
-                let defaultName = "";
-                if (searchMode === 'explore' && exploreTerm) {
-                  defaultName = exploreTerm;
-                } else if (searchMode === 'connect' && pathStart && pathEnd) {
-                  defaultName = `${pathStart} to ${pathEnd}`;
-                } else {
-                  defaultName = `Graph ${new Date().toLocaleTimeString()}`;
-                }
-                setSaveName(defaultName);
-                setShowSave(!showSave);
-                setShowLoad(false);
-                setShowShare(false);
-                setShowHelp(false);
-                onHelpHoverChange(null);
-              }}
-              className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-              title="Save Graph"
-            >
-              SAVE
-            </button>
-            <button
-              onClick={() => {
-                setShowLoad(!showLoad);
-                setShowSave(false);
-                setShowShare(false);
-                setShowHelp(false);
-              }}
-              className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-              title="Load Graph"
-            >
-              LOAD
-            </button>
-            <button
-              onClick={() => {
-                setShowShare(!showShare);
-                setShowSave(false);
-                setShowLoad(false);
-                setShowHelp(false);
-                onHelpHoverChange(null);
-              }}
-              className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-              title="Share Graph"
-            >
-              SHARE
-            </button>
+          {/* Persistent Toggle Handle */}
+          <button
+            onClick={() => onSetCollapsed?.(!isCollapsed)}
+            className={`absolute top-1/2 -translate-y-1/2 -right-8 w-8 h-24 bg-slate-800 border border-slate-700 border-l-0 rounded-r-xl flex flex-col items-center justify-center text-slate-400 hover:text-white transition-all group shadow-xl pointer-events-auto ${isCollapsed ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+            title={isCollapsed ? "Expand controls" : "Collapse controls"}
+          >
+            {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            <div className="[writing-mode:vertical-lr] text-[9px] uppercase tracking-tighter mt-1 font-bold">Controls</div>
+          </button>
 
-            {onExpandAllLeafNodes && (
-              <button
-                onClick={onExpandAllLeafNodes}
-                disabled={isProcessing}
-                className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-emerald-300 inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed`}
-                title="Expand everything reachable from the current graph frontier (all unexpanded nodes anywhere)"
-              >
-                <Maximize size={14} className="text-emerald-400" />
-                EXPAND ALL
-              </button>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-2 mb-3 text-xs">
-            <button
-              onClick={onClear}
-              className="text-slate-300 hover:text-red-300 p-1.5 rounded-md border border-slate-700 bg-slate-800/80"
-              title="Clear graph"
-            >
-              <Trash2 size={16} />
-            </button>
-            <button
-              onClick={onToggleTimeline}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md uppercase tracking-wider transition-all border shrink-0 ${isTimelineMode
-                ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
-                : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400 hover:text-amber-400'
-                }`}
-              title="Toggle Timeline/Network View"
-            >
-              {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
-            </button>
-            <button
-              onClick={onToggleCompact}
-              className="text-slate-300 hover:text-white p-1.5 rounded-md border border-slate-700 bg-slate-800/80"
-              title="Toggle Compact Mode"
-            >
-              {isCompact ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-            </button>
-            <button
-              onClick={onToggleTextOnly}
-              className={`p-1.5 rounded-md border border-slate-700 bg-slate-800/80 ${isTextOnly ? 'text-indigo-400' : 'text-slate-300 hover:text-white'}`}
-              title="Toggle Text-Only Mode"
-            >
-              <Type size={16} />
-            </button>
-            <button
-              onClick={() => {
-                setShowHelp(!showHelp);
-                setShowSave(false);
-                setShowLoad(false);
-                setShowShare(false);
-              }}
-              className={`px-3 py-1 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-white flex items-center gap-1 ${helpHover === 'help' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-              title="Help & Info"
-            >
-              <HelpCircle size={14} /> HELP
-            </button>
+          {/* Button Groups */}
+          <div className="space-y-4 mb-4">
+            {/* Group: File */}
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                <Download size={10} /> File
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  onClick={() => {
+                    let defaultName = "";
+                    if (searchMode === 'explore' && exploreTerm) {
+                      defaultName = exploreTerm;
+                    } else if (searchMode === 'connect' && pathStart && pathEnd) {
+                      defaultName = `${pathStart} to ${pathEnd}`;
+                    } else {
+                      defaultName = `Graph ${new Date().toLocaleTimeString()}`;
+                    }
+                    setSaveName(defaultName);
+                    setShowSave(!showSave);
+                    setShowLoad(false);
+                    setShowShare(false);
+                    setShowHelp(false);
+                    onHelpHoverChange(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+                  title="Save Graph"
+                >
+                  SAVE
+                </button>
+                <button
+                  onClick={() => {
+                    setShowLoad(!showLoad);
+                    setShowSave(false);
+                    setShowShare(false);
+                    setShowHelp(false);
+                  }}
+                  className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+                  title="Load Graph"
+                >
+                  LOAD
+                </button>
+                <button
+                  onClick={() => {
+                    setShowShare(!showShare);
+                    setShowSave(false);
+                    setShowLoad(false);
+                    setShowHelp(false);
+                    onHelpHoverChange(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+                  title="Share Graph"
+                >
+                  SHARE
+                </button>
+              </div>
+            </div>
+
+            {/* Group: View */}
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                <Network size={10} /> View
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  onClick={onToggleTimeline}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md uppercase tracking-wider transition-all border shrink-0 ${isTimelineMode
+                    ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-amber-400 hover:text-amber-400'
+                    }`}
+                  title="Toggle Timeline/Network View"
+                >
+                  {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
+                  {isTimelineMode ? 'NETWORK' : 'TIMELINE'}
+                </button>
+                <button
+                  onClick={onToggleCompact}
+                  className="flex items-center gap-1.5 text-slate-300 hover:text-white px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 transition-colors"
+                  title="Toggle Compact Mode"
+                >
+                  {isCompact ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+                  {isCompact ? 'FULL' : 'COMPACT'}
+                </button>
+                <button
+                  onClick={onToggleTextOnly}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 transition-colors ${isTextOnly ? 'text-indigo-400 border-indigo-500/50' : 'text-slate-300 hover:text-white'}`}
+                  title="Toggle Text-Only Mode"
+                >
+                  <Type size={14} />
+                  TEXT ONLY
+                </button>
+              </div>
+            </div>
+
+            {/* Group: Actions */}
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                <Plus size={10} /> Actions
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  onClick={onClear}
+                  className="text-slate-300 hover:text-red-300 p-1.5 rounded-md border border-slate-700 bg-slate-800/80 transition-colors"
+                  title="Clear graph"
+                >
+                  <Trash2 size={16} />
+                </button>
+                {onExpandAllLeafNodes && (
+                  <button
+                    onClick={onExpandAllLeafNodes}
+                    disabled={isProcessing}
+                    className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-emerald-300 inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors`}
+                    title="Expand everything reachable from the current graph frontier"
+                  >
+                    <Maximize size={14} className="text-emerald-400" />
+                    EXPAND ALL
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setShowHelp(!showHelp);
+                    setShowSave(false);
+                    setShowLoad(false);
+                    setShowShare(false);
+                  }}
+                  className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-white flex items-center gap-1 transition-colors ${helpHover === 'help' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+                  title="Help & Info"
+                >
+                  <HelpCircle size={14} /> HELP
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Help Dialog */}
@@ -331,8 +367,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               <div className="space-y-3 text-xs text-slate-300">
                 <p className="text-sm text-white">
                   <strong>Browse People:</strong> Explore Wikipedia's people database:{" "}
-                  <button 
-                    className="text-slate-200 hover:text-white font-semibold underline" 
+                  <button
+                    className="text-slate-200 hover:text-white font-semibold underline"
                     onClick={(e) => { e.preventDefault(); if (onOpenPeopleBrowser) onOpenPeopleBrowser(); }}
                   >
                     Browse People
@@ -575,10 +611,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         {name}
                       </button>
                       <button
-                        onClick={(e) => { 
+                        onClick={(e) => {
                           e.stopPropagation();
-                          onDeleteGraph(name); 
-                          setShowLoad(false); 
+                          onDeleteGraph(name);
+                          setShowLoad(false);
                         }}
                         className="text-slate-400 hover:text-red-400 transition-colors p-1.5 rounded-md hover:bg-slate-800"
                         title="Delete Graph"
@@ -607,43 +643,43 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 {/* Search / connect inputs (always available) */}
                 {searchMode === 'explore' ? (
                   <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input type="text" value={exploreTerm} onChange={(e) => setExploreTerm(e.target.value)} placeholder="Enter a person or event..." className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-8 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" disabled={isProcessing} />
-                    <Search className="absolute left-3 top-3.5 text-slate-400" size={16} />
-                    {exploreTerm && (
-                      <button type="button" onClick={() => setExploreTerm('')} className="absolute right-2 top-3.5 text-slate-400 hover:text-white">
-                        <X size={14} />
-                      </button>
-                    )}
+                    <div className="relative flex-1">
+                      <input type="text" value={exploreTerm} onChange={(e) => setExploreTerm(e.target.value)} placeholder="Enter a person or event..." className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-8 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" disabled={isProcessing} />
+                      <Search className="absolute left-3 top-3.5 text-slate-400" size={16} />
+                      {exploreTerm && (
+                        <button type="button" onClick={() => setExploreTerm('')} className="absolute right-2 top-3.5 text-slate-400 hover:text-white">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <button type="submit" disabled={isProcessing} className={`px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-all shadow-lg ${isProcessing ? 'bg-slate-700 text-slate-400' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'}`}>
+                      {isProcessing ? '...' : 'GO'}
+                    </button>
                   </div>
-                  <button type="submit" disabled={isProcessing} className={`px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-all shadow-lg ${isProcessing ? 'bg-slate-700 text-slate-400' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'}`}>
-                    {isProcessing ? '...' : 'GO'}
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <div className="relative">
-                    <input type="text" value={pathStart} onChange={(e) => setPathStart(e.target.value)} placeholder="Start Person/Event..." className="w-full bg-slate-800 border border-slate-600 text-white px-4 py-2.5 pr-8 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" disabled={isProcessing} />
-                    {pathStart && (
-                      <button type="button" onClick={() => setPathStart('')} className="absolute right-2 top-2.5 text-slate-400 hover:text-white">
-                        <X size={14} />
-                      </button>
-                    )}
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <div className="relative">
+                      <input type="text" value={pathStart} onChange={(e) => setPathStart(e.target.value)} placeholder="Start Person/Event..." className="w-full bg-slate-800 border border-slate-600 text-white px-4 py-2.5 pr-8 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" disabled={isProcessing} />
+                      {pathStart && (
+                        <button type="button" onClick={() => setPathStart('')} className="absolute right-2 top-2.5 text-slate-400 hover:text-white">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex justify-center -my-2"><ArrowRight size={14} className="text-slate-500" /></div>
+                    <div className="relative">
+                      <input type="text" value={pathEnd} onChange={(e) => setPathEnd(e.target.value)} placeholder="End Person/Event..." className="w-full bg-slate-800 border border-slate-600 text-white px-4 py-2.5 pr-8 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" disabled={isProcessing} />
+                      {pathEnd && (
+                        <button type="button" onClick={() => setPathEnd('')} className="absolute right-2 top-2.5 text-slate-400 hover:text-white">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <button type="submit" disabled={isProcessing} className={`w-full mt-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${isProcessing ? 'bg-slate-700 text-slate-400' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
+                      {isProcessing ? 'Processing... ' : 'Find Connection'}
+                    </button>
                   </div>
-                  <div className="flex justify-center -my-2"><ArrowRight size={14} className="text-slate-500" /></div>
-                  <div className="relative">
-                    <input type="text" value={pathEnd} onChange={(e) => setPathEnd(e.target.value)} placeholder="End Person/Event..." className="w-full bg-slate-800 border border-slate-600 text-white px-4 py-2.5 pr-8 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" disabled={isProcessing} />
-                    {pathEnd && (
-                      <button type="button" onClick={() => setPathEnd('')} className="absolute right-2 top-2.5 text-slate-400 hover:text-white">
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
-                  <button type="submit" disabled={isProcessing} className={`w-full mt-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${isProcessing ? 'bg-slate-700 text-slate-400' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
-                    {isProcessing ? 'Processing... ' : 'Find Connection'}
-                  </button>
-                </div>
-              )}
+                )}
 
                 {/* Domain selector (below text input) */}
                 {kioskDomains.length > 0 && (
@@ -666,11 +702,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                           key={d.id}
                           type="button"
                           onClick={() => onSelectKioskDomain?.(d.id)}
-                          className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
-                            (selectedKioskDomainId || kioskDomains[0].id) === d.id
-                              ? 'bg-amber-500 text-slate-900 border-amber-400'
-                              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                          }`}
+                          className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${(selectedKioskDomainId || kioskDomains[0].id) === d.id
+                            ? 'bg-amber-500 text-slate-900 border-amber-400'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                            }`}
                           disabled={isProcessing}
                         >
                           {d.label}
@@ -737,21 +772,20 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 <div className="space-y-2">
                   <div className="text-[11px] text-slate-400 uppercase tracking-wider">Domains</div>
                   <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
-                  {kioskDomains.map(d => (
-                    <button
-                      key={d.id}
-                      type="button"
-                      className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
-                        d.id === (editDomainId || kioskDomains[0]?.id)
+                    {kioskDomains.map(d => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${d.id === (editDomainId || kioskDomains[0]?.id)
                           ? 'bg-slate-800 border-amber-500 text-white'
                           : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800'
-                      }`}
-                      onClick={() => setEditDomainId(d.id)}
-                    >
-                      <div className="font-semibold">{d.label}</div>
-                      <div className="text-[11px] text-slate-400">{d.terms.length} starting points</div>
-                    </button>
-                  ))}
+                          }`}
+                        onClick={() => setEditDomainId(d.id)}
+                      >
+                        <div className="font-semibold">{d.label}</div>
+                        <div className="text-[11px] text-slate-400">{d.terms.length} starting points</div>
+                      </button>
+                    ))}
                   </div>
 
                   <div className="pt-2 border-t border-slate-700">
@@ -804,106 +838,106 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     )}
                   </div>
 
-                {selectedDomainForEdit && (
-                  <>
-                    <div className="space-y-2">
-                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Rename</div>
-                      <input
-                        className="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm"
-                        value={selectedDomainForEdit.label}
-                        onChange={(e) => {
-                          const label = e.target.value;
-                          const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id ? { ...d, label } : d);
-                          onUpdateKioskDomains(next);
-                        }}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Add starting point</div>
-                      <div className="flex gap-2">
+                  {selectedDomainForEdit && (
+                    <>
+                      <div className="space-y-2">
+                        <div className="text-[11px] text-slate-400 uppercase tracking-wider">Rename</div>
                         <input
-                          className="flex-1 bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm"
-                          value={newTerm}
-                          onChange={(e) => setNewTerm(e.target.value)}
-                          placeholder="e.g., The Godfather"
+                          className="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm"
+                          value={selectedDomainForEdit.label}
+                          onChange={(e) => {
+                            const label = e.target.value;
+                            const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id ? { ...d, label } : d);
+                            onUpdateKioskDomains(next);
+                          }}
                         />
-                        <button
-                          type="button"
-                          className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold"
-                          onClick={() => {
-                            const term = newTerm.trim();
-                            if (!term) return;
-                            const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id
-                              ? { ...d, terms: [...d.terms, term] }
-                              : d
-                            );
-                            onUpdateKioskDomains(next);
-                            setNewTerm('');
-                          }}
-                        >
-                          Add
-                        </button>
                       </div>
-                    </div>
 
-                    <div className="space-y-2">
-                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Bulk add (one per line)</div>
-                      <textarea
-                        className="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm h-24"
-                        value={bulkTerms}
-                        onChange={(e) => setBulkTerms(e.target.value)}
-                        placeholder={"LeBron James\nsore throat\nBeef"}
-                      />
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold"
-                          onClick={() => {
-                            const terms = bulkTerms
-                              .split('\n')
-                              .map(s => s.trim())
-                              .filter(Boolean);
-                            if (!terms.length) return;
-                            const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id
-                              ? { ...d, terms: [...d.terms, ...terms] }
-                              : d
-                            );
-                            onUpdateKioskDomains(next);
-                            setBulkTerms('');
-                          }}
-                        >
-                          Add lines
-                        </button>
+                      <div className="space-y-2">
+                        <div className="text-[11px] text-slate-400 uppercase tracking-wider">Add starting point</div>
+                        <div className="flex gap-2">
+                          <input
+                            className="flex-1 bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm"
+                            value={newTerm}
+                            onChange={(e) => setNewTerm(e.target.value)}
+                            placeholder="e.g., The Godfather"
+                          />
+                          <button
+                            type="button"
+                            className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold"
+                            onClick={() => {
+                              const term = newTerm.trim();
+                              if (!term) return;
+                              const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id
+                                ? { ...d, terms: [...d.terms, term] }
+                                : d
+                              );
+                              onUpdateKioskDomains(next);
+                              setNewTerm('');
+                            }}
+                          >
+                            Add
+                          </button>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="space-y-2">
-                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Starting points</div>
-                      <div className="max-h-56 overflow-y-auto pr-1 space-y-1">
-                        {selectedDomainForEdit.terms.map((t, idx) => (
-                          <div key={`${t}-${idx}`} className="flex items-center justify-between gap-2 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
-                            <div className="text-slate-200 text-sm truncate">{t}</div>
-                            <button
-                              type="button"
-                              className="text-slate-400 hover:text-red-300"
-                              onClick={() => {
-                                const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id
-                                  ? { ...d, terms: d.terms.filter((_, i) => i !== idx) }
-                                  : d
-                                );
-                                onUpdateKioskDomains(next);
-                              }}
-                              title="Remove"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        ))}
+                      <div className="space-y-2">
+                        <div className="text-[11px] text-slate-400 uppercase tracking-wider">Bulk add (one per line)</div>
+                        <textarea
+                          className="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-lg text-sm h-24"
+                          value={bulkTerms}
+                          onChange={(e) => setBulkTerms(e.target.value)}
+                          placeholder={"LeBron James\nsore throat\nBeef"}
+                        />
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold"
+                            onClick={() => {
+                              const terms = bulkTerms
+                                .split('\n')
+                                .map(s => s.trim())
+                                .filter(Boolean);
+                              if (!terms.length) return;
+                              const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id
+                                ? { ...d, terms: [...d.terms, ...terms] }
+                                : d
+                              );
+                              onUpdateKioskDomains(next);
+                              setBulkTerms('');
+                            }}
+                          >
+                            Add lines
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </>
-                )}
+
+                      <div className="space-y-2">
+                        <div className="text-[11px] text-slate-400 uppercase tracking-wider">Starting points</div>
+                        <div className="max-h-56 overflow-y-auto pr-1 space-y-1">
+                          {selectedDomainForEdit.terms.map((t, idx) => (
+                            <div key={`${t}-${idx}`} className="flex items-center justify-between gap-2 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
+                              <div className="text-slate-200 text-sm truncate">{t}</div>
+                              <button
+                                type="button"
+                                className="text-slate-400 hover:text-red-300"
+                                onClick={() => {
+                                  const next = kioskDomains.map(d => d.id === selectedDomainForEdit.id
+                                    ? { ...d, terms: d.terms.filter((_, i) => i !== idx) }
+                                    : d
+                                  );
+                                  onUpdateKioskDomains(next);
+                                }}
+                                title="Remove"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

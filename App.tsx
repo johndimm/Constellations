@@ -541,21 +541,29 @@ const App: React.FC = () => {
             nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: true, imageChecked: true } : n)
         }));
 
-        const url = await fetchWikipediaImage(title, context);
+        const imageResult = await fetchWikipediaImage(title, context);
         // If a newer request started after this one, ignore this result.
         if ((imageReqTokenRef.current.get(nodeId) || 0) !== nextToken) return;
 
-        if (url) {
+        if (imageResult.url) {
             setGraphData(prev => ({
                 ...prev,
                 nodes: prev.nodes.map(n => {
                     if (n.id !== nodeId) return n;
                     // Don't overwrite an image that was already set by a newer forced request.
                     if (!force && n.imageUrl) return { ...n, fetchingImage: false, imageChecked: true };
-                    return { ...n, imageUrl: url, fetchingImage: false, imageChecked: true };
+                    // Store image with disambiguation metadata
+                    return {
+                        ...n,
+                        imageUrl: imageResult.url,
+                        image_wikipedia_id: imageResult.pageId?.toString(),
+                        image_wikipedia_title: imageResult.pageTitle,
+                        fetchingImage: false,
+                        imageChecked: true
+                    };
                 })
             }));
-            saveCacheNodeMeta(nodeId, { imageUrl: url }, fallbackNode);
+            saveCacheNodeMeta(nodeId, { imageUrl: imageResult.url }, fallbackNode);
         } else {
             setGraphData(prev => ({
                 ...prev,
@@ -595,17 +603,24 @@ const App: React.FC = () => {
                         if (imageHint) imgCache.delete(imageHint.trim().toLowerCase());
                     }
                 } catch { }
-                
+
                 // If AI gave a specific image hint (filename), try that first
                 if (imageHint) {
                     // fetchWikipediaImage can handle File: titles if we pass it correctly
-                    const url = await fetchWikipediaImage(imageHint, node.type);
-                    if (url) {
+                    const imageResult = await fetchWikipediaImage(imageHint, node.type);
+                    if (imageResult.url) {
                         setGraphData(prev => ({
                             ...prev,
-                            nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, imageUrl: url, fetchingImage: false, imageChecked: true } : n)
+                            nodes: prev.nodes.map(n => n.id === nodeId ? {
+                                ...n,
+                                imageUrl: imageResult.url,
+                                image_wikipedia_id: imageResult.pageId?.toString(),
+                                image_wikipedia_title: imageResult.pageTitle,
+                                fetchingImage: false,
+                                imageChecked: true
+                            } : n)
                         }));
-                        saveCacheNodeMeta(nodeId, { imageUrl: url });
+                        saveCacheNodeMeta(nodeId, { imageUrl: imageResult.url });
                         setNotification({ message: "Better photo found via AI hint!", type: 'success' });
                         return;
                     }
@@ -696,7 +711,7 @@ const App: React.FC = () => {
 
         // Don't set expandingNodeId yet - wait until data is ready to display
         // Maintaining previous expansion highlight until new one is ready
-        
+
         setGraphData(prev => {
             const existingNodeIds = new Set(prev.nodes.map(n => n.id));
             return {
@@ -892,7 +907,12 @@ const App: React.FC = () => {
 
                         console.log(`💾 [Cache] contains ${newNodesCount} new nodes and ${newLinksCount} new links for ${node.title}`);
 
-                        if (newNodesCount === 0 && newLinksCount === 0) {
+                        // Treat thin expansions (fewer than 5 results) as insufficient/old and fall back to LLM for more.
+                        // This allows our prompt improvements to "self-heal" old low-quality cache entries.
+                        if (validCached.length < 5) {
+                            console.log(`💾 [Cache] hit but contained only ${validCached.length} targets. Falling back to LLM for more.`);
+                            // Fall through to LLM logic below, DO NOT return
+                        } else if (newNodesCount === 0 && newLinksCount === 0) {
                             console.log(`💾 [Cache] contains only existing/reverse connections. Falling back to LLM.`);
                             // Fall through to LLM logic below, DO NOT return
                         } else {
@@ -1014,7 +1034,7 @@ const App: React.FC = () => {
                             if (!skipExpandingHighlight) {
                                 setExpandingNodeId(node.id);
                             }
-                            
+
                             // Track new child nodes for highlighting - they should be bright
                             if (!skipExpandingHighlight) {
                                 setNewChildNodeIds(new Set(newChildIds));
@@ -1184,32 +1204,32 @@ const App: React.FC = () => {
                 }
                 results = (data.works || [])
                     .filter(w => typeof (w as any)?.entity === 'string' && (w as any).entity.trim().length > 0)
-                    .map(w => ({ 
-                    title: (w as any).wikipediaTitle || w.entity,
-                    // Allow the model to type works more specifically (e.g., Artwork) even in the Person↔Event session model.
-                    type: (w as any).type || currentCompositeType, 
-                    description: w.description, 
-                    year: w.year ?? undefined, 
-                    role: w.role ?? undefined,
-                    is_atomic: false, // Results of expanding an Atomic are always Composites (Cards)
-                    edge_meta: {
-                        evidence: {
-                            kind: 'ai',
-                            pageTitle: (w as any).evidencePageTitle || node.title,
-                            snippet: (w as any).evidenceSnippet || '',
-                            url: looksLikeWikipediaTitle((w as any).evidencePageTitle || node.title)
-                                ? (
-                                    // If the evidence points at the current node title but we know Wikipedia has no usable page/extract,
-                                    // suppress the link (e.g., WNDR Museum redirecting to a person).
-                                    ((String((w as any).evidencePageTitle || node.title) === node.title) && !hasReliableWikipediaForThisTitle)
-                                        ? undefined
-                                        : buildWikiUrl((w as any).evidencePageTitle || node.title)
-                                )
-                                : undefined
-                        }
-                    },
-                    edge_label: w.role || null
-                }));
+                    .map(w => ({
+                        title: (w as any).wikipediaTitle || w.entity,
+                        // Allow the model to type works more specifically (e.g., Artwork) even in the Person↔Event session model.
+                        type: (w as any).type || currentCompositeType,
+                        description: w.description,
+                        year: w.year ?? undefined,
+                        role: w.role ?? undefined,
+                        is_atomic: false, // Results of expanding an Atomic are always Composites (Cards)
+                        edge_meta: {
+                            evidence: {
+                                kind: 'ai',
+                                pageTitle: (w as any).evidencePageTitle || node.title,
+                                snippet: (w as any).evidenceSnippet || '',
+                                url: looksLikeWikipediaTitle((w as any).evidencePageTitle || node.title)
+                                    ? (
+                                        // If the evidence points at the current node title but we know Wikipedia has no usable page/extract,
+                                        // suppress the link (e.g., WNDR Museum redirecting to a person).
+                                        ((String((w as any).evidencePageTitle || node.title) === node.title) && !hasReliableWikipediaForThisTitle)
+                                            ? undefined
+                                            : buildWikiUrl((w as any).evidencePageTitle || node.title)
+                                    )
+                                    : undefined
+                            }
+                        },
+                        edge_label: w.role || null
+                    }));
                 console.log(`✅ [Expand] Found ${results.length} connections for atomic "${node.title}"`);
             } else {
                 // Pass a longer verified extract when available so the LLM can pick evidence sentences.
@@ -1220,33 +1240,49 @@ const App: React.FC = () => {
                     data = await fetchConnections(node.title, undefined, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
                 }
                 if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
-                
+
                 // Use the atomic type identified during classification if available, else default to 'Person'
                 const atomicTypeToUse = currentAtomicType || 'Person';
+
+                // [MANUAL FILTER] Drop known hallucinations or persistent mis-disambiguations
+                const nodeTitleLower = (node.title || '').toLowerCase();
+                const isVanGoghContext = nodeTitleLower.includes('van gogh') || nodeTitleLower.includes('starry night') || nodeTitleLower.includes('rhone');
+
                 results = (data.people || [])
-                    .filter(p => typeof (p as any)?.name === 'string' && (p as any).name.trim().length > 0)
-                    .map(p => ({ 
-                    title: (p as any).wikipediaTitle || p.name, 
-                    type: atomicTypeToUse, 
-                    description: p.description, 
-                    role: p.role,
-                    is_atomic: true, // Force circle UI for all atomic components
-                    edge_meta: {
-                        evidence: {
-                            kind: 'ai',
-                            pageTitle: (p as any).evidencePageTitle || node.title,
-                            snippet: (p as any).evidenceSnippet || '',
-                            url: looksLikeWikipediaTitle((p as any).evidencePageTitle || node.title)
-                                ? (
-                                    ((String((p as any).evidencePageTitle || node.title) === node.title) && !hasReliableWikipediaForThisTitle)
-                                        ? undefined
-                                        : buildWikiUrl((p as any).evidencePageTitle || node.title)
-                                )
-                                : undefined
+                    .filter(p => {
+                        const name = String((p as any)?.name || '').trim();
+                        if (!name) return false;
+
+                        // Prevent "Paul of Thebes" from linking to "The Starry Night" or Van Gogh
+                        if (isVanGoghContext && (name.toLowerCase().includes('paul of thebes') || name.toLowerCase().includes('paul the hermit'))) {
+                            console.log(`🛡️ [Expand] Manual filter blocked "${name}" for source "${node.title}"`);
+                            return false;
                         }
-                    },
-                    edge_label: p.role || null
-                }));
+
+                        return true;
+                    })
+                    .map(p => ({
+                        title: (p as any).wikipediaTitle || p.name,
+                        type: atomicTypeToUse,
+                        description: p.description,
+                        role: p.role,
+                        is_atomic: true, // Force circle UI for all atomic components
+                        edge_meta: {
+                            evidence: {
+                                kind: 'ai',
+                                pageTitle: (p as any).evidencePageTitle || node.title,
+                                snippet: (p as any).evidenceSnippet || '',
+                                url: looksLikeWikipediaTitle((p as any).evidencePageTitle || node.title)
+                                    ? (
+                                        ((String((p as any).evidencePageTitle || node.title) === node.title) && !hasReliableWikipediaForThisTitle)
+                                            ? undefined
+                                            : buildWikiUrl((p as any).evidencePageTitle || node.title)
+                                    )
+                                    : undefined
+                            }
+                        },
+                        edge_label: p.role || null
+                    }));
 
                 // Wikipedia-backed fallback for works: if the model returns nothing, extract at least the author/creator
                 // from the source page lead sentence (e.g., "is a book by Yuval Noah Harari").
@@ -1406,11 +1442,11 @@ const App: React.FC = () => {
                         }
                     }
 
-                    return { 
+                    return {
                         ...r,
                         // Use Wikipedia's resolved title to avoid ambiguous nodes (e.g., "Euphoria" -> "Euphoria (TV series)")
                         title: (rWiki.title || r.title),
-                        wikipedia_id: rWiki.pageid?.toString(), 
+                        wikipedia_id: rWiki.pageid?.toString(),
                         description: rWiki.extract || r.description,
                         meta: { ...(r.meta || {}), wikiSummary: rWiki.extract || undefined },
                         edge_meta: { evidence },
@@ -1530,12 +1566,23 @@ const App: React.FC = () => {
                     const s = String(title || '').trim();
                     if (!s) return false;
                     const lower = s.toLowerCase();
-                    if (/\b(celebrity|celeb|celebrities|guests|visitors|staff|team)\b/.test(lower)) return false;
+                    // Exclude generic terms that LLMs sometimes hallucinate in lists
+                    if (/\b(celebrity|celeb|celebrities|guests?|visitors?|staff|team|various|unknown)\b/.test(lower)) return false;
+
                     // Allow parenthetical disambiguation, but evaluate the base name.
                     const base = s.replace(/\s*\(.*\)\s*$/, '').trim();
                     const parts = base.split(/\s+/).filter(Boolean);
+
+                    if (parts.length === 0) return false;
+
                     // Heuristic: person names are usually 2+ tokens, each starting with a letter.
-                    if (parts.length < 2) return false;
+                    // However, mononymous people (Michelangelo, Prince, Madonna) should be allowed.
+                    if (parts.length === 1) {
+                        const name = parts[0];
+                        // Allow proper names (starts with capital) of at least 2 characters.
+                        return /^[A-Z]/.test(name) && name.length >= 2;
+                    }
+
                     if (parts.some(p => p.length < 2)) return false;
                     return true;
                 };
@@ -1601,7 +1648,7 @@ const App: React.FC = () => {
                     const existingNodeIds = new Set(prev.nodes.map(n => n.id));
                     const parentIsAtomic = !!(currentIsAtomic ?? node.is_atomic ?? (node as any).is_person);
                     const expectedChildIsAtomic = !parentIsAtomic;
-                    
+
                     processedNodes.forEach(cn => {
                         const meta = cn.meta || {};
                         const existing = nodeMap.get(cn.id);
@@ -1787,12 +1834,19 @@ const App: React.FC = () => {
                             description: (() => {
                                 // Don’t let the classifier’s “bipartite pair” instructional text become the node description.
                                 const d = String(geminiDescription || '').trim();
-                                const looksInstructional =
+                                const isInstructional =
                                     /\bbipartite\b/i.test(d) ||
                                     /\bappropriate\b/i.test(d) && /\bpair\b/i.test(d) ||
                                     /\batomic\b/i.test(d) ||
-                                    /\bcomposite\b/i.test(d);
-                                return wiki.extract || (looksInstructional ? '' : d) || '';
+                                    /\bcomposite\b/i.test(d) ||
+                                    d.toLowerCase().includes('start of path');
+
+                                // Prefer the concise AI description if it's high quality, 
+                                // especially if the wiki extract is very long or missing.
+                                if (d && !isInstructional) {
+                                    if (!wiki.extract || wiki.extract.length > 300) return d;
+                                }
+                                return wiki.extract || d || '';
                             })(),
                             wikipedia_id: wiki.pageid?.toString(),
                             is_atomic: isAtomic, // sending the atomic flag
@@ -1868,11 +1922,11 @@ const App: React.FC = () => {
         setError(null);
         setSearchId(prev => prev + 1);
 
-            // Clear screen first as requested
-            setGraphData({ nodes: [], links: [] });
-            setSelectedNode(null);
-            setSelectedLink(null);
-            setPathNodeIds([]); // Clear previous path highlighting
+        // Clear screen first as requested
+        setGraphData({ nodes: [], links: [] });
+        setSelectedNode(null);
+        setSelectedLink(null);
+        setPathNodeIds([]); // Clear previous path highlighting
 
         // Helper to clamp node positions within viewport bounds
         const clampToViewport = (x: number, y: number, margin: number = 100): { x: number, y: number } => {
@@ -2054,7 +2108,7 @@ const App: React.FC = () => {
             }
 
             if (!pathData || !pathData.path || pathData.path.length < 2) {
-                setError(usingDatabase 
+                setError(usingDatabase
                     ? "No path found in database. Try expanding nodes to build connections first."
                     : "The AI couldn't bridge these two entities. Try a different pair.");
                 return;
@@ -2064,22 +2118,22 @@ const App: React.FC = () => {
             let currentTailId = startNode.id;
             const totalPathLength = pathData.path.length;
             const steps = totalPathLength - 1; // Steps to process (excluding start node)
-            
+
             // Check if this is a database path (nodes already exist)
             const isDbPath = (pathData as any)._dbPath === true;
-            
+
             // Initialize path list - will be built as we discover the path
             const pathNodeIdsList: number[] = [];
-            
-            console.log("Path discovery:", { 
-                isDbPath, 
-                totalPathLength, 
-                steps, 
-                startNodeId: startNode.id, 
+
+            console.log("Path discovery:", {
+                isDbPath,
+                totalPathLength,
+                steps,
+                startNodeId: startNode.id,
                 endNodeId: endNode.id,
                 pathDataPath: pathData.path.map((p: any) => p.id || p.title)
             });
-            
+
             if (isDbPath) {
                 // Database path: nodes already exist, add them directly
                 // First, build the pathNodeIdsList from dbNodes (before setGraphData callback)
@@ -2087,7 +2141,7 @@ const App: React.FC = () => {
                 for (let i = 0; i < dbNodes.length; i++) {
                     pathNodeIdsList.push(dbNodes[i].id);
                 }
-                
+
                 setGraphData(current => {
                     const updatedNodes = [...current.nodes];
                     const updatedLinks = [...current.links];
@@ -2107,7 +2161,7 @@ const App: React.FC = () => {
 
                         // Check if node already exists in graph
                         let existingNode = updatedNodes.find(n => n.id === nodeId);
-                        
+
                         if (!existingNode) {
                             // Node doesn't exist, add it
                             // For positioning: first node uses startNode position, others position near previous node
@@ -2117,16 +2171,16 @@ const App: React.FC = () => {
                                 nodeX = startNode.x ?? (dimensions.width / 4);
                                 nodeY = startNode.y ?? (dimensions.height / 2);
                             } else {
-                            // Position near previous node
-                            const prevNodeId = dbNodes[i - 1].id;
-                            const prevNode = updatedNodes.find(n => n.id === prevNodeId);
-                            const prevX = prevNode?.x ?? (dimensions.width / 2);
-                            const prevY = prevNode?.y ?? (dimensions.height / 2);
-                            const offsetX = (Math.random() - 0.5) * 150;
-                            const offsetY = (Math.random() - 0.5) * 150;
-                            const clampedPos = clampToViewport(prevX + offsetX, prevY + offsetY, 80);
-                            nodeX = clampedPos.x;
-                            nodeY = clampedPos.y;
+                                // Position near previous node
+                                const prevNodeId = dbNodes[i - 1].id;
+                                const prevNode = updatedNodes.find(n => n.id === prevNodeId);
+                                const prevX = prevNode?.x ?? (dimensions.width / 2);
+                                const prevY = prevNode?.y ?? (dimensions.height / 2);
+                                const offsetX = (Math.random() - 0.5) * 150;
+                                const offsetY = (Math.random() - 0.5) * 150;
+                                const clampedPos = clampToViewport(prevX + offsetX, prevY + offsetY, 80);
+                                nodeX = clampedPos.x;
+                                nodeY = clampedPos.y;
                             }
 
                             existingNode = {
@@ -2171,7 +2225,7 @@ const App: React.FC = () => {
                 // AI path: fetch nodes one by one
                 // Track all node IDs in order as we build the path
                 pathNodeIdsList.push(startNode.id); // Start with start node
-                
+
                 for (let i = 1; i <= steps; i++) {
                     const step = pathData.path[i];
                     await new Promise(resolve => setTimeout(resolve, 500));
@@ -2261,20 +2315,20 @@ const App: React.FC = () => {
 
                     currentTailId = resolvedId;
                 }
-                
+
                 // Ensure endNode.id is included (it might be the same as the last resolvedId due to deduplication,
                 // or it might be different if the end node was created separately)
                 if (!pathNodeIdsList.includes(endNode.id)) {
                     pathNodeIdsList.push(endNode.id);
                 }
-                
+
                 console.log("AI path - nodes added to path list:", pathNodeIdsList);
             }
 
             // Highlight the path after completion (all nodes from start to end)
             // Clear selection first so path highlighting is not interfered with by focused node highlighting
             setSelectedNode(null);
-            
+
             console.log("Path node IDs collected:", pathNodeIdsList, "Total:", pathNodeIdsList.length);
             console.log("Path details before highlighting:", {
                 startNodeId: startNode.id,
@@ -2283,19 +2337,19 @@ const App: React.FC = () => {
                 steps: steps,
                 collectedIds: pathNodeIdsList
             });
-            
+
             // Wait for graph state to settle
             await new Promise(resolve => setTimeout(resolve, 300));
-            
+
             // Use the path we collected during discovery
             // Filter to only include nodes that actually exist in the graph
             const currentNodes = graphDataRef.current.nodes;
             const nodeIdsInGraph = new Set(currentNodes.map(n => n.id));
             const finalPathIds = pathNodeIdsList.filter(id => nodeIdsInGraph.has(id));
-            
+
             console.log("Final path node IDs to highlight:", finalPathIds, "Total nodes:", finalPathIds.length);
             console.log("Filtered out (not in graph):", pathNodeIdsList.filter(id => !nodeIdsInGraph.has(id)));
-            
+
             // Release fixed positions after path discovery completes (let nodes move naturally)
             // Also gently lay out the discovered path along a smooth arc to avoid a single long edge that stays stretched
             setGraphData(current => {
@@ -2333,7 +2387,7 @@ const App: React.FC = () => {
                 });
                 return { ...current, nodes: updatedNodes };
             });
-            
+
             setPathNodeIds([...finalPathIds]); // Create a new array to ensure React detects the change
             setNotification({ message: "Path discovery complete!", type: 'success' });
 
@@ -2395,7 +2449,7 @@ const App: React.FC = () => {
                         console.warn("Database check for query failed", e);
                     }
                 }
-                
+
                 if (!foundInDb) {
                     handleStartSearch(query, 1);
                 }
@@ -2600,16 +2654,16 @@ const App: React.FC = () => {
                     // Re-verify neighbor state using latest data from ref
                     const latestNodes = graphDataRef.current.nodes;
                     const nodeToExpand = latestNodes.find(n => n.id === targetNode.id);
-                    
+
                     if (!nodeToExpand || nodeToExpand.expanded || nodeToExpand.isLoading) {
                         continue;
                     }
 
                     console.log(`🖱️ [Bulk Expand] Triggering expansion for "${nodeToExpand.title}"`);
-                    
+
                     // Call without skip flags to match manual click behavior exactly
                     await fetchAndExpandNode(nodeToExpand, false, false, undefined, undefined, false, false);
-                    
+
                     // Brief pause between expansions for visual clarity and state settling
                     await new Promise(resolve => setTimeout(resolve, 600));
                 } catch (e) {
@@ -2765,7 +2819,7 @@ const App: React.FC = () => {
             // First click: initiate selection request
             setContextMenu(null);
             setSelectedLink(null);
-            
+
             if (node.expanded || node.isLoading) {
                 // Already expanded: fulfill selection request immediately (connections are ready)
                 setSelectedNode(node);
@@ -2963,33 +3017,33 @@ const App: React.FC = () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ name, data: graphData })
             })
-            .then(async res => {
-                if (res.ok) {
-                    setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
-                    setNotification({ message: `Graph "${name}" saved to database!`, type: 'success' });
-                } else {
-                    const errorText = await res.text().catch(() => "Unknown error");
-                    throw new Error(`Server error (${res.status}): ${errorText}`);
-                }
-            })
-            .catch(err => {
-                console.error("Database save failed, falling back to local storage", err);
-                try {
-                    localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(graphData));
-                    setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
-                    const isOffline = err.message.includes("Failed to fetch") || err.message.includes("NetworkError");
-                    setNotification({ 
-                        message: `Graph "${name}" saved locally${isOffline ? ' (database offline)' : ' (db error)'}.`, 
-                        type: isOffline ? 'success' : 'error' 
-                    });
-                } catch (localErr) {
-                    console.error("Local storage save also failed", localErr);
-                    setNotification({ 
-                        message: `Failed to save graph "${name}" (too large for database and local storage).`, 
-                        type: 'error' 
-                    });
-                }
-            });
+                .then(async res => {
+                    if (res.ok) {
+                        setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
+                        setNotification({ message: `Graph "${name}" saved to database!`, type: 'success' });
+                    } else {
+                        const errorText = await res.text().catch(() => "Unknown error");
+                        throw new Error(`Server error (${res.status}): ${errorText}`);
+                    }
+                })
+                .catch(err => {
+                    console.error("Database save failed, falling back to local storage", err);
+                    try {
+                        localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(graphData));
+                        setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
+                        const isOffline = err.message.includes("Failed to fetch") || err.message.includes("NetworkError");
+                        setNotification({
+                            message: `Graph "${name}" saved locally${isOffline ? ' (database offline)' : ' (db error)'}.`,
+                            type: isOffline ? 'success' : 'error'
+                        });
+                    } catch (localErr) {
+                        console.error("Local storage save also failed", localErr);
+                        setNotification({
+                            message: `Failed to save graph "${name}" (too large for database and local storage).`,
+                            type: 'error'
+                        });
+                    }
+                });
         } else {
             localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(graphData));
             setSavedGraphs(prev => prev.includes(name) ? prev : [...prev, name].sort());
@@ -3106,7 +3160,7 @@ const App: React.FC = () => {
                     >
                         {panelCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
                     </button>
-                    <button 
+                    <button
                         onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); setShowBrowse(false); }}
                         className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap hover:text-red-400 transition-colors"
                     >
@@ -3135,8 +3189,8 @@ const App: React.FC = () => {
             {/* Always mount BrowsePeople to retain state, but hide it based on showBrowse */}
             <div className={`fixed inset-0 z-40 ${showBrowse ? 'block' : 'hidden'}`}>
                 <Suspense fallback={<div className="flex items-center justify-center h-full bg-slate-900 text-slate-400">Loading People Browser...</div>}>
-                    <BrowsePeople 
-                        baseUrl={window.location.origin} 
+                    <BrowsePeople
+                        baseUrl={window.location.origin}
                         exploreTerm={exploreTerm}
                         onSelect={(name) => {
                             setExploreTerm(name);
@@ -3146,7 +3200,7 @@ const App: React.FC = () => {
                             window.history.pushState({}, '', newUrl);
                             setShowBrowse(false);
                             setTimeout(() => handleStartSearch(name), 100);
-                        }} 
+                        }}
                     />
                 </Suspense>
             </div>
@@ -3223,6 +3277,7 @@ const App: React.FC = () => {
                     onCollapseChange={setSidebarCollapsed}
                     externalToggleSignal={sidebarToggleSignal}
                     onFindBetterImage={handleFindBetterImage}
+                    isAdminMode={isAdminMode}
                 />
                 <Suspense fallback={null}>
                     <PeopleBrowserSidebar
@@ -3265,7 +3320,7 @@ const App: React.FC = () => {
                 {/* Confirmation Dialog (blackout overlay + floating card) */}
                 {confirmDialog && confirmDialog.isOpen && (
                     <div className="fixed inset-0 z-[100] flex items-end justify-center pb-20 sm:items-center sm:pb-0 px-4">
-                        <div 
+                        <div
                             className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm animate-fade-in"
                             onClick={() => { setConfirmDialog(null); setDeletePreview(null); }}
                         ></div>

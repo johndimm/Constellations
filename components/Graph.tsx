@@ -302,10 +302,10 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
             const svg = d3.select(svgRef.current);
             const currentTransform = d3.zoomTransform(svgRef.current);
-            
+
             // Pan distance (adjustable)
             const panDistance = 50;
-            
+
             let newX = currentTransform.x;
             let newY = currentTransform.y;
 
@@ -365,13 +365,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 }
                 if (isCompact) {
                     // Tighter packing for compact mode, but prevent text overlap
-                    // Increased padding from +8 to +16 to account for labels
-                    if (dims.type === 'circle') return (dims.w / 2) + 16;
-                    if (dims.type === 'box') return (dims.w / 2) + 16;
+                    // Increased padding from +8 to +20 to account for labels
+                    if (dims.type === 'circle') return (dims.w / 2) + 20;
+                    if (dims.type === 'box') return (dims.w / 2) + 20;
                     // Cards are large, keep standard collision but maybe tighter
                     return dims.r * 0.8;
                 }
-                return dims.r + 5;
+                return dims.r + 15;
             })
             .strength(isTimelineMode ? 0.5 : 0.8) // Lower collision for timeline since events are fixed
             .iterations(isTimelineMode ? 3 : 3);
@@ -381,7 +381,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         simulation.force("collide", collideForce);
 
         if (isTimelineMode) {
-            const prevPositions = new Map(timelinePositionsRef.current);
+            const prevPositions = new Map<number, { x: number; y: number }>(timelinePositionsRef.current);
 
             const lockNodePosition = (node: GraphNode, x: number, y: number) => {
                 node.fx = x;
@@ -438,7 +438,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 !(n.is_person ?? n.type.toLowerCase() === 'person') &&
                 (n.year === undefined || n.year === null || n.year === 0)
             );
-            
+
             if (timelineNodes.length > 0) {
                 const personRadius = 110; // Match Person collision radius for timeline (2x size)
                 const minPersonDistance = personRadius * 2 + 20; // Spacing between people
@@ -494,13 +494,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
                 const totalRowWidth = actualSpacing * Math.max(0, totalRowCount - 1);
                 const rowStartX = width / 2 - (totalRowWidth / 2);
-                
+
                 // Place all people in a single row
                 desiredPositions.forEach((entry, index) => {
                     const { person } = entry;
                     const prev = prevPositions.get(person.id);
                     if (prev) {
-                        lockNodePosition(person, prev.x, prev.y);
+                        lockNodePosition(person, (prev as { x: number, y: number }).x, (prev as { x: number, y: number }).y);
                     } else {
                         const x = rowStartX + actualSpacing * index;
                         lockNodePosition(person, x, basePersonLineY);
@@ -539,7 +539,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             // No need for positioning forces since everything is fixed
             simulation.force("x", null);
             simulation.force("y", null);
-            
+
             // Increase velocity decay to stop all movement quickly
             simulation.velocityDecay(0.9);
 
@@ -563,7 +563,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
             simulation.force("x", null);
             simulation.force("y", null);
-            
+
             // Higher velocity decay for non-timeline mode to prevent spinning
             simulation.velocityDecay(0.85);
         }
@@ -686,7 +686,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             .attr("stroke-opacity", 0.7)
             .attr("stroke-width", 3.5)
             .attr("stroke-linecap", "round");
-        
+
         // In timeline mode, links are hidden by default, shown only when person is selected
         const linkMerged = linkSel.merge(linkEnter);
         if (isTimelineMode) {
@@ -719,7 +719,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         const nodeSel = container.selectAll<SVGGElement, GraphNode>(".node").data(nodes, d => d.id);
         const nodeEnter = nodeSel.enter().append("g")
             .attr("class", "node");
-        
+
         // Create drag behavior - only allow dragging if not in timeline mode, or if not a person node in timeline mode
         const dragBehavior = d3.drag<SVGGElement, GraphNode>()
             .on("start", (event, d) => {
@@ -746,7 +746,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 }
                 dragended(event, d);
             });
-        
+
         // Apply drag to all nodes (both new and existing)
         // nodeSel includes all nodes, so we call drag on the merged selection
         nodeEnter.merge(nodeSel).call(dragBehavior);
@@ -954,10 +954,10 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             links.forEach(l => {
                 const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
                 const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
-                
+
                 const sourceNode = nodes.find(n => n.id === sId);
                 const targetNode = nodes.find(n => n.id === tId);
-                
+
                 // If one is an event (has year) and one is a person (no year), add person to event
                 if (sourceNode && targetNode) {
                     if (sourceNode.year !== undefined && targetNode.year === undefined) {
@@ -979,10 +979,10 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
         allNodes.each(function (d) {
             const g = d3.select(this);
-            
+
             // Show all nodes (people are now visible in timeline mode)
             g.style("display", null);
-            
+
             const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
             const isHovered = d.id === hoveredNode?.id;
             const isFocused = d.id === effectiveFocused?.id;
@@ -1014,10 +1014,10 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             g.style("opacity", d.isLoading ? 1 : baseOpacity);
 
             const isPathHighlight = hasHighlight && dropHighlight.size === 0;
-            const strokeColor = isDrop 
-                ? "#f87171" 
-                : (isKeep && hasHighlight 
-                    ? (isPathHighlight ? "#f59e0b" : "#22c55e") 
+            const strokeColor = isDrop
+                ? "#f87171"
+                : (isKeep && hasHighlight
+                    ? (isPathHighlight ? "#f59e0b" : "#22c55e")
                     : (isHovered || isFocused ? "#f59e0b" : "#fff"));
             const strokeWidth = isDrop ? 3.5 : (isKeep && hasHighlight ? (isPathHighlight ? 3.5 : 2.5) : (isFocused ? 3 : 2));
 
@@ -1059,13 +1059,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     const padding = 15;
                     const imgH = (d.imageUrl && !isTextOnly) ? 140 : 0;
                     const imgSpacing = imgH > 0 ? 12 : 0;
-                    
+
                     // Check if we need space for people names in timeline mode
                     const connectedPeople = isTimelineMode ? (eventToPeople.get(d.id) || []) : [];
                     const hasPeople = connectedPeople.length > 0;
                     const peopleText = hasPeople ? connectedPeople.join(", ") : "";
                     const contentWidth = cardWidth - padding * 2;
-                    
+
                     // Truncate description to first sentence
                     let displayDescription = "";
                     if (d.description) {
@@ -1078,7 +1078,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                             displayDescription = d.description.substring(0, 150).trim();
                         }
                     }
-                    
+
                     // Create HTML content with everything (image and text) - browser will size it naturally
                     // Text is white (#ffffff) which will be visible on the blue card background from .node-rect
                     const htmlContent = `
@@ -1096,10 +1096,10 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                             ${hasPeople ? `<div style="font-size: 11px; color: #e2e8f0; font-style: italic; line-height: 1.4; word-wrap: break-word;">${escapeHtml(peopleText)}</div>` : ''}
                         </div>
                     `;
-                    
+
                     // Use foreignObject for automatic HTML layout and sizing
                     const cardContent = g.select(".card-content");
-                    
+
                     // Set initial size (will be measured and adjusted)
                     const initialHeight = 200;
                     cardContent
@@ -1109,26 +1109,26 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                         .attr("width", cardWidth)
                         .attr("height", initialHeight * 2)
                         .html(htmlContent);
-                    
+
                     // Hide SVG image and text elements (using HTML instead)
                     g.select("image").style("display", "none");
                     g.select(".node-label").style("display", "none");
                     g.select(".node-desc").style("display", "none");
                     g.select(".people-label").style("display", "none");
-                    
+
                     // Set initial card size (will be refined after measurement)
                     g.select(".node-rect")
                         .attr("width", cardWidth)
                         .attr("height", initialHeight)
                         .attr("x", -cardWidth / 2)
                         .attr("y", -initialHeight / 2);
-                    
+
                     // Update year label - always show in timeline mode if year exists
                     const yearLabel = g.select(".year-label");
                     yearLabel.text(d.year || "");
                     yearLabel.attr("y", -initialHeight / 2 - 10);
                     yearLabel.style("display", (isTimelineMode && d.year) ? "block" : ((isHovered && d.year) ? "block" : "none"));
-                    
+
                     // Set initial height for collision (will be updated after measurement)
                     d.h = initialHeight;
                 } else {
@@ -1154,43 +1154,43 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 .on("mouseover", () => setHoveredNode(d))
                 .on("mouseout", () => setHoveredNode(null));
         });
-        
+
         // Batch measure all card heights after browser renders (using requestAnimationFrame)
         if (isTimelineMode) {
             requestAnimationFrame(() => {
                 let hasChanges = false;
-                allNodes.each(function(d) {
+                allNodes.each(function (d) {
                     const isPersonNode = d.is_person ?? d.type.toLowerCase() === 'person';
                     if (isPersonNode) return; // Skip people nodes
                     const g = d3.select(this);
                     const cardContent = g.select(".card-content");
                     if (cardContent.empty()) return;
-                    
+
                     const foreignObj = cardContent.node() as SVGForeignObjectElement | null;
                     if (foreignObj && foreignObj.firstElementChild) {
                         const div = foreignObj.firstElementChild as HTMLElement;
                         const actualHeight = div.offsetHeight || div.scrollHeight;
                         const cardHeight = actualHeight;
                         const cardWidth = DEFAULT_CARD_SIZE; // Fixed width from getNodeDimensions
-                        
+
                         // Only update if height changed
                         if (d.h !== cardHeight) {
                             hasChanges = true;
-                            
+
                             // Update foreignObject position to center vertically
                             cardContent.attr("y", -cardHeight / 2);
-                            
+
                             // Update card rectangle
                             g.select(".node-rect")
                                 .attr("width", cardWidth)
                                 .attr("height", cardHeight)
                                 .attr("x", -cardWidth / 2)
                                 .attr("y", -cardHeight / 2);
-                            
+
                             // Update node dimensions for collision detection
                             d.h = cardHeight;
                         }
-                        
+
                         // Always update year label position and ensure it's visible in timeline mode
                         const yearLabel = g.select(".year-label");
                         yearLabel.text(d.year || "");
@@ -1198,7 +1198,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                         yearLabel.style("display", d.year ? "block" : "none");
                     }
                 });
-                
+
                 // After measuring card heights, trigger re-positioning of people nodes
                 // The timeline mode effect will re-run because nodes have changed (d.h updated)
                 // and it will position people using actual measured heights

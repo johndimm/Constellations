@@ -100,6 +100,7 @@ Rules:
 - If "${term}" is a named work (album, song, book, novel, film, painting, sculpture, artwork), choose Person ↔ Event and set isAtomic=false and type="Event".
 - If "${term}" contains an explicit disambiguator like "(album)" / "(song)" / "(film)" / "(book)", it is NOT a person: choose Person ↔ Event and set isAtomic=false and type="Event".
 - If "${term}" is an organization/institution/committee (NOT an individual human), choose Person ↔ Event and set isAtomic=false and type="Event".
+- If "${term}" is a major scientific theory, concept, discovery, or area of study (e.g., "General Relativity", "Evolution", "Quantum Mechanics"), choose Person ↔ Event and set isAtomic=false and type="Event".
 - If "${term}" looks like an academic paper (paper title, DOI, arXiv ID) or an academic author, choose Author ↔ Paper.
 - If "${term}" is a symptom (e.g., sore throat, runny nose), choose Symptom ↔ Disease.
 - If "${term}" is an ingredient (e.g., pepper, chicken, beef), choose Ingredient ↔ Recipe.
@@ -108,7 +109,7 @@ Rules:
 Return JSON:
 {
   "type": "Person | Event | Ingredient | Recipe | Symptom | Disease | Author | Paper",
-  "description": "Short 1-sentence description",
+  "description": "Vivid, factual, and extremely concise 1-sentence description (NOT generic)",
   "isAtomic": true/false,
   "atomicType": "Person | Ingredient | Symptom | Author",
   "compositeType": "Event | Recipe | Disease | Paper",
@@ -174,9 +175,9 @@ Return JSON:
   };
 };
 
-export const classifyEntity = async (term: string, wikiContext?: string): Promise<{ 
-  type: string; 
-  description: string; 
+export const classifyEntity = async (term: string, wikiContext?: string): Promise<{
+  type: string;
+  description: string;
   isAtomic: boolean;
   atomicType?: string;
   compositeType?: string;
@@ -231,6 +232,7 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
       - Organizations, institutions, committees, societies, companies, and museums are NOT persons.
       - In the Person↔Event pairing, treat organizations as "Event" (Composite), NOT "Person".
       - In the Person↔Event pairing, treat named works (albums, songs, books, novels, films, paintings, artworks) as "Event" (Composite), NOT "Person".
+      - In the Person↔Event pairing, treat major scientific theories, concepts, discoveries, or areas of study (e.g., "General Relativity", "Evolution", "Quantum Mechanics") as "Event" (Composite), NOT "Person".
       - If the title explicitly contains a disambiguator like "(album)" / "(film)" / "(book)", it is a work: treat it as "Event" (Composite).
       
       Identify the relevant Bipartite Pair this belongs to (e.g. Actor/Movie, Ingredient/Recipe, Symptom/Disease, Person/Event).
@@ -244,7 +246,7 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
         "compositeType": "What the composite side of the pair is called (e.g. Disease)",
         "reasoning": "Brief explanation of why it is atomic or composite in this bipartite context"
       }`;
-    
+
     console.log("🤖 [Gemini] Classify Prompt:", prompt);
 
     const makeApiCall = () => ai.models.generateContent({
@@ -272,15 +274,15 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
       2,
       400
     );
-    
+
     const rawText = getResponseText(response);
     const text = cleanJson(rawText);
     console.log("Classify response text:", text);
     if (!text) return { type: 'Event', description: '', isAtomic: false };
     const json = JSON.parse(text);
-    return { 
-      type: json.type || 'Event', 
-      description: json.description || '', 
+    return {
+      type: json.type || 'Event',
+      description: json.description || '',
       isAtomic: !!json.isAtomic,
       atomicType: json.atomicType,
       compositeType: json.compositeType,
@@ -293,10 +295,10 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
 };
 
 export const fetchConnections = async (
-  nodeName: string, 
-  context?: string, 
-  excludeNodes: string[] = [], 
-  wikiContext?: string, 
+  nodeName: string,
+  context?: string,
+  excludeNodes: string[] = [],
+  wikiContext?: string,
   wikipediaId?: string,
   atomicType?: string,
   compositeType?: string
@@ -306,7 +308,7 @@ export const fetchConnections = async (
     console.error("❌ [Gemini] fetchConnections: No API key found");
     throw new Error("No API key found");
   }
-  
+
   const ai = new GoogleGenAI({ apiKey });
 
   const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
@@ -326,19 +328,35 @@ export const fetchConnections = async (
   const compositeLabel = compositeType || "COMPOSITE entity";
   const personOnlyRule =
     (atomicType || "").trim().toLowerCase() === "person"
-      ? `\nCRITICAL: The atomic side is "Person" meaning individual human beings only.\n- Return ONLY specific individual people with proper names (e.g., "Jane Doe"), not categories or groups.\n- DO NOT return organizations, institutions, committees, councils, companies, museums, foundations, agencies, or any group entities.\n- DO NOT return generic or collective phrases like "Various Local Artists", "Local Artists", "Staff", "Visitors", "Students", "Members", "Volunteers", "Team", "The Public", "Curators".\n- If you cannot find enough specific individual humans, return fewer.`
+      ? `\nCRITICAL: The atomic side is "Person" meaning INDIVIDUAL HUMAN BEINGS ONLY.
+- Return ONLY specific individual people with proper names (e.g., "Jane Doe"), not categories, groups, or locations.
+- DO NOT return organizations, institutions, committees, councils, companies, museums, foundations, agencies, or any group entities.
+- DO NOT return locations, places, buildings, or geographical entities (e.g., do NOT return "Saint-Paul" as a person if it refers to the asylum or town).
+- DO NOT return generic or collective phrases like "Various Local Artists", "Local Artists", "Staff", "Visitors", "Students", "Members", "Volunteers", "Team", "The Public", "Curators".
+- If you cannot find enough specific individual humans, return fewer.`
       : "";
   const workSourceHint =
     (compositeType || "").trim().toLowerCase() === "event"
-      ? `\nIf the Source is a named work (e.g., artwork/painting/sculpture/album/book/film), return people directly connected to the work (creator, depicted subject/model if distinct, commissioners/patrons, notable collectors/owners, curators/restorers/biographers explicitly associated). Do NOT invent names; if only the creator is reliably connected, return only that person.`
+      ? `\nIf the Source is a named work (e.g., artwork/painting/sculpture/album/book/novel/film), you MUST return the primary creator(s) (author, artist, director, etc.) as the first few results. DO NOT omit the creator even if they are already widely known. Return people directly connected to the work (creator, depicted subject/model if distinct, commissioners/patrons, notable collectors/owners, curators/restorers/biographers explicitly associated). 
+- DO NOT return "Paul of Thebes" or "St. Paul the Hermit" for works by Van Gogh or related to "Saint-Paul-de-Mausole"; that is a mis-disambiguation of the place name.
+- Do NOT invent names; if only the creator is reliably connected, return only that person.`
+      : "";
+  const theorySourceHint =
+    /\b(theory|concept|discovery|law|principle|formula|field|science|physics|mathematics|biology|chemistry|mechanics|evolution|relativity)\b/i.test(compositeType || "") ||
+      /\b(theory|physics|mathematics|discovery|principle|mechanics|evolution|relativity)\b/i.test(nodeName)
+      ? `\nSPECIAL CASE (theory/concept/discovery): If the Source is a scientific theory, concept, or discovery, return the primary scientists, authors, or discoverers who established or significantly developed it.`
       : "";
 
   try {
     const prompt = `${contextualPrompt}${wikiPrompt}${excludePrompt}
-      This is a ${compositeLabel}. 
-      Return 8-10 key ${atomicLabel} entities (participants, victims, investigators, stars, ingredients, etc.) that make up this composite.
+      Source Node: ${nodeName} (Type: ${compositeLabel})
+      
+      Return 8-10 key ${atomicLabel} entities (participants, creators, major figures, stars, ingredients, etc.) that are fundamental components of this ${compositeLabel}.
+      
+      Straying Guardrails:
       ${personOnlyRule}
       ${workSourceHint}
+      ${theorySourceHint}
 
       IMPORTANT: For each returned entity, also provide:
       - wikipediaTitle: the canonical English Wikipedia article title for that entity (use parenthetical disambiguation when needed, e.g. "Euphoria (TV series)", "Prince (musician)").
@@ -348,14 +366,15 @@ export const fetchConnections = async (
       - If you cannot find a good verbatim quote in VERIFIED INFORMATION, still return evidenceSnippet as a brief, explicit rationale (no quotes) and set evidencePageTitle to the most relevant page title (usually the source).
       
       Examples:
+      - If Theory/Discovery: Return the primary scientists or researchers involved.
       - If Event/Incident: Return key people involved (victims, shooters, investigators).
       - If Movie: Return lead actors/director.
       - If Team: Return key players.
       - If Recipe: Return ingredients.
       - If Disease: Return symptoms.`;
-    
+
     console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
-    
+
     const makeApiCall = () => ai.models.generateContent({
       model: GEMINI_MODEL,
       contents: prompt,
@@ -406,9 +425,9 @@ export const fetchConnections = async (
 };
 
 export const fetchPersonWorks = async (
-  nodeName: string, 
-  excludeNodes: string[] = [], 
-  wikiContext?: string, 
+  nodeName: string,
+  excludeNodes: string[] = [],
+  wikiContext?: string,
   wikipediaId?: string,
   atomicType?: string,
   compositeType?: string
@@ -418,7 +437,7 @@ export const fetchPersonWorks = async (
     console.error("❌ [Gemini] fetchPersonWorks: No API key found");
     throw new Error("No API key found");
   }
-  
+
   const ai = new GoogleGenAI({ apiKey });
 
   const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
@@ -434,8 +453,14 @@ export const fetchPersonWorks = async (
        Return 8-10 NEW significant ${compositeLabel} entities.`
     : `List 8-10 DISTINCT, significant ${compositeLabel} entities that this ${atomicLabel} "${nodeName}"${wikiIdStr} belongs to or is part of.
        
-       CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, or specific historical event/incident. 
-       DO NOT return descriptive phrases, facts, or achievements.
+       CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, location, or specific historical event/incident. 
+       DO NOT return descriptive phrases, facts, or achievements. 
+       In the Person↔Event pair, treat locations (like "Saint-Paul-de-Mausole") as ${compositeLabel} entities.
+       
+       BIDIRECTIONAL RULE:
+       - If "${nodeName}" is an author, you MUST include their most famous books/novels/works.
+       - If "${nodeName}" is an artist, you MUST include their most famous paintings/sculptures/artworks.
+       - Ensure that if a user expands a creator, they find their works, and vice-versa.
        
        BUSINESSPERSON GUARDRAIL:
        - If "${nodeName}" appears to be an entrepreneur/business executive/investor, return ONLY organizations/companies/projects where they had a DIRECT ROLE (founder/co-founder/CEO/executive/chairman/partner/board member).
@@ -451,6 +476,11 @@ export const fetchPersonWorks = async (
        - Movements/periods/styles (e.g., "Impressionism", "Modernism") must be at most 1 item total, and only if you also returned >=6 works.
        - Do NOT return only movements/periods/styles; the primary goal is to list the artist's works.
        - Prefer the artist's works over generic groupings. For painters, return paintings/series by name (e.g., "Water Lilies", "Impression, Sunrise", "Haystacks", "Rouen Cathedral series").
+
+       SPECIAL CASE (music): If "${nodeName}" is a musician (instrumentalist/composer/songwriter), include major named albums/compositions.
+       - Albums and major compositions are valid ${compositeLabel} in this system.
+       - Set the returned item's "type" to "Album" (or "Composition" / "Symphony" / "Song" when clearly applicable).
+       - QUOTA: For a musician, return AT LEAST 6-8 specific major albums or compositions.
 
        SPECIAL CASE (academia/math): If "${nodeName}" is a mathematician/scientist/researcher, include major named papers (often coauthored).
        - Papers are valid ${compositeLabel} in this system.
@@ -475,7 +505,7 @@ export const fetchPersonWorks = async (
   try {
     const prompt = `${wikiPrompt}${contextPrompt}
       Ensure each entry is a different entity. Sort by year if applicable.`;
-    
+
     console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
 
     const makeApiCall = () => ai.models.generateContent({
@@ -535,7 +565,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  
+
   const wikiPrompt = (context?.startWiki || context?.endWiki)
     ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${context?.startWiki ? `[${start}]: ${context.startWiki}\n` : ''}${context?.endWiki ? `[${end}]: ${context.endWiki}\n` : ''}`
     : "";
@@ -599,7 +629,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
 
     const text = getResponseText(response);
     const json = JSON.parse(cleanJson(text));
-    
+
     // Ensure the path starts with the start node and ends with the end node
     if (json.path && json.path.length > 0) {
       const first = json.path[0].id.toLowerCase();
@@ -637,7 +667,7 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
   const apiKey = await getApiKey();
   if (!apiKey) return null;
   const ai = new GoogleGenAI({ apiKey });
-  
+
   const prompt = `Find the exact English Wikipedia article title for "${name}"${description ? ` described as "${description}"` : ''}.
     Also, if you know a specific Wikimedia Commons filename for a good portrait of this person/thing, include it.
     
@@ -646,7 +676,7 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
       "title": "Exact Wikipedia Title",
       "imageHint": "Optional filename like 'File:Person Name.jpg' or null"
     }`;
-    
+
   try {
     const response = await withTimeout(ai.models.generateContent({
       model: "gemini-2.0-flash",
@@ -663,7 +693,7 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
         }
       }
     }), 10000, "Title lookup timed out");
-    
+
     const text = getResponseText(response);
     const json = JSON.parse(cleanJson(text));
     return {

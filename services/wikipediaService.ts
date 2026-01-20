@@ -1,17 +1,28 @@
 
-export const fetchWikipediaImage = async (query: string, context?: string): Promise<string | null> => {
+export const fetchWikipediaImage = async (query: string, context?: string): Promise<{ url: string | null; pageId?: number; pageTitle?: string }> => {
   // Global cache to avoid repeated fetches for the same query during a session.
   // We ignore context in the key to prevent duplicate fetches when context changes.
   const cacheKey = query.trim().toLowerCase();
-  if (!(window as any).__wikiImageCache) (window as any).__wikiImageCache = new Map<string, string | null>();
-  const imgCache: Map<string, string | null> = (window as any).__wikiImageCache;
+  if (!(window as any).__wikiImageCache) (window as any).__wikiImageCache = new Map<string, { url: string | null; pageId?: number; pageTitle?: string }>();
+  const imgCache: Map<string, { url: string | null; pageId?: number; pageTitle?: string }> = (window as any).__wikiImageCache;
+
+  // Check if we have a cached result
   if (imgCache.has(cacheKey)) {
     const cached = imgCache.get(cacheKey);
     if (cached) return cached;
-    // If cached null, skip re-fetching
-    return null;
+
+    // For Person nodes, don't return cached null on first attempt - allow retry
+    // This helps with ambiguous names (Al Pacino, Keanu Reeves, etc.)
+    const isPerson = context?.toLowerCase() === 'person';
+    if (!isPerson) {
+      // For non-Person nodes, respect cached null to avoid repeated failed fetches
+      return { url: null };
+    }
+    // For Person nodes, clear the null cache and try again
+    imgCache.delete(cacheKey);
   }
-  const setCache = (val: string | null) => imgCache.set(cacheKey, val);
+
+  const setCache = (val: { url: string | null; pageId?: number; pageTitle?: string }) => imgCache.set(cacheKey, val);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -49,7 +60,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     return null;
   };
 
-  const fetchPageImage = async (title: string, signal: AbortSignal): Promise<string | null> => {
+  const fetchPageImage = async (title: string, signal: AbortSignal): Promise<{ url: string | null; pageId?: number; pageTitle?: string }> => {
     try {
       // 1. Get page info, thumbnail, and all images in one go
       const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages|pageprops|images&titles=${encodeURIComponent(title)}&pithumbsize=500&imlimit=50&redirects=1&origin=*`;
@@ -57,10 +68,10 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       const data = await res.json();
 
       const pages = data.query?.pages;
-      if (!pages) return null;
+      if (!pages) return { url: null };
 
       const page = Object.values(pages)[0] as any;
-      if (page?.pageprops && page.pageprops.disambiguation !== undefined) return null;
+      if (page?.pageprops && page.pageprops.disambiguation !== undefined) return { url: null };
 
       const candidates: { title: string; score: number; url?: string }[] = [];
 
@@ -71,7 +82,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         if (!excludePatterns.some(p => filename.includes(p)) && !filename.includes('.svg')) {
           candidates.push({
             title: page.pageimage || filename,
-            score: 100, // Bonus for being the official thumbnail
+            score: 1000, // Strong bonus for being the official thumbnail
             url: page.thumbnail.source
           });
         }
@@ -85,11 +96,12 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         });
       }
 
-      if (candidates.length === 0) return null;
+      if (candidates.length === 0) return { url: null };
 
       const cleanQuery = query.replace(/[()]/g, ' ').toLowerCase();
       const normalized = cleanQuery.trim().toLowerCase();
       const queryWords = cleanQuery.split(/\s+/).filter(w => w.length > 1);
+      const isPerson = context?.toLowerCase() === 'person';
 
       const scoredCandidates = candidates.map(c => {
         const t = c.title.toLowerCase();
@@ -98,21 +110,33 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         if (excludePatterns.some(p => t.includes(p))) return { ...c, score: -1000 };
 
         if (t.includes('poster') || t.includes('cover')) {
-          if (context?.toLowerCase() === 'person') s -= 200; // Penalize posters for people
+          if (isPerson) s -= 200; // Penalize posters for people
           else s += 300;
         }
-        if (t.includes('portrait') || t.includes('photo') || t.includes('face') || t.includes('headshot')) s += 200;
+
+        // IMPROVED: Boost person-specific images more aggressively
+        if (t.includes('portrait') || t.includes('photo') || t.includes('face') || t.includes('headshot')) {
+          s += isPerson ? 350 : 200; // Larger bonus for Person nodes
+        }
         if (t.includes('crop') || t.includes('head')) s += 150;
         if (t.includes('film') || t.includes('movie') || t.includes('tv') || t.includes('series')) s += 80;
+
         // Penalize sports contexts
         if (t.includes('soccer') || t.includes('football') || t.includes('rugby') || t.includes('cricket') || t.includes('goalkeeper') || t.includes('striker')) s -= 500;
         // Boost tech/science cues
         if (t.includes('computer') || t.includes('scientist') || t.includes('software') || t.includes('engineer') || t.includes('research') || t.includes('mahout') || t.includes('hadoop') || t.includes('data')) s += 400;
 
         // Heuristic: prefer the painting over the film for Mona Lisa-like queries
-        if (normalized.includes('mona lisa')) {
-          if (t.includes('film') || t.includes('poster') || t.includes('cover')) s -= 600;
-          if (t.includes('painting') || t.includes('portrait') || t.includes('leonardo') || t.includes('vinci')) s += 500;
+        if (normalized.includes('mona lisa') || normalized.includes('starry night') || normalized.includes('last supper') || normalized.includes('night watch')) {
+          if (t.includes('film') || t.includes('poster') || t.includes('cover')) s -= 800;
+          if (t.includes('rhone') || t.includes('rhône')) s -= 1200; // Specific penalty for Starry Night Over the Rhône
+          if (t.includes('painting') || t.includes('artwork') || t.includes('canvas') || t.includes('oil') || t.includes('masterpiece')) s += 800;
+          if (t.includes('moma') || t.includes('museum of modern art')) s += 500; // The Starry Night is at MoMA
+        }
+
+        // General artwork/sculpture boost for known composite types
+        if (t.includes('painting') || t.includes('sculpture') || t.includes('artwork') || t.includes('statue')) {
+          s += 200;
         }
 
         // Ted Dunning: favor the computer scientist over the footballer
@@ -124,14 +148,17 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         // Reward solo portraits, penalize group shots
         if (t.includes('with') || t.includes(' and ') || t.includes(' family') || t.includes(' group')) s -= 250;
 
-        // Bonus for matching the query words exactly in the filename
+        // IMPROVED: Bonus for filename containing the person's name parts
         const matches = queryWords.filter(w => t.includes(w)).length;
-        s += (matches / Math.max(1, queryWords.length)) * 400;
+        const nameMatchBonus = isPerson ? 500 : 400; // Higher bonus for Person nodes
+        s += (matches / Math.max(1, queryWords.length)) * nameMatchBonus;
 
         // Penalty for non-JPEG/PNG (like SVG or WebM)
         if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
-        if (t.includes('.jpg') || t.includes('.jpeg')) s += 100; // Increased bonus for JPEG
-        if (t.includes('.png')) s -= 50; // Penalize PNGs for people (often low-res video stills)
+        if (t.includes('.jpg') || t.includes('.jpeg')) s += 100;
+
+        // IMPROVED: Reduce PNG penalty for Person nodes (many Wikipedia portraits are PNG)
+        if (t.includes('.png')) s -= isPerson ? 20 : 50;
 
         // Prefer solo filenames
         const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
@@ -142,22 +169,29 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
 
       const best = scoredCandidates[0];
       if (!best || best.score < -100) {
-        setCache(null);
-        return null;
+        const result = { url: null };
+        setCache(result);
+        return result;
       }
 
+      // Return URL with page ID and title for disambiguation tracking
+      const pageId = page?.pageid;
+      const pageTitle = page?.title;
+
       if (best.url) {
-        setCache(best.url);
-        return best.url;
+        const result = { url: best.url, pageId, pageTitle };
+        setCache(result);
+        return result;
       }
       const fetched = await fetchImageInfo(best.title, signal);
-      setCache(fetched);
-      return fetched;
+      const result = { url: fetched, pageId, pageTitle };
+      setCache(result);
+      return result;
 
     } catch (e) {
       console.error(`Error in fetchPageImage for ${title}:`, e);
     }
-    return null;
+    return { url: null };
   };
 
   const fetchGoogleBooksImage = async (q: string, signal: AbortSignal): Promise<string | null> => {
@@ -186,7 +220,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     if (query.toLowerCase().startsWith('file:') || query.toLowerCase().startsWith('image:')) {
       console.log(`🔍 [ImageSearch] Direct file lookup: "${query}"`);
       const direct = await fetchImageInfo(query, controller.signal);
-      if (direct) return direct;
+      if (direct) return { url: direct };
     }
 
     const baseTitle = query.includes('(') ? query.split('(')[0].trim() : query;
@@ -247,70 +281,113 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     const directImg = await fetchPageImage(bestTitle, controller.signal);
     if (directImg) return directImg;
 
-    // Attempt 2: Base Title + Suffixes
+    // IMPROVED: For Person nodes, try Wikimedia Commons earlier (was Attempt 3)
+    const isPerson = context?.toLowerCase() === 'person';
+    if (isPerson) {
+      console.log(`🔍 [ImageSearch] Attempt 2 (Commons for Person): "${baseTitle}"`);
+      const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(baseTitle)}&srnamespace=6&srlimit=10&origin=*`;
+      const commonsRes = await fetch(commonsUrl, { signal: controller.signal });
+      const commonsData = await commonsRes.json();
+      if (commonsData.query?.search?.length) {
+        const baseWords = baseTitle.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+        const scoredResults = commonsData.query.search.map((res: any) => {
+          const t = res.title.toLowerCase();
+          if (excludePatterns.some(p => t.includes(p))) return { res, score: -1000 };
+          let s = 0;
+          if (t.includes('portrait') || t.includes('photo') || t.includes('face') || t.includes('headshot')) s += 350; // Higher for Person
+          if (t.includes('crop') || t.includes('head')) s += 150;
+
+          if (t.includes('with') || t.includes(' and ') || t.includes(' family') || t.includes(' group')) s -= 250;
+
+          const matches = baseWords.filter(w => t.includes(w));
+          if (matches.length < Math.min(2, baseWords.length)) return { res, score: -500 };
+          s += (matches.length / baseWords.length) * 600; // Higher bonus for name matching
+
+          if (t.includes('.jpg') || t.includes('.jpeg')) s += 100;
+          if (t.includes('.png')) s -= 20; // Reduced penalty for Person
+          if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
+
+          const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
+          s -= (wordCount * 15);
+
+          return { res, score: s };
+        }).sort((a: any, b: any) => b.score - a.score);
+
+        const best = scoredResults[0];
+        if (best && best.score > 0) {
+          const img = await fetchImageInfo(best.res.title, controller.signal);
+          if (img) return { url: img };
+        }
+      }
+    }
+
+    // Attempt 3: Base Title + Suffixes (was Attempt 2)
     const suffixes = [" (TV series)", " (film)", " (series)", " (book)", " (miniseries)", " (TV program)"];
     for (const suffix of suffixes) {
       const titleToTry = baseTitle + suffix;
       if (titleToTry === query) continue;
 
-      console.log(`🔍 [ImageSearch] Attempt 2 (Suffix): "${titleToTry}"`);
+      console.log(`🔍 [ImageSearch] Attempt 3 (Suffix): "${titleToTry}"`);
       const img = await fetchPageImage(titleToTry, controller.signal);
       if (img) return img;
     }
 
-    // Attempt 3: Wikimedia Commons Search (Global)
-    console.log(`🔍 [ImageSearch] Attempt 3 (Commons): "${baseTitle}"`);
-    const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(baseTitle)}&srnamespace=6&srlimit=10&origin=*`;
-    const commonsRes = await fetch(commonsUrl, { signal: controller.signal });
-    const commonsData = await commonsRes.json();
-    if (commonsData.query?.search?.length) {
-      const baseWords = baseTitle.toLowerCase().split(/\s+/).filter(w => w.length > 1);
-      const scoredResults = commonsData.query.search.map((res: any) => {
-        const t = res.title.toLowerCase();
-        if (excludePatterns.some(p => t.includes(p))) return { res, score: -1000 };
-        let s = 0;
-        if (t.includes('portrait') || t.includes('photo') || t.includes('face') || t.includes('headshot')) s += 200;
-        if (t.includes('poster') || t.includes('cover')) s += 300;
-        if (t.includes('crop') || t.includes('head')) s += 150;
-        if (t.includes('film') || t.includes('movie') || t.includes('tv') || t.includes('series')) s += 80;
+    // Attempt 4: Wikimedia Commons Search (Global) - for non-Person or as fallback
+    if (!isPerson) {
+      console.log(`🔍 [ImageSearch] Attempt 4 (Commons): "${baseTitle}"`);
+      const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(baseTitle)}&srnamespace=6&srlimit=10&origin=*`;
+      const commonsRes = await fetch(commonsUrl, { signal: controller.signal });
+      const commonsData = await commonsRes.json();
+      if (commonsData.query?.search?.length) {
+        const baseWords = baseTitle.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+        const scoredResults = commonsData.query.search.map((res: any) => {
+          const t = res.title.toLowerCase();
+          if (excludePatterns.some(p => t.includes(p))) return { res, score: -1000 };
+          let s = 0;
+          if (t.includes('portrait') || t.includes('photo') || t.includes('face') || t.includes('headshot')) s += 200;
+          if (t.includes('poster') || t.includes('cover')) s += 300;
+          if (t.includes('crop') || t.includes('head')) s += 150;
+          if (t.includes('film') || t.includes('movie') || t.includes('tv') || t.includes('series')) s += 80;
 
-        if (t.includes('with') || t.includes(' and ') || t.includes(' family') || t.includes(' group')) s -= 250;
+          if (t.includes('with') || t.includes(' and ') || t.includes(' family') || t.includes(' group')) s -= 250;
 
-        const matches = baseWords.filter(w => t.includes(w));
-        if (matches.length < Math.min(2, baseWords.length)) return { res, score: -500 };
-        s += (matches.length / baseWords.length) * 500;
+          const matches = baseWords.filter(w => t.includes(w));
+          if (matches.length < Math.min(2, baseWords.length)) return { res, score: -500 };
+          s += (matches.length / baseWords.length) * 500;
 
-        if (t.includes('.jpg') || t.includes('.jpeg')) s += 100;
-        if (t.includes('.png')) s -= 50;
-        if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
+          if (t.includes('.jpg') || t.includes('.jpeg')) s += 100;
+          if (t.includes('.png')) s -= 50;
+          if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
 
-        const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
-        s -= (wordCount * 15);
+          const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
+          s -= (wordCount * 15);
 
-        return { res, score: s };
-      }).sort((a: any, b: any) => b.score - a.score);
+          return { res, score: s };
+        }).sort((a: any, b: any) => b.score - a.score);
 
-      const best = scoredResults[0];
-      if (best && best.score > 0) {
-        const img = await fetchImageInfo(best.res.title, controller.signal);
-        if (img) return img;
+        const best = scoredResults[0];
+        if (best && best.score > 0) {
+          const img = await fetchImageInfo(best.res.title, controller.signal);
+          if (img) return { url: img };
+        }
       }
     }
 
-    // Attempt 4: General Wikipedia Search
-    console.log(`🔍 [ImageSearch] Attempt 4 (Search): "${baseTitle}"`);
+    // Attempt 5: General Wikipedia Search
+    console.log(`🔍 [ImageSearch] Attempt 5 (Search): "${baseTitle}"`);
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(baseTitle)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl, { signal: controller.signal });
     const searchData = await searchRes.json();
     if (searchData.query?.search?.length) {
       for (const result of searchData.query.search) {
         const img = await fetchPageImage(result.title, controller.signal);
-        if (img) return img;
+        if (img.url) return img;
       }
     }
 
-    // Attempt 5: Google Books
-    return await fetchGoogleBooksImage(query, controller.signal);
+    // Attempt 6: Google Books (for books/works)
+    const googleImg = await fetchGoogleBooksImage(query, controller.signal);
+    if (googleImg) return { url: googleImg };
 
   } catch (e) {
     console.error("Image fetch failed:", query, e);
@@ -318,7 +395,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     clearTimeout(timeoutId);
   }
 
-  return null;
+  return { url: null };
 };
 
 export const fetchWikipediaSummary = async (
@@ -336,15 +413,6 @@ export const fetchWikipediaSummary = async (
   try {
     console.log(`📡 [Wiki] Fetching summary for "${query}"${context ? ` with context "${context}"` : ''}`);
 
-    const cleanQuery = query.replace(/\s*\(.*\)\s*/g, '').trim();
-    const normalized = cleanQuery.toLowerCase();
-    const summaryOverrides: Record<string, string> = {
-      "ted dunning": "Ted Dunning is a computer scientist, software architect, and machine learning expert known for his work on streaming algorithms, Mahout, and real-time analytics."
-    };
-    if (summaryOverrides[normalized]) return { extract: summaryOverrides[normalized], pageid: null, title: query };
-
-    // IMPORTANT: If the exact title exists as a non-disambiguation page, prefer it even when context is provided.
-    // This prevents cases like "Pablo Picasso" resolving to "(song)" due to contextual search ranking.
     const tryDirectLookup = async (titleToFetch: string) => {
       try {
         const directUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToFetch)}&redirects=1&origin=*`;
@@ -365,7 +433,11 @@ export const fetchWikipediaSummary = async (
             if (firstParagraph.length > 1000) {
               const truncated = firstParagraph.substring(0, 1000);
               const lastPeriod = truncated.lastIndexOf('.');
-              firstParagraph = lastPeriod > 500 ? truncated.substring(0, lastPeriod + 1) : truncated + "...";
+              if (lastPeriod > 500) {
+                firstParagraph = truncated.substring(0, lastPeriod + 1);
+              } else {
+                firstParagraph = truncated + "...";
+              }
             }
             const finalExtract = firstParagraph || null;
             if (finalExtract) {
@@ -377,12 +449,44 @@ export const fetchWikipediaSummary = async (
       return null;
     };
 
-    // If the caller provided an explicit disambiguated title, honor it BEFORE stripping "(...)"
-    // (e.g., "Chris Freeman (businessman)" should not resolve to the musician).
+    const cleanQuery = query.replace(/\s*\(.*\)\s*/g, '').trim();
+    const normalized = cleanQuery.toLowerCase();
+
+    // Explicit handle for "1984" to prefer the book in literary/composite contexts
+    if (normalized === '1984' || normalized === 'nineteen eighty-four') {
+      const isComposite = context?.toLowerCase() === 'event' || context?.toLowerCase() === 'composite' || context?.toLowerCase() === 'composite entity';
+      const literararyCtx = /\b(book|novel|literature|orwell|dystopia|fiction|author|writer)\b/i.test(context || '');
+      if (isComposite || literararyCtx) {
+        console.log(`📖 [Wiki] Force-redirecting "1984" to the book page due to context: "${context}".`);
+        const bookSummary = await tryDirectLookup('Nineteen Eighty-Four');
+        if (bookSummary?.extract) return bookSummary;
+      }
+    }
+
+    const summaryOverrides: Record<string, string> = {
+      "ted dunning": "Ted Dunning is a computer scientist, software architect, and machine learning expert known for his work on streaming algorithms, Mahout, and real-time analytics."
+    };
+    if (summaryOverrides[normalized]) return { extract: summaryOverrides[normalized], pageid: null, title: query };
+
+    // 0. If the caller provided an explicit disambiguated title, honor it IMMEDIATELY
+    // before stripping (...) or performing contextual search.
+    // (e.g., "Prince (musician)" must resolve to the musician, not the generic royal title "Prince").
     const trimmedQuery = query.trim();
     if (trimmedQuery.includes("(") && trimmedQuery.includes(")")) {
       const direct = await tryDirectLookup(trimmedQuery);
-      if (direct?.extract) return direct;
+      if (direct?.extract) {
+        console.log(`🎯 [Wiki] Explicit parenthetical match found for "${trimmedQuery}". Using disambiguated page.`);
+        return direct;
+      }
+    }
+
+    // 1. Prioritize the exact query term (minus parentheses).
+    // If "Miles Davis" exists as a direct page, we should use it IMMEDIATELY 
+    // without drowning it in contextual search (which might favor the Quintet).
+    const directExact = await tryDirectLookup(cleanQuery);
+    if (directExact?.extract) {
+      console.log(`🎯 [Wiki] Exact title match found for "${cleanQuery}". Using primary page.`);
+      return directExact;
     }
 
     const contextIndicatesMusic = (ctx?: string) => {
@@ -440,10 +544,10 @@ export const fetchWikipediaSummary = async (
     let bestTitle = query;
     if (searchData.query?.search?.length) {
       const results = searchData.query.search;
-      const scoreResult = (r: any) => {
+      const scoreResult = (r: any, index: number) => {
         const title = r.title.toLowerCase();
         const snippet = (r.snippet || '').toLowerCase();
-        let s = 0;
+        let s = (index === 0) ? 200 : 0; // Small boost for the first result
 
         // Strongly penalize "List of ..." style pages unless the user explicitly asked for a list.
         // These are common false positives for people (e.g., "List of awards and nominations received by Zendaya").
@@ -512,23 +616,33 @@ export const fetchWikipediaSummary = async (
           }
         }
 
+        // Saint-Paul Disambiguation: favor the asylum over the person
+        if (normalized.includes('saint-paul') || normalized.includes('mausole')) {
+          const vanGoghCtx = /\b(van gogh|vincent|artist|painter|asylum|mental|hospital|france|provence)\b/i.test(context || '');
+          if (vanGoghCtx) {
+            if (title.includes('mausole') || title.includes('asylum') || title.includes('monastery')) s += 2000;
+            if (title.includes('paul of thebes') || title.includes('the hermit')) s -= 2500;
+          }
+        }
+
         if (/born\s\d{4}/.test(snippet)) s += 80;
 
         return s;
       };
 
-      const scored = results.map((r: any) => ({ r, score: scoreResult(r) })).sort((a, b) => b.score - a.score);
+      const scored = results.map((r: any, idx: number) => ({ r, score: scoreResult(r, idx) })).sort((a: any, b: any) => b.score - a.score);
       bestTitle = scored[0]?.r?.title || query;
 
-      const queryNameParts = cleanQuery.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-      const titleNameParts = bestTitle.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const queryNameParts = cleanQuery.toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
+      const titleNameParts = bestTitle.toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
+      // Require at least one full word match, not just a substring overlap
+      const hasFullWordMatch = queryNameParts.some(q => titleNameParts.includes(q));
       const hasOverlap = queryNameParts.some(q => titleNameParts.some(t => t.includes(q) || q.includes(t)));
 
-      if (!hasOverlap && (scored[0]?.score || 0) < 2000) {
-        console.log(`⚠️ [Wiki] Rejected "${bestTitle}" due to name mismatch with "${cleanQuery}" (Score: ${scored[0]?.score})`);
+      if (!hasFullWordMatch && (scored[0]?.score || 0) < 1500) {
+        console.log(`⚠️ [Wiki] Rejected "${bestTitle}" due to lack of full word match with "${cleanQuery}" (Score: ${scored[0]?.score})`);
         return { extract: null, pageid: null, title: null };
       }
-
       console.log(`✅ [Wiki] Chosen result "${bestTitle}" with score ${scored[0]?.score ?? 'n/a'}`);
     }
 
@@ -600,10 +714,6 @@ export const fetchWikipediaSummary = async (
     console.log(`❌ [Wiki] No summary found for "${bestTitle}" via search. Attempting direct lookup for "${cleanQuery}".`);
 
     // Direct lookup fallback (reuse helper)
-
-    // 1. Try exact clean query
-    const exactMatch = await tryDirectLookup(cleanQuery);
-    if (exactMatch) return exactMatch;
 
     // 2. Try Title Case (e.g. "andrew schloss" -> "Andrew Schloss")
     const toTitleCase = (str: string) => {

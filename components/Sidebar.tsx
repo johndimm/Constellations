@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GraphNode, GraphLink } from '../types';
-import { X, ExternalLink, Search } from 'lucide-react';
+import { X, ExternalLink, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface SidebarProps {
   selectedNode: GraphNode | null;
@@ -9,9 +9,10 @@ interface SidebarProps {
   onCollapseChange?: (collapsed: boolean) => void;
   externalToggleSignal?: number;
   onFindBetterImage?: (nodeId: number) => void;
+  isAdminMode?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, onCollapseChange, externalToggleSignal, onFindBetterImage }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, onCollapseChange, externalToggleSignal, onFindBetterImage, isAdminMode }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFullSummary, setShowFullSummary] = useState(false);
@@ -80,15 +81,25 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
   const isPerson = selectedNode.is_atomic ?? selectedNode.is_person ?? selectedNode.type.toLowerCase() === 'person';
 
   // Unified side panel styling - slides right on both mobile and desktop
-  const panelClasses = `fixed top-16 right-3 sm:right-4 z-50 transition-transform duration-300 ease-in-out ${isCollapsed ? 'translate-x-[calc(100%+2rem)]' : 'translate-x-0'}`;
-  const panelStyle = isMobile
-    ? { width: 'calc(100% - 1.5rem)', maxWidth: '24rem' }
-    : { width: '24rem' };
+  // Side panel styling - always slides right.
+  // When collapsed, we translate most of it away but leave 24px (1.5rem-ish) for the handle.
+  const panelWidth = isMobile ? 'calc(100vw - 1.5rem)' : '26rem';
+  const panelClasses = `fixed top-16 right-0 z-50 transition-transform duration-300 ease-in-out ${isCollapsed ? 'translate-x-[calc(100%-24px)]' : 'translate-x-0'}`;
+  const panelStyle = { width: panelWidth, maxWidth: '28rem', paddingRight: isMobile ? '0.75rem' : '1rem' };
 
   return (
     <>
       <div className={panelClasses} style={panelStyle}>
-        <div className="bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex flex-col p-6 max-h-[calc(100vh-2rem)] overflow-visible">
+        <div className="bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex flex-col p-6 h-[calc(100vh-6rem)] overflow-visible">
+          {/* Persistent Toggle Handle */}
+          <button
+            onClick={handleToggleCollapse}
+            className={`absolute top-1/2 -translate-y-1/2 -left-8 w-8 h-24 bg-slate-800 border border-slate-700 border-r-0 rounded-l-xl flex flex-col items-center justify-center text-slate-400 hover:text-white transition-all group shadow-xl ${isCollapsed ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {isCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+            <div className="[writing-mode:vertical-lr] text-[9px] uppercase tracking-tighter mt-1 font-bold">Details</div>
+          </button>
 
           <div className="flex-1 overflow-visible">
             <div className="flex justify-between items-start mb-4">
@@ -136,8 +147,8 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
                 </div>
               )}
 
-              {/* AI Classification Info */}
-              {(selectedNode.atomic_type || selectedNode.composite_type) && (
+              {/* AI Classification Info (Admin only) */}
+              {isAdminMode && (selectedNode.atomic_type || selectedNode.composite_type) && (
                 <div className="p-3 bg-blue-900/20 rounded-lg border border-blue-500/20">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-blue-400 px-1.5 py-0.5 bg-blue-500/10 rounded">
@@ -205,7 +216,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
                 )}
                 {(selectedNode as any)?.meta?.doi && (
                   <a
-                    href={`https://doi.org/${String((selectedNode as any).meta.doi).replace(/^https?:\/\/doi\\.org\\//i, '')}`}
+                    href={`https://doi.org/${String((selectedNode as any).meta.doi).replace(/^https?:\/\/doi\.org\//i, '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm"
@@ -223,7 +234,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
                   <ExternalLink size={16} />
                   <span>Read on Wikipedia</span>
                 </a>
-                
+
                 {onFindBetterImage && (
                   <button
                     onClick={() => onFindBetterImage(selectedNode.id)}

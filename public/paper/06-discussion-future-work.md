@@ -3,6 +3,13 @@
 ## Discussion: what Constellations is (and is not)
 Constellations is designed for **exploration**, not inference. While bipartite network analysis offers statistical models for affiliation data, Constellations operates in an open-world setting with locally constructed neighborhoods and focuses on user experience: recall, curiosity, and sensemaking.
 
+## LLM use case: connection discovery, not text generation
+An important distinction about the role of AI in Constellations: **we are not using the LLM to write text for the user**. That is typically the primary concern people have about AI systems—generated content that may be misleading, biased, or fabricated. Instead, Constellations uses the LLM to **find connections** between entities.
+
+This is conceptually very similar to how a search engine works: in response to a query, the search engine returns a series of links to documents, and some of them may not be relevant. Users are already accustomed to this pattern and have developed effective strategies for handling it—they simply skip over the irrelevant results and focus on the useful ones. The cognitive load and trust calibration required are familiar and manageable.
+
+In our application, irrelevant connections may occasionally appear in the graph. This should not be viewed as a catastrophic failure, but rather as an expected characteristic of exploratory retrieval systems. Users can quickly assess connection relevance through the attached evidence snippets and either dismiss spurious edges or follow promising ones. The interaction model naturally supports this filtering behavior without imposing undue burden.
+
 ## Limitations
 - **Open-world ambiguity and name collisions**: many entities share names (e.g., people vs works with the same title). Lightweight context helps, but disambiguation remains imperfect and can propagate errors into expansion.
 - **Model knowledge gaps and recency**: LLMs can be outdated, and Wikipedia coverage varies; the system can misclassify entities or miss important neighbors without stronger retrieval and verification.
