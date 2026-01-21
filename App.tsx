@@ -651,7 +651,7 @@ const App: React.FC = () => {
                     : new URL(`/api/poster?title=${encodeURIComponent(node.title)}`, window.location.origin).toString();
 
                 const res = await fetch(posterUrl);
-                if (res.ok) {
+                if (res.ok && String(res.headers.get('content-type') || '').includes('application/json')) {
                     const data = await res.json();
                     if (data?.url) {
                         setGraphData(prev => ({
@@ -667,6 +667,8 @@ const App: React.FC = () => {
                         setNotification({ message: "Poster found via server lookup.", type: 'success' });
                         return;
                     }
+                } else {
+                    console.warn("Poster proxy returned non-JSON or non-OK response", res.status, res.headers.get('content-type'));
                 }
             } catch (e) {
                 console.warn("Poster proxy fetch failed", e);

@@ -72,6 +72,31 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     return null;
   };
 
+  // Fetch P18 image from Wikidata given a Wikipedia title (client-side CORS friendly).
+  const fetchWikidataImageForTitle = async (title: string, signal: AbortSignal): Promise<string | null> => {
+    try {
+      const ppUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+      const ppRes = await fetch(ppUrl, { signal });
+      const ppData = await ppRes.json();
+      const pages = ppData?.query?.pages;
+      const page = pages ? (Object.values(pages)[0] as any) : null;
+      const qid = page?.pageprops?.wikibase_item;
+      if (!qid || !/^Q\d+$/.test(qid)) return null;
+
+      const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${qid}&origin=*`;
+      const wdRes = await fetch(wdUrl, { signal });
+      const wdData = await wdRes.json();
+      const claims = wdData?.entities?.[qid]?.claims;
+      const p18 = claims?.P18?.[0]?.mainsnak?.datavalue?.value as string | undefined;
+      if (!p18) return null;
+
+      const imgTitle = p18.startsWith('File:') ? p18 : `File:${p18}`;
+      return await fetchImageInfo(imgTitle, signal);
+    } catch {
+      return null;
+    }
+  };
+
   const fetchPageImage = async (title: string, signal: AbortSignal): Promise<{ url: string | null; pageId?: number; pageTitle?: string }> => {
     try {
       // 1. Get page info, thumbnail, and all images in one go
@@ -401,7 +426,11 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     const googleImg = await fetchGoogleBooksImage(query, controller.signal);
     if (googleImg) return { url: googleImg };
 
-    // Attempt 7: DuckDuckGo fallback for media titles (posters)
+    // Attempt 7: Wikidata P18 image
+    const wdImg = await fetchWikidataImageForTitle(query, controller.signal);
+    if (wdImg) return { url: wdImg };
+
+    // Attempt 8: DuckDuckGo fallback for media titles (posters)
     const looksLikeScreenWork = (t: string, ctx?: string) => {
       const hay = `${t} ${ctx || ''}`.toLowerCase();
       return /\b(film|movie|television series|tv series|miniseries|sitcom|drama series|comedy series|series)\b/i.test(hay);
