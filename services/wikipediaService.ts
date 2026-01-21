@@ -1,28 +1,40 @@
 
+type WikiImageCacheEntry = { url: string | null; pageId?: number; pageTitle?: string; misses?: number };
+
+// DuckDuckGo image search fallback (posters/cover art when Wikimedia lacks a usable image).
+export const fetchDuckDuckGoPoster = async (q: string): Promise<string | null> => {
+  // Respect network sandbox: if running in a browser without CORS, skip.
+  if (typeof window !== "undefined") {
+    console.warn("[ImageSearch][DDG] Skipping DuckDuckGo in browser (CORS will block).");
+    return null;
+  }
+  return null;
+};
+
 export const fetchWikipediaImage = async (query: string, context?: string): Promise<{ url: string | null; pageId?: number; pageTitle?: string }> => {
   // Global cache to avoid repeated fetches for the same query during a session.
   // We ignore context in the key to prevent duplicate fetches when context changes.
   const cacheKey = query.trim().toLowerCase();
-  if (!(window as any).__wikiImageCache) (window as any).__wikiImageCache = new Map<string, { url: string | null; pageId?: number; pageTitle?: string }>();
-  const imgCache: Map<string, { url: string | null; pageId?: number; pageTitle?: string }> = (window as any).__wikiImageCache;
+  if (!(window as any).__wikiImageCache) (window as any).__wikiImageCache = new Map<string, WikiImageCacheEntry>();
+  const imgCache: Map<string, WikiImageCacheEntry> = (window as any).__wikiImageCache;
 
   // Check if we have a cached result
   if (imgCache.has(cacheKey)) {
     const cached = imgCache.get(cacheKey);
-    if (cached) return cached;
+    if (cached?.url) return cached;
 
-    // For Person nodes, don't return cached null on first attempt - allow retry
-    // This helps with ambiguous names (Al Pacino, Keanu Reeves, etc.)
-    const isPerson = context?.toLowerCase() === 'person';
-    if (!isPerson) {
-      // For non-Person nodes, respect cached null to avoid repeated failed fetches
-      return { url: null };
-    }
-    // For Person nodes, clear the null cache and try again
-    imgCache.delete(cacheKey);
+    // Allow up to two refetch attempts across interactions before giving up.
+    const misses = cached?.misses ?? 0;
+    if (misses >= 2) return { url: null };
+    imgCache.delete(cacheKey); // clear and re-attempt
   }
 
-  const setCache = (val: { url: string | null; pageId?: number; pageTitle?: string }) => imgCache.set(cacheKey, val);
+  const setCache = (val: WikiImageCacheEntry) => imgCache.set(cacheKey, val);
+  const markMiss = () => {
+    const prev = imgCache.get(cacheKey);
+    const misses = (prev?.misses ?? 0) + 1;
+    imgCache.set(cacheKey, { url: null, misses });
+  };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -169,9 +181,8 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
 
       const best = scoredCandidates[0];
       if (!best || best.score < -100) {
-        const result = { url: null };
-        setCache(result);
-        return result;
+        markMiss();
+        return { url: null };
       }
 
       // Return URL with page ID and title for disambiguation tracking
@@ -185,7 +196,8 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       }
       const fetched = await fetchImageInfo(best.title, signal);
       const result = { url: fetched, pageId, pageTitle };
-      setCache(result);
+      if (fetched) setCache(result);
+      else markMiss();
       return result;
 
     } catch (e) {
@@ -389,6 +401,16 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     const googleImg = await fetchGoogleBooksImage(query, controller.signal);
     if (googleImg) return { url: googleImg };
 
+    // Attempt 7: DuckDuckGo fallback for media titles (posters)
+    const looksLikeScreenWork = (t: string, ctx?: string) => {
+      const hay = `${t} ${ctx || ''}`.toLowerCase();
+      return /\b(film|movie|television series|tv series|miniseries|sitcom|drama series|comedy series|series)\b/i.test(hay);
+    };
+    if (looksLikeScreenWork(query, context)) {
+      const ddgImg = await fetchDuckDuckGoPoster(query);
+      if (ddgImg) return { url: ddgImg };
+    }
+
   } catch (e) {
     console.error("Image fetch failed:", query, e);
   } finally {
@@ -396,6 +418,22 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
   }
 
   return { url: null };
+};
+
+// Heuristics to avoid "bad redirects" (e.g. org title -> person page).
+const looksLikeOrgTitle = (s: string) =>
+  /\b(museum|company|co\.|inc\.|inc|llc|ltd|limited|foundation|university|college|school|hospital|clinic|studio|agency|association|society|museum|gallery|team|club)\b/i.test(
+    String(s || "")
+  );
+
+const looksLikePersonExtract = (s: string) => {
+  const t = String(s || "").toLowerCase();
+  if (!t) return false;
+  if (/\bborn\s+\d{4}\b/.test(t)) return true;
+  // common lead-sentence patterns
+  if (/\b(is|was)\s+(an?|the)\s+(american|british|canadian|australian|irish|scottish|english|french|german|italian|spanish)\s+/.test(t))
+    return true;
+  return false;
 };
 
 export const fetchWikipediaSummary = async (
@@ -639,309 +677,334 @@ export const fetchWikipediaSummary = async (
       const hasFullWordMatch = queryNameParts.some(q => titleNameParts.includes(q));
       const hasOverlap = queryNameParts.some(q => titleNameParts.some(t => t.includes(q) || q.includes(t)));
 
-      if (!hasFullWordMatch && (scored[0]?.score || 0) < 1500) {
-        console.log(`⚠️ [Wiki] Rejected "${bestTitle}" due to lack of full word match with "${cleanQuery}" (Score: ${scored[0]?.score})`);
-        return { extract: null, pageid: null, title: null };
+      // 4. Resolve the best matching page from the search results, skipping disambiguation pages.
+      const candidates = searchData.query?.search?.length ? scored.map((s: any) => s.r.title) : [query];
+
+      for (const titleToTry of candidates) {
+        const summaryUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToTry)}&redirects=1&origin=*`;
+        const summaryRes = await fetch(summaryUrl);
+        const summaryData = await summaryRes.json();
+        const pages = summaryData.query?.pages;
+
+        if (pages) {
+          const page = Object.values(pages)[0] as any;
+          if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
+            const fullExtract = page.extract || "";
+
+            // Guard: if a title that looks like an org/venue redirects to a person page, ignore it.
+            if (looksLikeOrgTitle(cleanQuery) && String(page.title || "").toLowerCase() !== cleanQuery.toLowerCase()) {
+              if (looksLikePersonExtract(fullExtract)) {
+                console.log(`⚠️ [Wiki] Ignoring redirect mismatch for org-ish query "${cleanQuery}" -> "${page.title}"`);
+                continue; // Try next search result
+              }
+            }
+
+            // Split by double newline to get the first paragraph
+            let paragraphs = fullExtract.split(/\n\n|\r\n\r\n/);
+            let firstParagraph = paragraphs[0].trim();
+
+            if (!firstParagraph || firstParagraph.length > 1500) {
+              const lines = fullExtract.split(/\n|\r/);
+              if (lines[0].trim()) firstParagraph = lines[0].trim();
+            }
+
+            if (firstParagraph.length > 1000) {
+              const truncated = firstParagraph.substring(0, 1000);
+              const lastPeriod = truncated.lastIndexOf('.');
+              if (lastPeriod > 500) {
+                firstParagraph = truncated.substring(0, lastPeriod + 1);
+              } else {
+                firstParagraph = truncated + "...";
+              }
+            }
+
+            const finalExtract = firstParagraph || null;
+            if (!finalExtract || finalExtract.length < 50) {
+              console.log(`⚠️ [Wiki] Extract for "${page.title}" too short (${finalExtract?.length || 0} chars). Skipping.`);
+              continue; // Try next search result
+            }
+
+            console.log(`✅ [Wiki] Found summary for "${page.title}": "${finalExtract?.substring(0, 100)}..." (${finalExtract?.length || 0} chars)`);
+
+            if (avoidMedia && isMediaTitle(page.title)) {
+              const retryQuery = `${cleanQuery} ${context || 'person'}`;
+              console.log(`⚠️ [Wiki] Media page returned for "${cleanQuery}". Retrying with "${retryQuery}".`);
+              const retry = await fetchWikipediaSummary(retryQuery, context, visited, depth + 1);
+              if (retry.extract) return retry;
+            }
+
+            return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null };
+          }
+        }
       }
-      console.log(`✅ [Wiki] Chosen result "${bestTitle}" with score ${scored[0]?.score ?? 'n/a'}`);
+
+      console.log(`❌ [Wiki] No summary found for "${bestTitle}" via search. Attempting direct lookup for "${cleanQuery}".`);
+
+      // Direct lookup fallback (reuse helper)
+
+      // 2. Try Title Case (e.g. "andrew schloss" -> "Andrew Schloss")
+      const toTitleCase = (str: string) => {
+        return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+      };
+      const titleCased = toTitleCase(cleanQuery);
+      if (titleCased !== cleanQuery) {
+        console.log(`⚠️ [Wiki] Direct lookup failed given casing. Retrying with Title Case: "${titleCased}"`);
+        const titleMatch = await tryDirectLookup(titleCased);
+        if (titleMatch) return titleMatch;
+      }
+
+      console.log(`❌ [Wiki] No summary found for "${bestTitle}" matches.`);
     }
+    } catch (e) {
+      console.error(`❌ [Wiki] Error fetching summary for "${query}":`, e);
+    }
+    // Final fallback: if context was provided and failed, retry once with no context
+    if (context && !triedNoContext) {
+      console.log(`⚠️ [Wiki] Retrying "${query}" without context (previous attempt returned empty).`);
+      return await fetchWikipediaSummary(query, undefined, visited, depth + 1, true);
+    }
+    return { extract: null, pageid: null, title: null };
+  };
 
-    const summaryUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(bestTitle)}&redirects=1&origin=*`;
-    const summaryRes = await fetch(summaryUrl);
-    const summaryData = await summaryRes.json();
-    const pages = summaryData.query?.pages;
-
-    if (pages) {
+  // Fetch a longer plain-text extract (not just the intro) to help find evidence snippets.
+  // Returns at most maxChars characters of the page extract.
+  export const fetchWikipediaExtract = async (
+    title: string,
+    maxChars: number = 6000
+  ): Promise<{ extract: string | null; pageid: number | null; title: string | null }> => {
+    try {
+      const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&explaintext&exchars=${maxChars}&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const pages = data.query?.pages;
+      if (!pages) return { extract: null, pageid: null, title: null };
       const page = Object.values(pages)[0] as any;
       if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
-        const fullExtract = page.extract || "";
         // Guard: if a title that looks like an org/venue redirects to a person page, ignore it.
-        // Example: "WNDR Museum" redirects to a person page; that breaks org searches.
-        if (looksLikeOrgTitle(cleanQuery) && String(page.title || "").toLowerCase() !== cleanQuery.toLowerCase()) {
-          if (looksLikePersonExtract(fullExtract)) {
-            console.log(`⚠️ [Wiki] Ignoring redirect mismatch for org-ish query "${cleanQuery}" -> "${page.title}"`);
-            return { extract: null, pageid: null, title: null };
-          }
+        if (looksLikeOrgTitle(title) && String(page.title || "").toLowerCase() !== String(title).toLowerCase()) {
+          const full = String(page.extract || "");
+          if (looksLikePersonExtract(full)) return { extract: null, pageid: null, title: null };
         }
-        // Split by double newline to get the first paragraph
-        let paragraphs = fullExtract.split(/\n\n|\r\n\r\n/);
-        let firstParagraph = paragraphs[0].trim();
-
-        // If first paragraph is very long or empty, try splitting by single newline
-        if (!firstParagraph || firstParagraph.length > 1500) {
-          const lines = fullExtract.split(/\n|\r/);
-          if (lines[0].trim()) firstParagraph = lines[0].trim();
-        }
-
-        // Hard cap at 1000 characters to keep it concise
-        if (firstParagraph.length > 1000) {
-          const truncated = firstParagraph.substring(0, 1000);
-          const lastPeriod = truncated.lastIndexOf('.');
-          if (lastPeriod > 500) {
-            firstParagraph = truncated.substring(0, lastPeriod + 1);
-          } else {
-            firstParagraph = truncated + "...";
-          }
-        }
-
-        const finalExtract = firstParagraph || null;
-
-        console.log(`✅ [Wiki] Found summary for "${page.title}": "${finalExtract?.substring(0, 100)}..." (${finalExtract?.length || 0} chars)`);
-
-        if (avoidMedia && isMediaTitle(page.title)) {
-          const retryQuery = `${cleanQuery} ${context || 'person'}`;
-          console.log(`⚠️ [Wiki] Media page returned for "${cleanQuery}". Retrying with "${retryQuery}".`);
-          const retry = await fetchWikipediaSummary(retryQuery, context, visited, depth + 1);
-          if (retry.extract) return retry;
-        }
-
-        const isGeneric = page.title.toLowerCase() === cleanQuery.toLowerCase();
-        // Lower threshold to 60 chars (was 150) and remove aggressive film search.
-        // Andrew Schloss has a ~120 char bio which is valid.
-        if (isGeneric && (!finalExtract || finalExtract.length < 60)) {
-          console.log(`⚠️ [Wiki] Summary for "${page.title}" is very short (<60 chars), but returning it to avoid bad fallbacks.`);
-          // Removed aggressive "cleanQuery + film" search which was causing "Spencer" to return for "Andrew Schloss"
-        }
-
-        if ((!finalExtract || finalExtract.length < 50) && cleanQuery !== query) {
-          console.log(`⚠️ [Wiki] Summary too short, trying search with clean query: "${cleanQuery}"`);
-          return await fetchWikipediaSummary(cleanQuery, context, visited, depth + 1, triedNoContext);
-        }
-        return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null };
+        return { extract: page.extract || null, pageid: page.pageid || null, title: page.title || null };
       }
+    } catch (e) {
+      console.warn("fetchWikipediaExtract failed:", title, e);
     }
+    return { extract: null, pageid: null, title: null };
+  };
 
-    console.log(`❌ [Wiki] No summary found for "${bestTitle}" via search. Attempting direct lookup for "${cleanQuery}".`);
+  type WikidataKeyPeople = {
+    wikidataId: string;
+    founders: string[];
+    directors: string[];
+    ceos: string[];
+    keyPeople: string[];
+  };
 
-    // Direct lookup fallback (reuse helper)
-
-    // 2. Try Title Case (e.g. "andrew schloss" -> "Andrew Schloss")
-    const toTitleCase = (str: string) => {
-      return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
-    };
-    const titleCased = toTitleCase(cleanQuery);
-    if (titleCased !== cleanQuery) {
-      console.log(`⚠️ [Wiki] Direct lookup failed given casing. Retrying with Title Case: "${titleCased}"`);
-      const titleMatch = await tryDirectLookup(titleCased);
-      if (titleMatch) return titleMatch;
+  const extractWikidataItemIds = (claims: any, prop: string): string[] => {
+    const arr = claims?.[prop] || [];
+    const ids: string[] = [];
+    for (const c of arr) {
+      const v = c?.mainsnak?.datavalue?.value;
+      const id = v?.id;
+      if (typeof id === "string" && /^Q\d+$/.test(id)) ids.push(id);
     }
+    return ids;
+  };
 
-    console.log(`❌ [Wiki] No summary found for "${bestTitle}" matches.`);
-  } catch (e) {
-    console.error(`❌ [Wiki] Error fetching summary for "${query}":`, e);
-  }
-  // Final fallback: if context was provided and failed, retry once with no context
-  if (context && !triedNoContext) {
-    console.log(`⚠️ [Wiki] Retrying "${query}" without context (previous attempt returned empty).`);
-    return await fetchWikipediaSummary(query, undefined, visited, depth + 1, true);
-  }
-  return { extract: null, pageid: null, title: null };
-};
+  // Fetch cast/performer labels from Wikidata (P161) for a given title.
+  export const fetchWikidataCastForTitle = async (title: string, limit: number = 12): Promise<string[]> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const signal = controller.signal;
 
-// Heuristics to avoid "bad redirects" (e.g. org title -> person page).
-const looksLikeOrgTitle = (s: string) =>
-  /\b(museum|company|co\.|inc\.|inc|llc|ltd|limited|foundation|university|college|school|hospital|clinic|studio|agency|association|society|museum|gallery|team|club)\b/i.test(
-    String(s || "")
-  );
-
-const looksLikePersonExtract = (s: string) => {
-  const t = String(s || "").toLowerCase();
-  if (!t) return false;
-  if (/\bborn\s+\d{4}\b/.test(t)) return true;
-  // common lead-sentence patterns
-  if (/\b(is|was)\s+(an?|the)\s+(american|british|canadian|australian|irish|scottish|english|french|german|italian|spanish)\s+/.test(t))
-    return true;
-  return false;
-};
-
-// Fetch a longer plain-text extract (not just the intro) to help find evidence snippets.
-// Returns at most maxChars characters of the page extract.
-export const fetchWikipediaExtract = async (
-  title: string,
-  maxChars: number = 6000
-): Promise<{ extract: string | null; pageid: number | null; title: string | null }> => {
-  try {
-    const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&explaintext&exchars=${maxChars}&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
-    const res = await fetch(url);
-    const data = await res.json();
-    const pages = data.query?.pages;
-    if (!pages) return { extract: null, pageid: null, title: null };
-    const page = Object.values(pages)[0] as any;
-    if (page && !page.missing && !(page.pageprops && page.pageprops.disambiguation !== undefined)) {
-      // Guard: if a title that looks like an org/venue redirects to a person page, ignore it.
-      if (looksLikeOrgTitle(title) && String(page.title || "").toLowerCase() !== String(title).toLowerCase()) {
-        const full = String(page.extract || "");
-        if (looksLikePersonExtract(full)) return { extract: null, pageid: null, title: null };
-      }
-      return { extract: page.extract || null, pageid: page.pageid || null, title: page.title || null };
-    }
-  } catch (e) {
-    console.warn("fetchWikipediaExtract failed:", title, e);
-  }
-  return { extract: null, pageid: null, title: null };
-};
-
-type WikidataKeyPeople = {
-  wikidataId: string;
-  founders: string[];
-  directors: string[];
-  ceos: string[];
-  keyPeople: string[];
-};
-
-const extractWikidataItemIds = (claims: any, prop: string): string[] => {
-  const arr = claims?.[prop] || [];
-  const ids: string[] = [];
-  for (const c of arr) {
-    const v = c?.mainsnak?.datavalue?.value;
-    const id = v?.id;
-    if (typeof id === "string" && /^Q\d+$/.test(id)) ids.push(id);
-  }
-  return ids;
-};
-
-const fetchWikidataLabels = async (ids: string[], signal: AbortSignal): Promise<Record<string, string>> => {
-  const out: Record<string, string> = {};
-  const uniq = Array.from(new Set(ids)).filter(Boolean);
-  for (let i = 0; i < uniq.length; i += 50) {
-    const chunk = uniq.slice(i, i + 50);
     try {
-      const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=labels&languages=en&ids=${encodeURIComponent(chunk.join("|"))}&origin=*`;
+      let wikidataId: string | null = null;
+      try {
+        const pagepropsUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+        const ppRes = await fetch(pagepropsUrl, { signal });
+        const ppData = await ppRes.json();
+        const pages = ppData?.query?.pages;
+        if (pages) {
+          const page = Object.values(pages)[0] as any;
+          const candidate = page?.pageprops?.wikibase_item;
+          if (typeof candidate === "string" && /^Q\d+$/.test(candidate)) {
+            wikidataId = candidate;
+          }
+        }
+      } catch {
+        // ignore; fall through to search
+      }
+
+      if (!wikidataId) {
+        wikidataId = await resolveWikidataIdBySearch(title, signal);
+      }
+      if (!wikidataId) return [];
+
+      const entityUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${encodeURIComponent(wikidataId)}&origin=*`;
+      const entRes = await fetch(entityUrl, { signal });
+      const entData = await entRes.json();
+      const claims = entData?.entities?.[wikidataId]?.claims;
+      if (!claims) return [];
+
+      const castIds = extractWikidataItemIds(claims, "P161");
+      if (!castIds.length) return [];
+
+      const labelMap = await fetchWikidataLabels(castIds, signal);
+      const labels = castIds
+        .map(id => labelMap[id])
+        .filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+
+      return Array.from(new Set(labels)).slice(0, limit);
+    } catch {
+      return [];
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const fetchWikidataLabels = async (ids: string[], signal: AbortSignal): Promise<Record<string, string>> => {
+    const out: Record<string, string> = {};
+    const uniq = Array.from(new Set(ids)).filter(Boolean);
+    for (let i = 0; i < uniq.length; i += 50) {
+      const chunk = uniq.slice(i, i + 50);
+      try {
+        const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=labels&languages=en&ids=${encodeURIComponent(chunk.join("|"))}&origin=*`;
+        const res = await fetch(url, { signal });
+        const data = await res.json();
+        const entities = data?.entities || {};
+        for (const [id, ent] of Object.entries<any>(entities)) {
+          const label = ent?.labels?.en?.value;
+          if (label) out[id] = label;
+        }
+      } catch {
+        // ignore partial failures
+      }
+    }
+    return out;
+  };
+
+  const resolveWikidataIdBySearch = async (label: string, signal: AbortSignal): Promise<string | null> => {
+    try {
+      const url = `https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&limit=8&search=${encodeURIComponent(label)}&origin=*`;
       const res = await fetch(url, { signal });
       const data = await res.json();
-      const entities = data?.entities || {};
-      for (const [id, ent] of Object.entries<any>(entities)) {
-        const label = ent?.labels?.en?.value;
-        if (label) out[id] = label;
-      }
+      const results: any[] = data?.search || [];
+      if (!results.length) return null;
+
+      const normalized = label.trim().toLowerCase();
+      const mustContainMuseum = /\bmuseum\b/i.test(label);
+      const scored = results.map(r => {
+        const lab = String(r?.label || "");
+        const desc = String(r?.description || "");
+        const l = lab.trim().toLowerCase();
+        const d = desc.trim().toLowerCase();
+        let s = 0;
+        if (l === normalized) s += 1000;
+        if (l.includes(normalized)) s += 300;
+        if (mustContainMuseum && (l.includes("museum") || d.includes("museum"))) s += 500;
+        if (looksLikeOrgTitle(label) && (d.includes("museum") || d.includes("company") || d.includes("organisation") || d.includes("organization"))) s += 120;
+        return { id: r?.id, score: s };
+      }).sort((a, b) => b.score - a.score);
+
+      const best = scored[0]?.id;
+      return typeof best === "string" && /^Q\d+$/.test(best) ? best : null;
     } catch {
-      // ignore partial failures
+      return null;
     }
-  }
-  return out;
-};
+  };
 
-const resolveWikidataIdBySearch = async (label: string, signal: AbortSignal): Promise<string | null> => {
-  try {
-    const url = `https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&limit=8&search=${encodeURIComponent(label)}&origin=*`;
-    const res = await fetch(url, { signal });
-    const data = await res.json();
-    const results: any[] = data?.search || [];
-    if (!results.length) return null;
+  export const fetchWikidataKeyPeopleForTitle = async (title: string): Promise<WikidataKeyPeople | null> => {
+    const cacheKey = `wikidata_key_people|${(title || "").trim().toLowerCase()}`;
+    if (!(window as any).__wikidataPeopleCache) (window as any).__wikidataPeopleCache = new Map<string, WikidataKeyPeople | null>();
+    const cache: Map<string, WikidataKeyPeople | null> = (window as any).__wikidataPeopleCache;
+    if (cache.has(cacheKey)) return cache.get(cacheKey) || null;
 
-    const normalized = label.trim().toLowerCase();
-    const mustContainMuseum = /\bmuseum\b/i.test(label);
-    const scored = results.map(r => {
-      const lab = String(r?.label || "");
-      const desc = String(r?.description || "");
-      const l = lab.trim().toLowerCase();
-      const d = desc.trim().toLowerCase();
-      let s = 0;
-      if (l === normalized) s += 1000;
-      if (l.includes(normalized)) s += 300;
-      if (mustContainMuseum && (l.includes("museum") || d.includes("museum"))) s += 500;
-      if (looksLikeOrgTitle(label) && (d.includes("museum") || d.includes("company") || d.includes("organisation") || d.includes("organization"))) s += 120;
-      return { id: r?.id, score: s };
-    }).sort((a, b) => b.score - a.score);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const signal = controller.signal;
 
-    const best = scored[0]?.id;
-    return typeof best === "string" && /^Q\d+$/.test(best) ? best : null;
-  } catch {
-    return null;
-  }
-};
-
-export const fetchWikidataKeyPeopleForTitle = async (title: string): Promise<WikidataKeyPeople | null> => {
-  const cacheKey = `wikidata_key_people|${(title || "").trim().toLowerCase()}`;
-  if (!(window as any).__wikidataPeopleCache) (window as any).__wikidataPeopleCache = new Map<string, WikidataKeyPeople | null>();
-  const cache: Map<string, WikidataKeyPeople | null> = (window as any).__wikidataPeopleCache;
-  if (cache.has(cacheKey)) return cache.get(cacheKey) || null;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
-  const signal = controller.signal;
-
-  try {
-    // 1) Resolve Wikidata Q-id from the English Wikipedia page.
-    let wikidataId: string | null = null;
     try {
-      const pagepropsUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
-      const ppRes = await fetch(pagepropsUrl, { signal });
-      const ppData = await ppRes.json();
-      const pages = ppData?.query?.pages;
-      if (pages) {
-        const page = Object.values(pages)[0] as any;
-        const resolvedTitle = String(page?.title || "");
-        const candidate = page?.pageprops?.wikibase_item;
-        // If the "Wikipedia title" redirects to an unrelated person page, ignore it and fall back to Wikidata search.
-        const mismatch =
-          looksLikeOrgTitle(title) &&
-          resolvedTitle &&
-          resolvedTitle.toLowerCase() !== String(title).toLowerCase() &&
-          !/\bmuseum\b/i.test(resolvedTitle);
-        if (!mismatch && typeof candidate === "string" && /^Q\d+$/.test(candidate)) {
-          wikidataId = candidate;
+      // 1) Resolve Wikidata Q-id from the English Wikipedia page.
+      let wikidataId: string | null = null;
+      try {
+        const pagepropsUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+        const ppRes = await fetch(pagepropsUrl, { signal });
+        const ppData = await ppRes.json();
+        const pages = ppData?.query?.pages;
+        if (pages) {
+          const page = Object.values(pages)[0] as any;
+          const resolvedTitle = String(page?.title || "");
+          const candidate = page?.pageprops?.wikibase_item;
+          // If the "Wikipedia title" redirects to an unrelated person page, ignore it and fall back to Wikidata search.
+          const mismatch =
+            looksLikeOrgTitle(title) &&
+            resolvedTitle &&
+            resolvedTitle.toLowerCase() !== String(title).toLowerCase() &&
+            !/\bmuseum\b/i.test(resolvedTitle);
+          if (!mismatch && typeof candidate === "string" && /^Q\d+$/.test(candidate)) {
+            wikidataId = candidate;
+          }
         }
+      } catch {
+        // ignore and fall back to search
       }
+
+      // Fall back: label search (handles Wikipedia redirects like "WNDR Museum" -> a person).
+      if (!wikidataId) {
+        wikidataId = await resolveWikidataIdBySearch(title, signal);
+      }
+      if (!wikidataId) {
+        cache.set(cacheKey, null);
+        return null;
+      }
+
+      // 2) Pull key-people claims.
+      const entityUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${encodeURIComponent(wikidataId)}&origin=*`;
+      const entRes = await fetch(entityUrl, { signal });
+      const entData = await entRes.json();
+      const entity = entData?.entities?.[wikidataId];
+      const claims = entity?.claims;
+      if (!claims) {
+        cache.set(cacheKey, null);
+        return null;
+      }
+
+      // Wikidata properties:
+      // - P112: founder
+      // - P1037: director/manager
+      // - P169: chief executive officer
+      // - P3342: significant person / key person
+      const founderIds = extractWikidataItemIds(claims, "P112");
+      const directorIds = extractWikidataItemIds(claims, "P1037");
+      const ceoIds = extractWikidataItemIds(claims, "P169");
+      const keyPersonIds = extractWikidataItemIds(claims, "P3342");
+
+      const labelMap = await fetchWikidataLabels(
+        [...founderIds, ...directorIds, ...ceoIds, ...keyPersonIds],
+        signal
+      );
+
+      const toLabels = (ids: string[]) =>
+        Array.from(new Set(ids.map(id => labelMap[id]).filter((x): x is string => typeof x === "string" && x.trim().length > 0)));
+
+      const result: WikidataKeyPeople = {
+        wikidataId,
+        founders: toLabels(founderIds),
+        directors: toLabels(directorIds),
+        ceos: toLabels(ceoIds),
+        keyPeople: toLabels(keyPersonIds)
+      };
+
+      const hasAny =
+        result.founders.length || result.directors.length || result.ceos.length || result.keyPeople.length;
+
+      cache.set(cacheKey, hasAny ? result : null);
+      return hasAny ? result : null;
     } catch {
-      // ignore and fall back to search
-    }
-
-    // Fall back: label search (handles Wikipedia redirects like "WNDR Museum" -> a person).
-    if (!wikidataId) {
-      wikidataId = await resolveWikidataIdBySearch(title, signal);
-    }
-    if (!wikidataId) {
       cache.set(cacheKey, null);
       return null;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    // 2) Pull key-people claims.
-    const entityUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${encodeURIComponent(wikidataId)}&origin=*`;
-    const entRes = await fetch(entityUrl, { signal });
-    const entData = await entRes.json();
-    const entity = entData?.entities?.[wikidataId];
-    const claims = entity?.claims;
-    if (!claims) {
-      cache.set(cacheKey, null);
-      return null;
-    }
-
-    // Wikidata properties:
-    // - P112: founder
-    // - P1037: director/manager
-    // - P169: chief executive officer
-    // - P3342: significant person / key person
-    const founderIds = extractWikidataItemIds(claims, "P112");
-    const directorIds = extractWikidataItemIds(claims, "P1037");
-    const ceoIds = extractWikidataItemIds(claims, "P169");
-    const keyPersonIds = extractWikidataItemIds(claims, "P3342");
-
-    const labelMap = await fetchWikidataLabels(
-      [...founderIds, ...directorIds, ...ceoIds, ...keyPersonIds],
-      signal
-    );
-
-    const toLabels = (ids: string[]) =>
-      Array.from(new Set(ids.map(id => labelMap[id]).filter((x): x is string => typeof x === "string" && x.trim().length > 0)));
-
-    const result: WikidataKeyPeople = {
-      wikidataId,
-      founders: toLabels(founderIds),
-      directors: toLabels(directorIds),
-      ceos: toLabels(ceoIds),
-      keyPeople: toLabels(keyPersonIds)
-    };
-
-    const hasAny =
-      result.founders.length || result.directors.length || result.ceos.length || result.keyPeople.length;
-
-    cache.set(cacheKey, hasAny ? result : null);
-    return hasAny ? result : null;
-  } catch {
-    cache.set(cacheKey, null);
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-};
+  };

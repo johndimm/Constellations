@@ -37,7 +37,7 @@ Success signals (simple, measurable)
 Links
 - WNDR example graph: https://constellations-delta.vercel.app/?q=WNDR%20Museum
 - Paper (PDF draft): https://constellations-delta.vercel.app/paper/rendered/paper.pdf
-- Demo video (low-res): https://constellations-delta.vercel.app/demo.mp4
+- Demo video: https://constellations-delta.vercel.app/demo2.mp4
 - LinkedIn reactions/post: https://www.linkedin.com/feed/update/urn:li:activity:7409328608910946304/
 
 About me

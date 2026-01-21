@@ -6,7 +6,7 @@ import NodeContextMenu from './components/NodeContextMenu';
 import { GraphNode, GraphLink, PathResponse } from './types';
 import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, type LockedPair } from './services/geminiService';
 import { getApiKey } from './services/aiUtils';
-import { fetchWikipediaImage, fetchWikipediaSummary, fetchWikipediaExtract, fetchWikidataKeyPeopleForTitle } from './services/wikipediaService';
+import { fetchWikipediaImage, fetchWikipediaSummary, fetchWikipediaExtract, fetchWikidataKeyPeopleForTitle, fetchWikidataCastForTitle } from './services/wikipediaService';
 import {
     getOpenAlexWork,
     getTopWorksForAuthor,
@@ -635,6 +635,43 @@ const App: React.FC = () => {
                     return;
                 }
             }
+
+            // Fallback: even without an AI suggestion, force a fresh fetch on the current title.
+            await loadNodeImage(nodeId, node.title, node.type, undefined, { force: true });
+            const updated = graphDataRef.current.nodes.find(n => n.id === nodeId);
+            if (updated?.imageUrl) {
+                setNotification({ message: "Photo updated!", type: 'success' });
+                return;
+            }
+
+            // Last resort: server-side poster fetch (avoids browser CORS).
+            try {
+                const posterUrl = cacheEnabled
+                    ? new URL(`/api/poster?title=${encodeURIComponent(node.title)}`, cacheBaseUrl).toString()
+                    : new URL(`/api/poster?title=${encodeURIComponent(node.title)}`, window.location.origin).toString();
+
+                const res = await fetch(posterUrl);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data?.url) {
+                        setGraphData(prev => ({
+                            ...prev,
+                            nodes: prev.nodes.map(n => n.id === nodeId ? {
+                                ...n,
+                                imageUrl: data.url,
+                                fetchingImage: false,
+                                imageChecked: true
+                            } : n)
+                        }));
+                        saveCacheNodeMeta(nodeId, { imageUrl: data.url });
+                        setNotification({ message: "Poster found via server lookup.", type: 'success' });
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn("Poster proxy fetch failed", e);
+            }
+
             setNotification({ message: "No better photo found.", type: 'error' });
         } catch (e) {
             console.error("Find better image failed", e);
@@ -1322,6 +1359,43 @@ const App: React.FC = () => {
                             }
                         }
                         if (results.length) break;
+                    }
+                }
+
+                // Deterministic cast fallback for film/TV titles when the LLM under-returns.
+                const looksLikeScreenWork = (title: string, desc?: string) => {
+                    const hay = `${title} ${desc || ''}`.toLowerCase();
+                    return /\b(film|movie|television series|tv series|miniseries|sitcom|comedy series|drama series|streaming series)\b/i.test(hay);
+                };
+                if (looksLikeScreenWork(node.title, node.description || sourceLong)) {
+                    try {
+                        const castLabels = await fetchWikidataCastForTitle(node.title);
+                        if (castLabels.length) {
+                            const existingNames = new Set(results.map(r => normalizeForDedup(r.title)));
+                            castLabels.forEach(name => {
+                                const key = normalizeForDedup(name);
+                                if (!key || existingNames.has(key)) return;
+                                existingNames.add(key);
+                                results.push({
+                                    title: name,
+                                    type: atomicTypeToUse,
+                                    description: `Cast member in ${node.title}.`,
+                                    role: 'Cast',
+                                    is_atomic: true,
+                                    edge_meta: {
+                                        evidence: {
+                                            kind: 'wikipedia',
+                                            pageTitle: node.title,
+                                            snippet: `${name} is a cast member in ${node.title}.`,
+                                            url: looksLikeWikipediaTitle(node.title) ? buildWikiUrl(node.title) : undefined
+                                        }
+                                    },
+                                    edge_label: 'Cast'
+                                });
+                            });
+                        }
+                    } catch (e) {
+                        console.warn(`Cast fallback failed for ${node.title}`, e);
                     }
                 }
                 console.log(`✅ [Expand] Found ${results.length} atomic components for composite "${node.title}"`);

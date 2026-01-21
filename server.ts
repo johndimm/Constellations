@@ -6,6 +6,7 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import fetch from "node-fetch";
 
 // Load env from .env.local if present
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -173,6 +174,36 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Server-side DuckDuckGo image fetch (avoids browser CORS).
+const fetchPosterFromDuckDuckGo = async (q: string): Promise<string | null> => {
+  const exclude = ['logo', 'icon', 'emoji', 'svg', 'vector', 'clipart', 'cartoon', 'animated', 'posterized'];
+  try {
+    const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(q)}&iax=images&ia=images`;
+    const pageRes = await fetch(searchUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
+    const pageText = await pageRes.text();
+    const vqdMatch = pageText.match(/vqd['"]?:['"]?([^'"]+)/);
+    const vqd = vqdMatch?.[1];
+    if (!vqd) return null;
+
+    const apiUrl = `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(q)}&vqd=${encodeURIComponent(vqd)}&f=,,,&p=1`;
+    console.log(`[Poster][DDG] query="${q}" apiUrl=${apiUrl}`);
+    const apiRes = await fetch(apiUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
+    const data = await apiRes.json();
+    const results: any[] = data?.results || [];
+    for (const r of results) {
+      const url = String(r?.image || r?.thumbnail || '');
+      if (!url) continue;
+      const lower = url.toLowerCase();
+      if (exclude.some(p => lower.includes(p))) continue;
+      console.log(`[Poster][DDG] candidate`, { url: r?.image, thumbnail: r?.thumbnail, title: r?.title });
+      return url;
+    }
+  } catch (e) {
+    console.warn("[Poster][DDG] failed", q, e);
+  }
+  return null;
+};
 
 // Schema initializer
 const initSql = `
@@ -817,6 +848,22 @@ app.delete("/graphs/:name", async (req, res) => {
     res.status(500).json({ error: e.message });
   } finally {
     client.release();
+  }
+});
+
+// Poster proxy endpoint (server-side image lookup to avoid browser CORS).
+app.get("/api/poster", async (req, res) => {
+  const title = String(req.query.title || "").trim();
+  const context = String(req.query.context || "").trim();
+  if (!title) return res.status(400).json({ error: "title is required" });
+  const q = `${title} ${context}`.trim();
+  try {
+    const poster = await fetchPosterFromDuckDuckGo(q);
+    if (poster) return res.json({ url: poster });
+    return res.status(404).json({ url: null });
+  } catch (e: any) {
+    console.warn("[Poster][DDG] error for", q, e);
+    return res.status(500).json({ error: e?.message || "poster fetch failed" });
   }
 });
 
