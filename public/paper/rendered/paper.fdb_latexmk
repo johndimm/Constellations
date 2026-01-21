@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1768845180.43241 "public/paper/tex/constellations.tex" "public/paper/rendered/paper.pdf" "paper" 1768845186.46435 0
+["pdflatex"] 1768968842.78885 "public/paper/tex/constellations.tex" "public/paper/rendered/paper.pdf" "paper" 1768968846.21883 0
   "/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc" 1136849721 2971 def0b6c1f0b107b3b936def894055589 ""
   "/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2025/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -93,10 +93,10 @@
   "public/paper/rendered/../../godfather-timeline.png" 1767987707.77999 1516426 635d2c2c254932ed3cf3f3c40a78ec33 ""
   "public/paper/rendered/../../people.png" 1767988103.39074 1462284 ce2aad50205c9304a333a5c122d58275 ""
   "public/paper/rendered/../../sore throat.png" 1768091878.26176 846749 3b4f8fc87b65f9be4d5056cf9817703a ""
-  "public/paper/rendered/paper.aux" 1768845186.2201 5918 6da3beac33724ba5e8d3210917e5b8cd "pdflatex"
-  "public/paper/rendered/paper.out" 1768845186.2213 7382 f905b91c480a3ec8941e5c8c3bec8a14 "pdflatex"
+  "public/paper/rendered/paper.aux" 1768968846.02313 6080 f1a35ce1784211c2abd8821a3784fd43 "pdflatex"
+  "public/paper/rendered/paper.out" 1768968846.02401 7736 e40badfa44c7b982cbf1d30fcdc4190d "pdflatex"
   "public/paper/tex/constellations.tex" 1768786742.35665 624 f53ae7ae7aa307ad3c9756e5977a4b49 ""
-  "public/paper/tex/paper.generated.tex" 1768845180.19079 27662 1cc0ef311660b2894bba4fea90bf2d3b ""
+  "public/paper/tex/paper.generated.tex" 1768968838.22749 29256 d6213730dcca1db5f051caac5fe75a43 ""
   (generated)
   "public/paper/rendered/paper.aux"
   "public/paper/rendered/paper.log"

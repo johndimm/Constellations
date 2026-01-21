@@ -81,7 +81,7 @@
     <div class="container">
         <h1>API Queries Documentation</h1>
         <p>This document outlines the external API calls used by the <strong>Constellations</strong> application. These
-            include Google Gemini for entity processing and Wikipedia/Google Books for metadata and images.</p>
+            include Google Gemini for entity processing and Wikipedia/Google Books/DuckDuckGo for metadata and images.</p>
 
         <hr>
 
@@ -162,6 +162,23 @@
         <p>Used as a fallback for finding book cover images when Wikipedia lacks a suitable image.</p>
         <p><strong>Example Curl</strong>:</p>
         <pre><code>curl "https://www.googleapis.com/books/v1/volumes?q=Waiting%20for%20Godot&maxResults=1"</code></pre>
+
+        <hr>
+
+        <h2>4. DuckDuckGo Image Search (server-side)</h2>
+        <p>Used as a fallback when Wikimedia does not provide a suitable image. The server first fetches a <code>vqd</code>
+            token from the HTML response, then requests image results from the JSON endpoint.</p>
+
+        <h3>Step 1: Fetch the vqd token</h3>
+        <p><strong>Example Curl</strong>:</p>
+        <pre><code>curl "https://duckduckgo.com/?q=Samuel%20Beckett&iax=images&ia=images"</code></pre>
+
+        <h3>Step 2: Fetch image results (JSON)</h3>
+        <p><strong>Example Curl</strong>:</p>
+        <pre><code>curl "https://duckduckgo.com/i.js?l=us-en&o=json&q=Samuel%20Beckett&vqd=REPLACE_WITH_VQD&f=,,,&p=1" \
+  -H "Referer: https://duckduckgo.com/?q=Samuel%20Beckett&iax=images&ia=images" \
+  -H "Accept: application/json, text/javascript, */*; q=0.01" \
+  -H "X-Requested-With: XMLHttpRequest"</code></pre>
     </div>
 </body>
 

@@ -16,7 +16,7 @@ The UI encodes this alternation with distinct visual forms (e.g., circles vs car
 5. **Evidence attachment**: each proposed neighbor includes an evidence snippet + page title; selecting an edge reveals the supporting citation.
 6. **Caching**: store nodes and edges (with evidence) in a database to reduce repeated calls and support persistence.
 
-**Sources (important):** Constellations is intentionally **multi-source**: it uses **Wikipedia/Wikimedia APIs** (Wikipedia + Wikidata), **academic corpora/metadata APIs** (currently OpenAlex, with Crossref/DOI metadata as a fallback), and an **LLM**. Due to deployment constraints, the system does **not** crawl arbitrary websites or run general internet search. Evidence snippets are sourced from Wikipedia page text and/or corpus metadata when available; when the system cannot verify a snippet from available sources, it is shown as missing rather than guessed.
+**Sources (important):** Constellations is intentionally **multi-source**: it uses **Wikipedia/Wikimedia APIs** (Wikipedia + Wikidata), **academic corpora/metadata APIs** (currently OpenAlex, with Crossref/DOI metadata as a fallback), and an **LLM**. The system does **not** crawl arbitrary websites or run general internet search for evidence; however, it does use **DuckDuckGo image search** as a fallback when Wikimedia does not provide a suitable image. Evidence snippets are sourced from Wikipedia page text and/or corpus metadata when available; when the system cannot verify a snippet from available sources, it is shown as missing rather than guessed.
 
 ## Bipartite constraint and “events as meetings”
 The original domain (people↔events) is motivated by an event-centric view: an event is any construct that brings multiple people into relation. This framing generalizes naturally to other domains by choosing a Composite that aggregates multiple Atomics and for which the inverse membership relation is meaningful (e.g., actors in films; ingredients in recipes).
@@ -91,4 +91,3 @@ The current implementation is a client-side React application with a small cache
 - **Context-first disambiguation**: before classification/expansion, the system fetches lightweight context (e.g., a Wikipedia summary) to reduce ambiguity and mitigate model knowledge gaps.
 - **Session-level pair locking**: after the first query, the chosen Atomic↔Composite pair is locked for the remainder of the graph exploration to reduce mid-graph switching and preserve stable semantics for expansion prompts.
 - **Caching and persistence**: nodes and edges (including evidence) are cached to reduce repeated LLM calls and to enable saving/loading graphs with evidence intact.
-

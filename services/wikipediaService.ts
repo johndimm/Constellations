@@ -436,8 +436,10 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       return /\b(film|movie|television series|tv series|miniseries|sitcom|drama series|comedy series|series)\b/i.test(hay);
     };
     if (looksLikeScreenWork(query, context)) {
-      const ddgImg = await fetchDuckDuckGoPoster(query);
+      const ddgImg = await fetchDuckDuckGoPoster(`${query} poster`);
       if (ddgImg) return { url: ddgImg };
+      const ddgImgLoose = await fetchDuckDuckGoPoster(query);
+      if (ddgImgLoose) return { url: ddgImgLoose };
     }
 
   } catch (e) {

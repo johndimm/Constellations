@@ -6,7 +6,6 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import fetch from "node-fetch";
 
 // Load env from .env.local if present
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -179,19 +178,9 @@ app.use((req, res, next) => {
 const fetchPosterFromDuckDuckGo = async (q: string): Promise<string | null> => {
   const exclude = ['logo', 'icon', 'emoji', 'svg', 'vector', 'clipart', 'cartoon', 'animated', 'posterized'];
   try {
-    const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(q)}&iax=images&ia=images`;
-    const pageRes = await fetch(searchUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
-    const pageText = await pageRes.text();
-    const vqdMatch = pageText.match(/vqd['"]?:['"]?([^'"]+)/);
-    const vqd = vqdMatch?.[1];
-    if (!vqd) return null;
-
-    const apiUrl = `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(q)}&vqd=${encodeURIComponent(vqd)}&f=,,,&p=1`;
-    console.log(`[Poster][DDG] query="${q}" apiUrl=${apiUrl}`);
-    const apiRes = await fetch(apiUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
-    const data = await apiRes.json();
-    const results: any[] = data?.results || [];
-    for (const r of results) {
+    const candidates = await fetchDuckDuckGoImages(q, 10);
+    console.log("[Poster][DDG] results", candidates.length);
+    for (const r of candidates) {
       const url = String(r?.image || r?.thumbnail || '');
       if (!url) continue;
       const lower = url.toLowerCase();
@@ -203,6 +192,52 @@ const fetchPosterFromDuckDuckGo = async (q: string): Promise<string | null> => {
     console.warn("[Poster][DDG] failed", q, e);
   }
   return null;
+};
+
+// Raw DuckDuckGo image fetch for testing (returns top N results without filtering).
+const fetchDuckDuckGoImages = async (q: string, limit: number = 10): Promise<Array<{ image?: string; thumbnail?: string; title?: string }>> => {
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+    'Accept-Language': 'en-US,en;q=0.9'
+  };
+  try {
+    const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(q)}&iax=images&ia=images`;
+    const pageRes = await fetch(searchUrl, { headers });
+    if (!pageRes.ok) {
+      console.warn("[DDG-Test] search status", pageRes.status, q);
+      return [];
+    }
+    const pageText = await pageRes.text();
+    const vqdMatch = pageText.match(/vqd=['"]?([^'"&]+)/);
+    const vqd = vqdMatch?.[1];
+    if (!vqd) {
+      console.warn("[DDG-Test] missing vqd for query", q);
+      return [];
+    }
+
+    const apiUrl = `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(q)}&vqd=${encodeURIComponent(vqd)}&f=,,,&p=1`;
+    const apiRes = await fetch(apiUrl, {
+      headers: {
+        ...headers,
+        Referer: searchUrl,
+        Accept: "application/json, text/javascript, */*; q=0.01",
+        "X-Requested-With": "XMLHttpRequest"
+      }
+    });
+    if (!apiRes.ok) {
+      console.warn("[DDG-Test] api status", apiRes.status, q);
+      return [];
+    }
+    const data = await apiRes.json();
+    const results: any[] = data?.results || [];
+    return results.slice(0, limit).map(r => ({
+      image: r?.image,
+      thumbnail: r?.thumbnail,
+      title: r?.title
+    }));
+  } catch {
+    return [];
+  }
 };
 
 // Schema initializer
@@ -857,14 +892,170 @@ app.get("/api/poster", async (req, res) => {
   const context = String(req.query.context || "").trim();
   if (!title) return res.status(400).json({ error: "title is required" });
   const q = `${title} ${context}`.trim();
+  console.log(`[Poster] request`, { title, context });
+  const looksLikeScreenWork = (s: string) => /\b(film|movie|television series|tv series|miniseries|sitcom|drama series|comedy series|series)\b/i.test(s.toLowerCase());
+  const isScreenWork = looksLikeScreenWork(`${title} ${context}`);
+
+  const resolveWikidataId = async (): Promise<string | null> => {
+    try {
+      const ppUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+      const ppRes = await fetch(ppUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
+      if (!ppRes.ok) {
+        console.warn("[Poster][Wikidata] pageprops status", ppRes.status);
+      }
+      const ppData = await ppRes.json();
+      const pages = ppData?.query?.pages;
+      const page = pages ? (Object.values(pages)[0] as any) : null;
+      const qid = page?.pageprops?.wikibase_item;
+      if (qid && /^Q\d+$/.test(qid)) return qid;
+      console.warn("[Poster][Wikidata] no qid from pageprops", title);
+    } catch (e) {
+      console.warn("[Poster][Wikidata] pageprops failed", title, e);
+    }
+
+    // Fallback: search Wikidata by label
+    try {
+      const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=${encodeURIComponent(title)}&origin=*`;
+      const res = await fetch(searchUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
+      const data = await res.json();
+      const id = data?.search?.[0]?.id;
+      if (id && /^Q\d+$/.test(id)) return id;
+      console.warn("[Poster][Wikidata] search found nothing", title);
+    } catch (e) {
+      console.warn("[Poster][Wikidata] search failed", title, e);
+    }
+    return null;
+  };
+
+  const fetchWikidataImageForTitle = async (): Promise<string | null> => {
+    try {
+      const qid = await resolveWikidataId();
+      if (!qid) return null;
+
+      const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${qid}&origin=*`;
+      const wdRes = await fetch(wdUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
+      if (!wdRes.ok) console.warn("[Poster][Wikidata] wbgetentities status", wdRes.status);
+      const wdData = await wdRes.json();
+      const claims = wdData?.entities?.[qid]?.claims;
+      const p18 = claims?.P18?.[0]?.mainsnak?.datavalue?.value as string | undefined;
+      if (!p18) console.warn("[Poster][Wikidata] no P18", qid);
+      if (!p18) return null;
+
+      const imgTitle = p18.startsWith('File:') ? p18 : `File:${p18}`;
+      const imgInfoUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&titles=${encodeURIComponent(imgTitle)}&iiprop=url&iiurlwidth=800&origin=*`;
+      const imgRes = await fetch(imgInfoUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
+      const imgData = await imgRes.json();
+      const pagesInfo = imgData?.query?.pages;
+      const imgPage = pagesInfo ? (Object.values(pagesInfo)[0] as any) : null;
+      const info = imgPage?.imageinfo?.[0];
+      return info?.thumburl || info?.url || null;
+    } catch (e) {
+      console.warn("[Poster][Wikidata] failed", title, e);
+      return null;
+    }
+  };
+
+  const fetchWikipediaPageImage = async (): Promise<string | null> => {
+    try {
+      const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&titles=${encodeURIComponent(title)}&pithumbsize=800&redirects=1&origin=*`;
+      const resp = await fetch(url, { headers: { 'User-Agent': 'Constellations/1.0' } });
+      if (!resp.ok) console.warn("[Poster][PageImage] status", resp.status);
+      const data = await resp.json();
+      const pages = data?.query?.pages;
+      const page = pages ? (Object.values(pages)[0] as any) : null;
+      return page?.thumbnail?.source || null;
+    } catch (e) {
+      console.warn("[Poster][PageImage] failed", title, e);
+      return null;
+    }
+  };
+
+  const fetchCommonsPoster = async (): Promise<string | null> => {
+    try {
+      const searchQuery = `"${title}" poster`;
+      const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srnamespace=6&srlimit=5&origin=*`;
+      console.log("[Poster][Commons] search", searchQuery);
+      const res = await fetch(searchUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
+      const data = await res.json();
+      const hits: any[] = data?.query?.search || [];
+      let best: { url: string; score: number; title: string } | null = null;
+      const normalizedTitle = title.toLowerCase();
+      for (const h of hits) {
+        const fileTitle = h?.title;
+        if (!fileTitle) continue;
+        const lowerTitle = String(fileTitle).toLowerCase();
+        if (lowerTitle.endsWith('.pdf') || lowerTitle.includes('.pdf/')) continue; // skip PDFs
+        const infoUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&titles=${encodeURIComponent(fileTitle)}&iiprop=url|size&iiurlwidth=800&origin=*`;
+        const infoRes = await fetch(infoUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
+        const infoData = await infoRes.json();
+        const pages = infoData?.query?.pages;
+        const page = pages ? (Object.values(pages)[0] as any) : null;
+        const info = page?.imageinfo?.[0];
+        const url = info?.thumburl || info?.url;
+        if (!url) continue;
+        const w = Number(info?.thumbwidth || info?.width || 0);
+        const hgt = Number(info?.thumbheight || info?.height || 0);
+        const ratio = hgt > 0 && w > 0 ? hgt / w : 0;
+        let score = 0;
+        const lt = String(fileTitle).toLowerCase();
+        if (lt.includes(normalizedTitle)) score += 180; // require strong match to the show title
+        if (lt.includes('poster')) score += 120;
+        if (lt.includes('season')) score += 40;
+        if (ratio > 1.2) score += 60;
+        if (ratio < 0.9) score -= 150; // heavily penalize landscape/non-poster
+        if (w < 300 || hgt < 400) score -= 80; // penalize tiny thumbs
+        if (score <= 0) score = 10; // minimal baseline
+        if (!best || score > best.score) best = { url, score, title: fileTitle };
+      }
+      if (best) {
+        console.log("[Poster][Commons] chose", best.title, "score", best.score, best.url);
+        return best.url;
+      }
+      console.log("[Poster][Commons] no usable result");
+    } catch (e) {
+      console.warn("[Poster][Commons] failed", title, e);
+    }
+    return null;
+  };
+
   try {
-    const poster = await fetchPosterFromDuckDuckGo(q);
-    if (poster) return res.json({ url: poster });
-    return res.status(404).json({ url: null });
+    if (isScreenWork) {
+      const fromCommons = await fetchCommonsPoster();
+      if (fromCommons) return res.status(200).json({ url: fromCommons, source: "commons" });
+      const fromWikidata = await fetchWikidataImageForTitle();
+      if (fromWikidata) return res.status(200).json({ url: fromWikidata, source: "wikidata" });
+      const fromPageImage = await fetchWikipediaPageImage();
+      if (fromPageImage) return res.status(200).json({ url: fromPageImage, source: "pageimage" });
+      console.log("[Poster] Commons/Wikidata/PageImage empty; trying DDG search");
+      const fromDdg = await fetchPosterFromDuckDuckGo(title);
+      if (fromDdg) return res.status(200).json({ url: fromDdg, source: "ddg" });
+    } else {
+      const fromWikidata = await fetchWikidataImageForTitle();
+      if (fromWikidata) return res.status(200).json({ url: fromWikidata, source: "wikidata" });
+      const fromPageImage = await fetchWikipediaPageImage();
+      if (fromPageImage) return res.status(200).json({ url: fromPageImage, source: "pageimage" });
+      const fromCommons = await fetchCommonsPoster();
+      if (fromCommons) return res.status(200).json({ url: fromCommons, source: "commons" });
+      console.log("[Poster] Wikidata/PageImage/Commons empty; trying DDG");
+      const fromDdg = await fetchPosterFromDuckDuckGo(title);
+      if (fromDdg) return res.status(200).json({ url: fromDdg, source: "ddg" });
+    }
+
+    console.warn("[Poster] no image found", { title });
+    return res.status(200).json({ url: null });
   } catch (e: any) {
-    console.warn("[Poster][DDG] error for", q, e);
+    console.warn("[Poster] error for", q, e);
     return res.status(500).json({ error: e?.message || "poster fetch failed" });
   }
+});
+
+// Simple DDG image probe for debugging.
+app.get("/api/ddg-image-test", async (req, res) => {
+  const q = String(req.query.title || req.query.q || "").trim();
+  const limit = Number(req.query.limit || 10);
+  if (!q) return res.status(400).json({ error: "title (or q) is required" });
+  const results = await fetchDuckDuckGoImages(q, isNaN(limit) ? 10 : limit);
+  return res.status(200).json({ query: q, count: results.length, results });
 });
 
 const port = process.env.PORT || 4000;

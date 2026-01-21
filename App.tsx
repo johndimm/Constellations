@@ -511,6 +511,25 @@ const App: React.FC = () => {
         }
     }, [cacheEnabled, cacheBaseUrl]);
 
+    const fetchPosterFromServer = useCallback(async (title: string): Promise<string | null> => {
+        try {
+            const posterUrl = cacheEnabled
+                ? new URL(`/api/poster?title=${encodeURIComponent(title)}`, cacheBaseUrl).toString()
+                : new URL(`/api/poster?title=${encodeURIComponent(title)}`, window.location.origin).toString();
+
+            const res = await fetch(posterUrl);
+            if (!res.ok || !String(res.headers.get('content-type') || '').includes('application/json')) {
+                console.warn("Poster proxy returned non-JSON or non-OK response", res.status, res.headers.get('content-type'));
+                return null;
+            }
+            const data = await res.json();
+            return data?.url || null;
+        } catch (e) {
+            console.warn("Poster proxy fetch failed", e);
+            return null;
+        }
+    }, [cacheEnabled, cacheBaseUrl]);
+
     // Prevent image "flapping" from concurrent fetches: only the latest request for a node can win.
     const imageReqTokenRef = useRef<Map<number, number>>(new Map());
 
@@ -565,12 +584,27 @@ const App: React.FC = () => {
             }));
             saveCacheNodeMeta(nodeId, { imageUrl: imageResult.url }, fallbackNode);
         } else {
+            const posterUrl = await fetchPosterFromServer(title);
+            if ((imageReqTokenRef.current.get(nodeId) || 0) !== nextToken) return;
+            if (posterUrl) {
+                setGraphData(prev => ({
+                    ...prev,
+                    nodes: prev.nodes.map(n => n.id === nodeId ? {
+                        ...n,
+                        imageUrl: posterUrl,
+                        fetchingImage: false,
+                        imageChecked: true
+                    } : n)
+                }));
+                saveCacheNodeMeta(nodeId, { imageUrl: posterUrl }, fallbackNode);
+                return;
+            }
             setGraphData(prev => ({
                 ...prev,
                 nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: false, imageChecked: true } : n)
             }));
         }
-    }, [isTextOnly, saveCacheNodeMeta]);
+    }, [isTextOnly, fetchPosterFromServer, saveCacheNodeMeta]);
 
     const handleFindBetterImage = useCallback(async (nodeId: number) => {
         const node = graphDataRef.current.nodes.find(n => n.id === nodeId);
@@ -644,34 +678,21 @@ const App: React.FC = () => {
                 return;
             }
 
-            // Last resort: server-side poster fetch (avoids browser CORS).
-            try {
-                const posterUrl = cacheEnabled
-                    ? new URL(`/api/poster?title=${encodeURIComponent(node.title)}`, cacheBaseUrl).toString()
-                    : new URL(`/api/poster?title=${encodeURIComponent(node.title)}`, window.location.origin).toString();
-
-                const res = await fetch(posterUrl);
-                if (res.ok && String(res.headers.get('content-type') || '').includes('application/json')) {
-                    const data = await res.json();
-                    if (data?.url) {
-                        setGraphData(prev => ({
-                            ...prev,
-                            nodes: prev.nodes.map(n => n.id === nodeId ? {
-                                ...n,
-                                imageUrl: data.url,
-                                fetchingImage: false,
-                                imageChecked: true
-                            } : n)
-                        }));
-                        saveCacheNodeMeta(nodeId, { imageUrl: data.url });
-                        setNotification({ message: "Poster found via server lookup.", type: 'success' });
-                        return;
-                    }
-                } else {
-                    console.warn("Poster proxy returned non-JSON or non-OK response", res.status, res.headers.get('content-type'));
-                }
-            } catch (e) {
-                console.warn("Poster proxy fetch failed", e);
+            // Last resort: server-side image lookup (avoids browser CORS).
+            const posterUrl = await fetchPosterFromServer(node.title);
+            if (posterUrl) {
+                setGraphData(prev => ({
+                    ...prev,
+                    nodes: prev.nodes.map(n => n.id === nodeId ? {
+                        ...n,
+                        imageUrl: posterUrl,
+                        fetchingImage: false,
+                        imageChecked: true
+                    } : n)
+                }));
+                saveCacheNodeMeta(nodeId, { imageUrl: posterUrl });
+                setNotification({ message: "Image found via server lookup.", type: 'success' });
+                return;
             }
 
             setNotification({ message: "No better photo found.", type: 'error' });
@@ -684,7 +705,7 @@ const App: React.FC = () => {
                 nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: false } : n)
             }));
         }
-    }, [saveCacheNodeMeta]);
+    }, [fetchPosterFromServer, loadNodeImage, saveCacheNodeMeta]);
 
     const handleClear = () => {
         setGraphData({ nodes: [], links: [] });
