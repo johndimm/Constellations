@@ -448,6 +448,15 @@ export const fetchPersonWorks = async (
   const atomicLabel = atomicType || "ATOMIC entity";
   const compositeLabel = compositeType || "COMPOSITE entity";
 
+  const dateRequired = (compositeType || "").match(/^(Event|Paper|Work|Movie|Film|Book|Novel|Album|Song|Composition|Artwork|Painting|Sculpture)$/i) ||
+    (compositeLabel.toLowerCase().includes('event') || compositeLabel.toLowerCase().includes('work'));
+
+  const dateRequirementPrompt = dateRequired
+    ? `\nDATE REQUIREMENT:
+       - Every ${compositeLabel} MUST have a valid year (creation, publication, start date, or occurrence).
+       - If you do not know the year, DO NOT include the entity.`
+    : "";
+
   const contextPrompt = excludeNodes.length > 0
     ? `The user graph already contains these nodes connected to ${nodeName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}. 
        Return 8-10 NEW significant ${compositeLabel} entities.`
@@ -456,6 +465,7 @@ export const fetchPersonWorks = async (
        CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, location, or specific historical event/incident. 
        DO NOT return descriptive phrases, facts, or achievements. 
        In the Person↔Event pair, treat locations (like "Saint-Paul-de-Mausole") as ${compositeLabel} entities.
+       ${dateRequirementPrompt}
        
        BIDIRECTIONAL RULE:
        - If "${nodeName}" is an author, you MUST include their most famous books/novels/works.
@@ -489,6 +499,7 @@ export const fetchPersonWorks = async (
 
        IMPORTANT: For each returned entity, also provide:
        - wikipediaTitle: the canonical English Wikipedia article title for that entity (use parenthetical disambiguation when needed, e.g. "Euphoria (TV series)", "The Godfather", "A Streetcar Named Desire (1951 film)").
+       - year: The 4-digit year of creation, publication, or occurrence. Required if it is an Event/Work.
        - a 1-sentence evidence snippet.
        - If VERIFIED INFORMATION text is provided, the evidence snippet MUST be copied verbatim from that text and should contain BOTH the source name and the returned entity name when possible.
        - Set evidencePageTitle to the Wikipedia article title the snippet is from (usually the source).
@@ -504,7 +515,7 @@ export const fetchPersonWorks = async (
 
   try {
     const prompt = `${wikiPrompt}${contextPrompt}
-      Ensure each entry is a different entity. Sort by year if applicable.`;
+      Ensure each entry is a different entity. ${dateRequired ? 'Sort by year. STRICTLY avoid entities without a known year.' : 'Sort by year if applicable.'}`;
 
     console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
 
@@ -527,11 +538,11 @@ export const fetchPersonWorks = async (
                   type: { type: Type.STRING },
                   description: { type: Type.STRING, description: "Short 1-sentence description" },
                   role: { type: Type.STRING, nullable: true },
-                  year: { type: Type.INTEGER, nullable: true },
+                  year: { type: Type.INTEGER, description: "4-digit year (YYYY), required for events/works" },
                   evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
                   evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
                 },
-                required: ["entity", "type", "description", "evidenceSnippet", "evidencePageTitle"]
+                required: ["entity", "type", "description", "evidenceSnippet", "evidencePageTitle", "year"]
               }
             }
           },
@@ -550,6 +561,10 @@ export const fetchPersonWorks = async (
     const text = cleanJson(rawText);
     if (!text) return { works: [] };
     const parsed = JSON.parse(text) as PersonWorksResponse;
+    // Strong filter: remove any work that somehow came back without a year, BUT only if date is required for this type
+    if (parsed.works && dateRequired) {
+      parsed.works = parsed.works.filter(w => w.year !== null && w.year !== undefined && !isNaN(Number(w.year)));
+    }
     return parsed;
   } catch (error) {
     console.error("Gemini API Error (Person Works):", error);
@@ -581,6 +596,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     3. An "Event" MUST NOT be connected directly to another "Event".
     4. Each step must be a direct and verifiable collaboration, affiliation, or relationship.
     5. The path must be a continuous chain where each node is connected to the next.
+    6. For every "Event" that is an actual Event, Work, or Historical Occurrence, strictly provide the Year it occurred or was created in the "year" field. If it is a persistent entity without a clear year (like a Location or specialized Concept), year is optional.
     
     Example valid path:
     Person (Isaac Asimov) -> Event (Star Trek) -> Person (Gene Roddenberry)
@@ -590,10 +606,9 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     Return JSON:
     {
       "path": [
-        { "id": "${start}", "type": "Person/Organization/etc", "description": "Short bio", "justification": "Start node" },
-        { "id": "Intermediary 1 (A Thing if Start is Person, Person if Start is Thing)", "type": "...", "description": "...", "justification": "Relationship to previous step" },
-        { "id": "Intermediary 2 (A Person if Prev is Thing, Thing if Prev is Person)", "type": "...", "description": "...", "justification": "Relationship to previous step" },
-        { "id": "${end}", "type": "...", "description": "...", "justification": "Relationship to previous step" }
+        { "id": "${start}", "type": "Person/Organization/etc", "description": "Short bio", "justification": "Start node", "year": 1950 },
+        { "id": "Intermediary 1...", "type": "...", "description": "...", "justification": "...", "year": 1965 },
+        { "id": "${end}", "type": "...", "description": "...", "justification": "Destination", "year": 1990 }
       ]
     }`;
 
@@ -616,7 +631,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
                   type: { type: Type.STRING },
                   description: { type: Type.STRING },
                   justification: { type: Type.STRING, description: "Relationship to the PREVIOUS node in the chain" },
-                  year: { type: Type.INTEGER, nullable: true }
+                  year: { type: Type.INTEGER, nullable: true, description: "Year of occurrence/creation (Required for Events)" }
                 },
                 required: ["id", "type", "description", "justification"]
               }
@@ -643,7 +658,8 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
           id: start,
           type: "Start",
           description: context?.startWiki?.substring(0, 100) || "Start node",
-          justification: "Start of path"
+          justification: "Start of path",
+          year: null
         });
       }
       if (!last.includes(endLow) && !endLow.includes(last)) {
@@ -651,7 +667,8 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
           id: end,
           type: "End",
           description: context?.endWiki?.substring(0, 100) || "End node",
-          justification: "Destination"
+          justification: "Destination",
+          year: null
         });
       }
     }
