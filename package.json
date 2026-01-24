@@ -12,7 +12,8 @@
     "render:paper": "node scripts/renderPaperMarkdown.mjs",
     "render:paper:pdf": "node scripts/renderPaperPdf.mjs",
     "render:paper:tex": "node scripts/renderPaperTex.mjs",
-    "render:paper:tex:pdf": "node scripts/renderPaperTex.mjs && latexmk -pdf -interaction=nonstopmode -halt-on-error -jobname=paper -outdir=public/paper/rendered public/paper/tex/constellations.tex"
+    "render:paper:tex:pdf": "node scripts/renderPaperTex.mjs && latexmk -pdf -interaction=nonstopmode -halt-on-error -jobname=paper -outdir=public/paper/rendered public/paper/tex/constellations.tex",
+    "build:ext": "vite build -c vite.config.ext.ts && cp chrome-extension/manifest.json dist-extension/ && cp -r chrome-extension/icons dist-extension/"
   },
   "dependencies": {
     "@google/genai": "^1.33.0",
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "@tailwindcss/vite": "^4.1.18",
+    "@types/chrome": "^0.1.36",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.23",

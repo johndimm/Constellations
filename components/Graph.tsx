@@ -19,6 +19,7 @@ interface GraphProps {
     newChildNodeIds?: Set<number>;
     highlightKeepIds?: number[];
     highlightDropIds?: number[];
+    onNodeContextMenu?: (event: MouseEvent, node: GraphNode) => void;
 }
 
 export interface GraphHandle {
@@ -43,7 +44,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
     expandingNodeId = null,
     newChildNodeIds = new Set<number>(),
     highlightKeepIds = [],
-    highlightDropIds = []
+    highlightDropIds = [],
+    onNodeContextMenu
 }, ref) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const zoomGroupRef = useRef<SVGGElement>(null);
@@ -797,8 +799,31 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             .attr("text-anchor", "middle")
             .style("font-size", "10px")
             .style("font-family", "monospace")
-            .style("pointer-events", "none")
-            .attr("fill", "#fbbf24");
+            .style("pointer-events", "none");
+
+        // Click and Context Menu listeners
+        const clickHandler = (event: any, d: GraphNode) => {
+            // If dragging occurred, don't trigger click
+            // (Assuming standard D3 pattern: if moved small amount, it's a click)
+            onNodeClick(d);
+        };
+        const contextMenuHandler = (event: any, d: GraphNode) => {
+            if (onNodeContextMenu) {
+                event.preventDefault();
+                onNodeContextMenu(event, d);
+            }
+        };
+
+        const hoverIn = (_event: any, d: GraphNode) => setHoveredNode(d);
+        const hoverOut = () => setHoveredNode(null);
+
+        nodeEnter.merge(nodeSel)
+            .style("cursor", "pointer")
+            .on("click", clickHandler)
+            .on("contextmenu", contextMenuHandler)
+            .on("mouseover", hoverIn)
+            .on("mouseout", hoverOut);
+
 
         nodeEnter.append("text")
             .attr("class", "people-label")

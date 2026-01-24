@@ -1,6 +1,6 @@
 import React from 'react';
 import { GraphNode } from '../types';
-import { Maximize, Plus, Trash2 } from 'lucide-react';
+import { Maximize, Plus, Sparkles, Trash2 } from 'lucide-react';
 
 interface NodeContextMenuProps {
     node: GraphNode;
@@ -8,6 +8,7 @@ interface NodeContextMenuProps {
     y: number;
     onExpandLeaves: (node: GraphNode) => void;
     onAddMore: (node: GraphNode) => void;
+    onFindBetterPhoto: (nodeId: number) => void;
     onDelete: (nodeId: number) => void;
     onClose: () => void;
     isProcessing?: boolean;
@@ -19,6 +20,7 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
     y,
     onExpandLeaves,
     onAddMore,
+    onFindBetterPhoto,
     onDelete,
     onClose,
     isProcessing
@@ -30,7 +32,7 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
 
     // Calculate position to keep menu on screen
     const menuWidth = 220;
-    const menuHeight = 140;
+    const menuHeight = 180;
     const adjustedX = Math.min(x, window.innerWidth - menuWidth - 20);
     const adjustedY = Math.min(y, window.innerHeight - menuHeight - 20);
 
@@ -66,6 +68,15 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                 >
                     <Plus size={16} className="text-indigo-400" />
                     <span>Expand More</span>
+                </button>
+
+                <button
+                    onClick={() => handleAction(() => onFindBetterPhoto(node.id))}
+                    disabled={isProcessing}
+                    className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 transition-colors"
+                >
+                    <Sparkles size={16} className="text-amber-300" />
+                    <span>Find Better Photo</span>
                 </button>
 
                 <div className="h-px bg-slate-700 my-1" />
