@@ -19,6 +19,7 @@ export interface GraphNode extends SimulationNodeDatum {
   classification_reasoning?: string; // AI explanation of atomic/composite status
   atomic_type?: string; // e.g. "Symptom"
   composite_type?: string; // e.g. "Disease"
+  mentioningPageTitles?: string[]; // Titles of articles mentioning this entity (for non-article fallback)
   // D3 Simulation properties explicitly defined to ensure access
   x?: number;
   y?: number;
@@ -83,13 +84,13 @@ export interface PersonWorksResponse {
 }
 
 export interface PathEntity {
-    id: string;
-    type: string;
-    description: string;
-    year?: number;
-    justification: string; // How it connects to the previous node
+  id: string;
+  type: string;
+  description: string;
+  year?: number;
+  justification: string; // How it connects to the previous node
 }
 
 export interface PathResponse {
-    path: PathEntity[];
+  path: PathEntity[];
 }

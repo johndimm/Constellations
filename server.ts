@@ -6,6 +6,8 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch } from "./services/geminiService";
+import { fetchWikipediaSummary } from "./services/wikipediaService";
 
 // Load env from .env.local if present
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -62,7 +64,7 @@ async function ensureSchema() {
     await client.query("drop index if exists nodes_title_type_wiki_idx");
     await client.query("create unique index if not exists nodes_title_ltype_wiki_idx on nodes (lower(title), lower(type), wikipedia_id)");
     await client.query("create unique index if not exists nodes_title_ltype_blank_wiki_uidx on nodes (lower(title), lower(type)) where (wikipedia_id is null or wikipedia_id = '')");
-    
+
     // Add is_atomic column for app logic (boolean), preserving original type
     await client.query("alter table if exists nodes add column if not exists is_atomic boolean");
     // Migration: copy data from is_person if it exists, then drop is_person
@@ -122,7 +124,7 @@ async function ensureSchema() {
     const tables = ['nodes', 'edges', 'saved_graphs'];
     for (const table of tables) {
       await client.query(`alter table if exists ${table} enable row level security`);
-      
+
       // Split policies by operation to satisfy Supabase Lints
       // SELECT is "safe" for true. Write operations will still flag a warning but are necessary for your public app.
       await client.query(`
@@ -150,7 +152,7 @@ async function ensureSchema() {
         $$;
       `);
     }
-    
+
     console.log("Schema migrations applied (image_url, wiki_summary, wikipedia_id defaults, unique index, is_person, saved_graphs, RLS).");
   } catch (e) {
     console.error("Schema init failed", e);
@@ -413,7 +415,7 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
         // Prefer the more specific type (capitalized like "Movie" over lowercase like "event")
         const typeToKeep = (existingType && existingType !== existingType.toLowerCase()) ? existingType : n.type;
         const wikiToKeep = existingWiki || normalizedWikiId || '';
-        
+
         // Use provided is_atomic flag, or default to checking type for legacy data
         const isAtomicToKeep = n.is_atomic !== undefined ? !!n.is_atomic : (n.is_person !== undefined ? !!n.is_person : (typeToKeep && typeToKeep.toLowerCase() === 'person'));
 
@@ -513,15 +515,70 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
       idMap.set(key, id);
     } catch (e: any) {
       console.error("Upsert failed for node", n.title, e.message);
-      // Continue best effort or re-throw? 
-      // Logic suggests usually we want to proceed with other nodes if one fails, but explicit errors are helpful.
-      // For now, re-throwing might block the entire batch, but it's consistent with previous behavior.
       throw e;
     }
   }
-
   return idMap;
 }
+
+// ---- CLI Expansion Endpoint ----
+app.post("/api/expand", async (req, res) => {
+  const { query, context, atomicType, compositeType } = req.body;
+  if (!query) return res.status(400).json({ error: "query required" });
+
+  console.log(`📡 [CLI] Expansion requested for "${query}"`);
+
+  try {
+    // 1. Wikipedia/Grounding
+    const wiki = await fetchWikipediaSummary(query, context);
+
+    // 2. Classification (if needed)
+    let isAtomic = (atomicType || '').toLowerCase() === 'person';
+    let type = atomicType;
+
+    if (!type) {
+      const classification = await classifyEntity(query, wiki.extract || undefined);
+      isAtomic = classification.isAtomic;
+      type = classification.type;
+    }
+
+    // 3. Expansion
+    let data;
+    if (isAtomic) {
+      data = await fetchPersonWorks(
+        query,
+        [],
+        wiki.extract || undefined,
+        wiki.pageid?.toString(),
+        atomicType,
+        compositeType,
+        wiki.mentioningPageTitles || undefined
+      );
+    } else {
+      data = await fetchConnections(
+        query,
+        context,
+        [],
+        wiki.extract || undefined,
+        wiki.pageid?.toString(),
+        atomicType,
+        compositeType,
+        wiki.mentioningPageTitles || undefined
+      );
+    }
+
+    res.json({
+      query,
+      wiki,
+      type,
+      isAtomic,
+      data
+    });
+  } catch (e: any) {
+    console.error("Expand failed", e);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 async function upsertEdge(client: pg.PoolClient, atomicId: number, compositeId: number, label?: string, meta?: any) {
   await client.query(
@@ -605,7 +662,7 @@ app.get("/path", async (req, res) => {
 
     while (queue.length > 0) {
       const { nodeId, path } = queue.shift()!;
-      
+
       if (path.length > maxD) continue; // Skip paths that exceed max depth
 
       // Get node type to know if we need atomic or composite neighbors
@@ -623,7 +680,7 @@ app.get("/path", async (req, res) => {
 
       for (const row of neighborsRes.rows) {
         const neighborId = row.neighbor_id;
-        
+
         if (neighborId === end) {
           // Found path!
           const fullPath = [...path, neighborId];
@@ -633,9 +690,9 @@ app.get("/path", async (req, res) => {
             [fullPath]
           );
           const nodeMap = new Map(nodesRes.rows.map(r => [r.id, r]));
-          
+
           const pathNodes = fullPath.map(id => {
-            const node = nodeMap.get(id);
+            const node = nodeMap.get(id) as any;
             if (!node) return null;
             const m = node.meta || {};
             const mergedMeta = { ...m };
@@ -700,19 +757,19 @@ app.get("/expansion", async (req, res) => {
         hit: "exact",
         targets: result.rows.map(r => r.id),
         nodes: result.rows.map(r => {
-          const m = r.meta || {};
+          const m = (r as any).meta || {};
           const mergedMeta = { ...m };
-          if (!mergedMeta.imageUrl && r.image_url) mergedMeta.imageUrl = r.image_url;
-          if (!mergedMeta.wikiSummary && r.wiki_summary) mergedMeta.wikiSummary = r.wiki_summary;
-          return { 
-            ...r, 
-            meta: mergedMeta, 
-            imageUrl: r.image_url, 
-            wikiSummary: r.wiki_summary, 
-            is_atomic: r.is_atomic ?? (r.type?.toLowerCase() === 'person'),
-            is_person: r.is_atomic ?? (r.type?.toLowerCase() === 'person'),
-            edge_label: r.edge_label ?? null,
-            edge_meta: r.edge_meta ?? null
+          if (!mergedMeta.imageUrl && (r as any).image_url) mergedMeta.imageUrl = (r as any).image_url;
+          if (!mergedMeta.wikiSummary && (r as any).wiki_summary) mergedMeta.wikiSummary = (r as any).wiki_summary;
+          return {
+            ...r,
+            meta: mergedMeta,
+            imageUrl: (r as any).image_url,
+            wikiSummary: (r as any).wiki_summary,
+            is_atomic: (r as any).is_atomic ?? ((r as any).type?.toLowerCase() === 'person'),
+            is_person: (r as any).is_atomic ?? ((r as any).type?.toLowerCase() === 'person'),
+            edge_label: (r as any).edge_label ?? null,
+            edge_meta: (r as any).edge_meta ?? null
           };
         })
       });
@@ -1190,6 +1247,85 @@ app.get("/api/ddg-image-test", async (req, res) => {
   if (!q) return res.status(400).json({ error: "title (or q) is required" });
   const results = await fetchDuckDuckGoImages(q, isNaN(limit) ? 10 : limit);
   return res.status(200).json({ query: q, count: results.length, results });
+});
+
+// --- AI Proxy Endpoints ---
+
+app.post("/api/ai/classify-start", async (req, res) => {
+  const { term, wikiContext } = req.body;
+  if (!term) return res.status(400).json({ error: "term is required" });
+  try {
+    const result = await classifyStartPair(term, wikiContext);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/ai/classify", async (req, res) => {
+  const { term, wikiContext } = req.body;
+  if (!term) return res.status(400).json({ error: "term is required" });
+  try {
+    const result = await classifyEntity(term, wikiContext);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/ai/connections", async (req, res) => {
+  const { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
+  if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
+  try {
+    const result = await fetchConnections(nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/ai/works", async (req, res) => {
+  const { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
+  if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
+  try {
+    const result = await fetchPersonWorks(nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/ai/path", async (req, res) => {
+  const { start, end, context } = req.body;
+  if (!start || !end) return res.status(400).json({ error: "start and end are required" });
+  try {
+    const result = await fetchConnectionPath(start, end, context);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/ai/title", async (req, res) => {
+  const { name, description } = req.body;
+  if (!name) return res.status(400).json({ error: "name is required" });
+  try {
+    const result = await findWikipediaTitle(name, description);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/ai/search-org", async (req, res) => {
+  const { orgName } = req.body;
+  if (!orgName) return res.status(400).json({ error: "orgName is required" });
+  try {
+    const result = await fetchOrgKeyPeopleBlockViaSearch(orgName);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 const port = process.env.PORT || 4000;

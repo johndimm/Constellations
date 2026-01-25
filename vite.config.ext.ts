@@ -4,22 +4,17 @@ import { resolve } from 'path';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
-    const apiKey =
-        env.VITE_GEMINI_API_KEY ||
-        env.GEMINI_API_KEY ||
-        env.VITE_API_KEY ||
-        env.API_KEY ||
-        env.NEXT_PUBLIC_API_KEY ||
-        "";
-
     return {
         root: '.', // Build from root so we can access components
         plugins: [react()],
         define: {
-            'process.env.API_KEY': JSON.stringify(apiKey),
-            'process.env.GEMINI_API_KEY': JSON.stringify(apiKey),
-            'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(apiKey),
-            'import.meta.env.GEMINI_API_KEY': JSON.stringify(apiKey)
+            // Force API keys to be empty in the extension build. 
+            // All AI requests will be proxied through the backend.
+            'process.env.GEMINI_API_KEY': JSON.stringify(''),
+            'process.env.API_KEY': JSON.stringify(''),
+            'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(''),
+            'import.meta.env.GEMINI_API_KEY': JSON.stringify(''),
+            'import.meta.env.VITE_API_KEY': JSON.stringify('')
         },
         build: {
             outDir: 'dist-extension',

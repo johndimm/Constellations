@@ -41,21 +41,47 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
             {/* Backdrop to close menu on click outside */}
             <div
                 className="fixed inset-0 z-40"
+                style={{ position: 'fixed', inset: 0, zIndex: 999998 }}
                 onClick={onClose}
             />
 
             {/* Context Menu */}
             <div
-                className="fixed z-50 bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-lg shadow-2xl py-2 min-w-[220px]"
+                className="fixed z-50"
                 style={{
+                    position: 'fixed',
+                    zIndex: 999999,
                     left: `${adjustedX}px`,
-                    top: `${adjustedY}px`
+                    top: `${adjustedY}px`,
+                    minWidth: '220px',
+                    padding: '8px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.98)',
+                    border: '1px solid #334155',
+                    boxShadow: '0 20px 45px rgba(0,0,0,0.35)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    color: '#f8fafc'
                 }}
             >
                 <button
                     onClick={() => handleAction(() => onExpandLeaves(node))}
                     disabled={isProcessing || !node.expanded}
-                    className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 transition-colors"
+                    className="disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        textAlign: 'left',
+                        fontSize: '13px',
+                        color: 'inherit',
+                        background: 'transparent',
+                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        cursor: (isProcessing || !node.expanded) ? 'not-allowed' : 'pointer'
+                    }}
                 >
                     <Maximize size={16} className="text-emerald-400" />
                     <span>Expand Leaf Nodes</span>
@@ -64,7 +90,20 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                 <button
                     onClick={() => handleAction(() => onAddMore(node))}
                     disabled={isProcessing || !node.expanded}
-                    className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 transition-colors"
+                    className="disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        textAlign: 'left',
+                        fontSize: '13px',
+                        color: 'inherit',
+                        background: 'transparent',
+                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        cursor: (isProcessing || !node.expanded) ? 'not-allowed' : 'pointer'
+                    }}
                 >
                     <Plus size={16} className="text-indigo-400" />
                     <span>Expand More</span>
@@ -73,17 +112,42 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                 <button
                     onClick={() => handleAction(() => onFindBetterPhoto(node.id))}
                     disabled={isProcessing}
-                    className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 transition-colors"
+                    className="disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        textAlign: 'left',
+                        fontSize: '13px',
+                        color: 'inherit',
+                        background: 'transparent',
+                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        cursor: isProcessing ? 'not-allowed' : 'pointer'
+                    }}
                 >
                     <Sparkles size={16} className="text-amber-300" />
                     <span>Find Better Photo</span>
                 </button>
 
-                <div className="h-px bg-slate-700 my-1" />
+                <div style={{ height: '1px', background: '#334155', margin: '6px 0' }} />
 
                 <button
                     onClick={() => handleAction(() => onDelete(node.id))}
-                    className="w-full px-4 py-2.5 text-left text-sm text-red-400 hover:bg-slate-800 flex items-center gap-3 transition-colors"
+                    style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        textAlign: 'left',
+                        fontSize: '13px',
+                        color: '#f87171',
+                        background: 'transparent',
+                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        cursor: 'pointer'
+                    }}
                 >
                     <Trash2 size={16} />
                     <span>Delete Node</span>

@@ -48,9 +48,9 @@ export const fetchCacheExpansion = async (sourceId: number, baseUrl: string) => 
 };
 
 export const saveCacheExpansion = async (sourceId: number, nodesToSave: any[], baseUrl: string) => {
-    if (!baseUrl) return;
+    if (!baseUrl) return null;
     try {
-        await fetch(new URL("/expansion", baseUrl).toString(), {
+        const res = await fetch(new URL("/expansion", baseUrl).toString(), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -67,7 +67,36 @@ export const saveCacheExpansion = async (sourceId: number, nodesToSave: any[], b
                 }))
             })
         });
+        if (!res.ok) {
+            const text = await res.text();
+            return { ok: false, status: res.status, body: text };
+        }
+        return await res.json();
     } catch (e) {
         console.warn("Cache save failed", e);
+        return { ok: false, error: String(e) };
+    }
+};
+
+export const upsertCacheNode = async (node: {
+    title?: string;
+    type?: string;
+    description?: string | null;
+    year?: number | null;
+    meta?: Record<string, any> | null;
+    wikipedia_id?: string | null;
+}, baseUrl: string) => {
+    if (!baseUrl) return null;
+    try {
+        const res = await fetch(new URL("/node", baseUrl).toString(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(node)
+        });
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (e) {
+        console.warn("Node upsert failed", e);
+        return null;
     }
 };

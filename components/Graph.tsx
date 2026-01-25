@@ -5,7 +5,7 @@ import { GraphNode, GraphLink } from '../types';
 interface GraphProps {
     nodes: GraphNode[];
     links: GraphLink[];
-    onNodeClick: (node: GraphNode) => void;
+    onNodeClick: (node: GraphNode, event?: MouseEvent) => void;
     onLinkClick?: (link: GraphLink) => void;
     onViewportChange?: (visibleNodes: GraphNode[]) => void;
     width: number;
@@ -805,7 +805,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         const clickHandler = (event: any, d: GraphNode) => {
             // If dragging occurred, don't trigger click
             // (Assuming standard D3 pattern: if moved small amount, it's a click)
-            onNodeClick(d);
+            onNodeClick(d, event as MouseEvent);
         };
         const contextMenuHandler = (event: any, d: GraphNode) => {
             if (onNodeContextMenu) {
@@ -1173,7 +1173,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             g.on("click", (event) => {
                 if (event.defaultPrevented) return;
                 event.stopPropagation();
-                onNodeClick(d);
+                onNodeClick(d, event as MouseEvent);
                 setFocusedNode(null);
             })
                 .on("mouseover", () => setHoveredNode(d))

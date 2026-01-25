@@ -1,6 +1,11 @@
 import { getEffectiveCacheBaseUrl } from './cacheService';
 
-export type ServerImageResult = { url: string | null; source?: string };
+export type ServerImageResult = {
+    url: string | null;
+    source?: string;
+    pageId?: number;
+    pageTitle?: string;
+};
 
 export const fetchServerImage = async (
     title: string,
@@ -22,7 +27,12 @@ export const fetchServerImage = async (
             return { url: null };
         }
         const data = await res.json();
-        return { url: data?.url ?? null, source: data?.source };
+        return {
+            url: data?.url ?? null,
+            source: data?.source,
+            pageId: data?.pageId,
+            pageTitle: data?.pageTitle
+        };
     } catch {
         return { url: null };
     }

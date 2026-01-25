@@ -35,6 +35,49 @@ export type LockedPair = {
   compositeType: string;
 };
 
+// --- Proxy Helper ---
+async function callAiProxy(endpoint: string, body: any) {
+  const env: any = (import.meta as any)?.env || {};
+  const baseUrl = env.VITE_CACHE_API_URL || "";
+
+  let resolvedBase = baseUrl;
+  // If no base URL is found and we're in the browser on localhost, default to port 4000
+  if (!resolvedBase && typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    resolvedBase = 'http://localhost:4000';
+  }
+
+  const url = new URL(endpoint, resolvedBase || (typeof window !== 'undefined' ? window.location.origin : '')).toString();
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`AI Proxy Error (${resp.status}): ${err}`);
+  }
+  return resp.json();
+}
+
+/**
+ * Helper to determine if we should use the proxy (browser + proxy URL available).
+ */
+function shouldProxy(): boolean {
+  if (typeof window === 'undefined') return false;
+  if ((window as any).__PRERENDER_INJECTED) return false;
+
+  const env: any = (import.meta as any)?.env || {};
+  const baseUrl = env.VITE_CACHE_API_URL || "";
+
+  // Localhost fallback
+  if (!baseUrl && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return true;
+  }
+
+  return !!baseUrl;
+}
+
 export const classifyStartPair = async (
   term: string,
   wikiContext?: string
@@ -46,6 +89,11 @@ export const classifyStartPair = async (
   compositeType: string;
   reasoning: string;
 }> => {
+  if (shouldProxy()) {
+    return callAiProxy("/api/ai/classify-start", { term, wikiContext });
+  }
+
+  const apiKey = await getApiKey();
   // String-level safety heuristic (no Wikipedia required):
   // Disambiguated titles like "Discover (Daft Punk album)" must never be treated as Person.
   // Treat common work/media parentheticals as Composite/Event in the temporary Person↔Event model.
@@ -73,7 +121,6 @@ export const classifyStartPair = async (
     };
   }
 
-  const apiKey = await getApiKey();
   if (!apiKey) {
     return {
       type: "Event",
@@ -183,6 +230,11 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
   compositeType?: string;
   reasoning?: string;
 }> => {
+  if (shouldProxy()) {
+    return callAiProxy("/api/ai/classify", { term, wikiContext });
+  }
+
+  const apiKey = await getApiKey();
   const normalized = term.trim().toLowerCase();
 
   // String-level safety heuristic (no Wikipedia required):
@@ -210,7 +262,6 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
     };
   }
 
-  const apiKey = await getApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] classifyEntity: No API key found");
     return { type: 'Event', description: '', isAtomic: false };
@@ -301,8 +352,13 @@ export const fetchConnections = async (
   wikiContext?: string,
   wikipediaId?: string,
   atomicType?: string,
-  compositeType?: string
+  compositeType?: string,
+  mentioningPageTitles?: string[]
 ): Promise<GeminiResponse> => {
+  if (shouldProxy()) {
+    return callAiProxy("/api/ai/connections", { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles });
+  }
+
   const apiKey = await getApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] fetchConnections: No API key found");
@@ -322,6 +378,10 @@ export const fetchConnections = async (
 
   const excludePrompt = excludeNodes.length > 0
     ? `\nDO NOT include the following already known connections: ${JSON.stringify(excludeNodes)}. Find NEW high-impact connections.`
+    : "";
+
+  const mentionPrompt = mentioningPageTitles && mentioningPageTitles.length > 0
+    ? `\nIMPORTANT: This entity does not have a dedicated Wikipedia article, but it is explicitly mentioned in the following Wikipedia articles: ${mentioningPageTitles.join(', ')}. You MUST investigate these contexts and include relevant connections found there.`
     : "";
 
   const atomicLabel = atomicType || "ATOMIC entity";
@@ -348,7 +408,7 @@ export const fetchConnections = async (
       : "";
 
   try {
-    const prompt = `${contextualPrompt}${wikiPrompt}${excludePrompt}
+    const prompt = `${contextualPrompt}${wikiPrompt}${mentionPrompt}${excludePrompt}
       Source Node: ${nodeName} (Type: ${compositeLabel})
       
       Return 8-10 key ${atomicLabel} entities (participants, creators, major figures, stars, ingredients, etc.) that are fundamental components of this ${compositeLabel}.
@@ -430,8 +490,13 @@ export const fetchPersonWorks = async (
   wikiContext?: string,
   wikipediaId?: string,
   atomicType?: string,
-  compositeType?: string
+  compositeType?: string,
+  mentioningPageTitles?: string[]
 ): Promise<PersonWorksResponse> => {
+  if (shouldProxy()) {
+    return callAiProxy("/api/ai/works", { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles });
+  }
+
   const apiKey = await getApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] fetchPersonWorks: No API key found");
@@ -447,6 +512,10 @@ export const fetchPersonWorks = async (
 
   const atomicLabel = atomicType || "ATOMIC entity";
   const compositeLabel = compositeType || "COMPOSITE entity";
+
+  const mentionPrompt = mentioningPageTitles && mentioningPageTitles.length > 0
+    ? `\nIMPORTANT: This person does not have a dedicated Wikipedia article, but they are explicitly mentioned in these Wikipedia articles: ${mentioningPageTitles.join(', ')}. Prioritize these as the primary ${compositeLabel} connections for this person.`
+    : "";
 
   const dateRequired = (compositeType || "").match(/^(Event|Paper|Work|Movie|Film|Book|Novel|Album|Song|Composition|Artwork|Painting|Sculpture)$/i) ||
     (compositeLabel.toLowerCase().includes('event') || compositeLabel.toLowerCase().includes('work'));
@@ -497,6 +566,11 @@ export const fetchPersonWorks = async (
        - Prefer coauthored papers when possible (they connect to multiple people).
        - Set the returned item's "type" to "Paper" when returning papers.
 
+       DIAMBIGUATION WARNING: Many entities share titles with famous songs, movies, or TV shows. 
+       STRICTLY avoid pop-culture hallucinations. 
+       Example: If a professional architect is mentioned in a book/interview called "Still Standing", DO NOT return the Elton John song "I'm Still Standing" unless the architect actually wrote/performed it. 
+       Only return connections that are professionally or historically relevant to the specific individual described in the VERIFIED INFORMATION.
+
        IMPORTANT: For each returned entity, also provide:
        - wikipediaTitle: the canonical English Wikipedia article title for that entity (use parenthetical disambiguation when needed, e.g. "Euphoria (TV series)", "The Godfather", "A Streetcar Named Desire (1951 film)").
        - year: The 4-digit year of creation, publication, or occurrence. Required if it is an Event/Work.
@@ -514,7 +588,7 @@ export const fetchPersonWorks = async (
        - For a Mathematician: Return specific named Papers (often coauthored).`;
 
   try {
-    const prompt = `${wikiPrompt}${contextPrompt}
+    const prompt = `${wikiPrompt}${mentionPrompt}${contextPrompt}
       Ensure each entry is a different entity. ${dateRequired ? 'Sort by year. STRICTLY avoid entities without a known year.' : 'Sort by year if applicable.'}`;
 
     console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
@@ -573,6 +647,10 @@ export const fetchPersonWorks = async (
 };
 
 export const fetchConnectionPath = async (start: string, end: string, context?: { startWiki?: string; endWiki?: string }): Promise<PathResponse> => {
+  if (shouldProxy()) {
+    return callAiProxy("/api/ai/path", { start, end, context });
+  }
+
   const apiKey = await getApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] fetchConnectionPath: No API key found");
@@ -681,6 +759,10 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
 };
 
 export const findWikipediaTitle = async (name: string, description?: string): Promise<{ title: string; imageHint?: string } | null> => {
+  if (shouldProxy()) {
+    return callAiProxy("/api/ai/title", { name, description });
+  }
+
   const apiKey = await getApiKey();
   if (!apiKey) return null;
   const ai = new GoogleGenAI({ apiKey });
@@ -726,6 +808,10 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
 // Optional: grounded lookup for org leadership using Google Search tool.
 // NOTE: This cannot use responseSchema/responseMimeType; we parse JSON from text.
 export const fetchOrgKeyPeopleBlockViaSearch = async (orgName: string): Promise<string | null> => {
+  if (shouldProxy()) {
+    return callAiProxy("/api/ai/search-org", { orgName });
+  }
+
   const apiKey = await getApiKey();
   if (!apiKey) return null;
 

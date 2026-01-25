@@ -10,9 +10,10 @@ interface SidebarProps {
   externalToggleSignal?: number;
   onFindBetterImage?: (nodeId: number) => void;
   isAdminMode?: boolean;
+  forceExpanded?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, onCollapseChange, externalToggleSignal, onFindBetterImage, isAdminMode }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, onCollapseChange, externalToggleSignal, onFindBetterImage, isAdminMode, forceExpanded }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFullSummary, setShowFullSummary] = useState(false);
@@ -45,15 +46,19 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
   // Auto-expand logic: Only auto-expand on desktop if user hasn't manually collapsed it
   // On mobile, keep it collapsed so it doesn't block the graph.
   useEffect(() => {
-    if (selectedNode) {
-      if (!isMobile && !userManuallyCollapsedRef.current) {
-        setIsCollapsed(false);
-      } else {
-        setIsCollapsed(true);
-      }
+    if (!selectedNode) return;
+    if (forceExpanded) {
+      setIsCollapsed(false);
       setShowFullSummary(false);
+      return;
     }
-  }, [selectedNode, isMobile]);
+    if (!isMobile && !userManuallyCollapsedRef.current) {
+      setIsCollapsed(false);
+    } else {
+      setIsCollapsed(true);
+    }
+    setShowFullSummary(false);
+  }, [selectedNode, isMobile, forceExpanded]);
 
   // External toggle (from header button)
   useEffect(() => {
@@ -83,9 +88,10 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
   // Unified side panel styling - slides right on both mobile and desktop
   // Side panel styling - always slides right.
   // When collapsed, we translate most of it away but leave 24px (1.5rem-ish) for the handle.
-  const panelWidth = isMobile ? 'calc(100vw - 1.5rem)' : '26rem';
+  const effectiveMobile = forceExpanded ? false : isMobile;
+  const panelWidth = effectiveMobile ? 'calc(100vw - 1.5rem)' : '26rem';
   const panelClasses = `fixed top-16 right-0 z-50 transition-transform duration-300 ease-in-out ${isCollapsed ? 'translate-x-[calc(100%-24px)]' : 'translate-x-0'}`;
-  const panelStyle = { width: panelWidth, maxWidth: '28rem', paddingRight: isMobile ? '0.75rem' : '1rem' };
+  const panelStyle = { width: panelWidth, maxWidth: '28rem', paddingRight: effectiveMobile ? '0.75rem' : '1rem' };
 
   return (
     <>

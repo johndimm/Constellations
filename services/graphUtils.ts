@@ -166,3 +166,117 @@ export const dedupeGraph = (
 
     return { nodes: nodesOut, links: linksOut };
 };
+
+type ExpansionTarget = GraphNode & {
+    edge_label?: string | null;
+    edge_meta?: any;
+    evidence?: GraphLink['evidence'];
+};
+
+export const mergeExpansionGraph = (params: {
+    nodes: GraphNode[];
+    links: GraphLink[];
+    parent: GraphNode;
+    targets: ExpansionTarget[];
+    seedFromParent?: boolean;
+}): { nodes: GraphNode[]; links: GraphLink[] } => {
+    const { nodes, links, parent, targets, seedFromParent = true } = params;
+    const existingNodeIds = new Set(nodes.map(n => n.id));
+    const nodeMap = new Map<number, GraphNode>(nodes.map(n => [n.id, n]));
+
+    const parentIsAtomic = !!(parent.is_atomic ?? parent.is_person ?? (parent.type || '').toLowerCase() === 'person');
+    const expectedChildIsAtomic = !parentIsAtomic;
+
+    targets.forEach(t => {
+        const meta = (t.meta || {}) as Record<string, any>;
+        const existing = nodeMap.get(t.id);
+        const imageUrl = meta.imageUrl ?? existing?.imageUrl ?? t.imageUrl;
+        const wikiSummary = meta.wikiSummary ?? (t as any).wikiSummary ?? existing?.wikiSummary;
+        const isAtomic =
+            (typeof t.is_atomic === 'boolean' ? t.is_atomic : (typeof (t as any).is_person === 'boolean' ? (t as any).is_person : undefined)) ??
+            (existing?.is_atomic ?? (existing as any)?.is_person) ??
+            expectedChildIsAtomic;
+
+        const initialX = (!existing && seedFromParent && parent.x != null)
+            ? parent.x + (Math.random() - 0.5) * 100
+            : undefined;
+        const initialY = (!existing && seedFromParent && parent.y != null)
+            ? parent.y + (Math.random() - 0.5) * 100
+            : undefined;
+
+        const merged: GraphNode = {
+            x: existing?.x ?? initialX,
+            y: existing?.y ?? initialY,
+            ...(existing || {}),
+            id: t.id,
+            title: t.title || existing?.title || '',
+            type: t.type || existing?.type || '',
+            is_atomic: isAtomic,
+            wikipedia_id: t.wikipedia_id || existing?.wikipedia_id,
+            description: wikiSummary || t.description || existing?.description || '',
+            year: t.year ?? existing?.year,
+            imageUrl,
+            imageChecked: !!imageUrl || existing?.imageChecked,
+            wikiSummary,
+            expanded: existing?.expanded || false,
+            isLoading: false
+        };
+        nodeMap.set(t.id, merged);
+    });
+
+    if (nodeMap.has(parent.id)) {
+        nodeMap.set(parent.id, { ...nodeMap.get(parent.id)!, expanded: true, isLoading: false });
+    }
+
+    const updatedNodes = Array.from(nodeMap.values());
+    const isAtomicForId = new Map<number, boolean>();
+    updatedNodes.forEach(n => {
+        const v = (n.is_atomic ?? (n as any).is_person);
+        if (typeof v === 'boolean') isAtomicForId.set(n.id, v);
+        else if ((n.type || '').toLowerCase() === 'person') isAtomicForId.set(n.id, true);
+    });
+
+    const candidateLinks: GraphLink[] = targets.map(t => ({
+        source: parent.id,
+        target: t.id,
+        id: `${parent.id}-${t.id}`,
+        label: t.edge_label || (t as any).role || undefined,
+        evidence: t.evidence || t.edge_meta?.evidence || { kind: 'none' }
+    }));
+
+    const bipartiteSafeCandidates = candidateLinks.filter(l => {
+        const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+        const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+        const sa = isAtomicForId.get(Number(s));
+        const ta = isAtomicForId.get(Number(t));
+        if (sa === undefined || ta === undefined) return true;
+        return sa !== ta;
+    });
+
+    const existingLinkIds = new Set(links.map(l => l.id));
+    const updatedExistingLinks = links.map(l => {
+        const cand = bipartiteSafeCandidates.find(c => c.id === l.id);
+        if (!cand) return l;
+        const merged: GraphLink = { ...l };
+        if (!merged.label && cand.label) merged.label = cand.label;
+        if ((!merged.evidence || merged.evidence.kind === 'none') && cand.evidence) merged.evidence = cand.evidence;
+        return merged;
+    });
+    const newLinksToAdd = bipartiteSafeCandidates.filter(l => !existingLinkIds.has(l.id));
+    const combinedLinks = [...updatedExistingLinks, ...newLinksToAdd];
+
+    const degree = new Map<number, number>();
+    combinedLinks.forEach(l => {
+        const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
+        const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
+        degree.set(Number(s), (degree.get(Number(s)) || 0) + 1);
+        degree.set(Number(t), (degree.get(Number(t)) || 0) + 1);
+    });
+    const prunedNodes = updatedNodes.filter(n => {
+        if (n.id === parent.id) return true;
+        if (existingNodeIds.has(n.id)) return true;
+        return (degree.get(n.id) || 0) > 0;
+    });
+
+    return dedupeGraph(prunedNodes, combinedLinks);
+};

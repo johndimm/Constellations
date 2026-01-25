@@ -8,6 +8,7 @@ import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, 
 import { getApiKey } from './services/aiUtils';
 import { fetchWikipediaSummary, fetchWikipediaExtract, fetchWikidataKeyPeopleForTitle, fetchWikidataCastForTitle } from './services/wikipediaService';
 import { fetchServerImage } from './services/imageService';
+import { useNodeClickHandler } from './hooks/useNodeClickHandler';
 import {
     getOpenAlexWork,
     getTopWorksForAuthor,
@@ -27,7 +28,7 @@ import {
     loadSelectedKioskDomainId,
     saveSelectedKioskDomainId
 } from './kioskDomains';
-import { normalizeForDedup, canonicalType, dedupeKey, baseDedupeKey, dedupeGraph } from './services/graphUtils';
+import { normalizeForDedup, canonicalType, dedupeKey, baseDedupeKey, dedupeGraph, mergeExpansionGraph } from './services/graphUtils';
 
 const BrowsePeople = lazy(() => import('./components/BrowsePeople'));
 const PeopleBrowserSidebar = lazy(() => import('./components/PeopleBrowserSidebar'));
@@ -52,7 +53,27 @@ const getEnvCacheUrl = () => {
     return url;
 };
 
-const App: React.FC = () => {
+type AppProps = {
+    mode?: 'standalone' | 'extension';
+    hideHeader?: boolean;
+    hideControlPanel?: boolean;
+    hideSidebar?: boolean;
+    externalSearch?: { term: string; id: number } | null;
+    onExternalSearchConsumed?: (id: number) => void;
+    onNodeNavigate?: (node: GraphNode) => void;
+    renderEvidencePopup?: (selectedLink: GraphLink | null, onClose: () => void) => React.ReactNode;
+};
+
+const App: React.FC<AppProps> = ({
+    mode = 'standalone',
+    hideHeader = false,
+    hideControlPanel = false,
+    hideSidebar = false,
+    externalSearch = null,
+    onExternalSearchConsumed,
+    onNodeNavigate,
+    renderEvidencePopup
+}) => {
     const ENABLE_WEB_SEARCH =
         String((import.meta as any)?.env?.VITE_ENABLE_WEB_SEARCH || '').trim() === '1' ||
         String((import.meta as any)?.env?.VITE_ENABLE_WEB_SEARCH || '').trim().toLowerCase() === 'true';
@@ -61,6 +82,9 @@ const App: React.FC = () => {
         // Default ON when the feature exists; can be disabled for offline demos.
         String((import.meta as any)?.env?.VITE_ENABLE_ACADEMIC_CORPORA ?? 'true').trim() === '1' ||
         String((import.meta as any)?.env?.VITE_ENABLE_ACADEMIC_CORPORA ?? 'true').trim().toLowerCase() === 'true';
+    const showHeader = !hideHeader;
+    const showControlPanel = !hideControlPanel;
+    const showSidebar = !hideSidebar;
     // Use local cache server when running locally, regardless of env var
     const envCacheUrl = getEnvCacheUrl();
     const cacheBaseUrl = envCacheUrl ||
@@ -128,6 +152,10 @@ const App: React.FC = () => {
     const [pathStart, setPathStart] = useState('');
     const [pathEnd, setPathEnd] = useState('');
     const [searchId, setSearchId] = useState(0);
+    const searchIdRef = useRef(0);
+    useEffect(() => {
+        searchIdRef.current = searchId;
+    }, [searchId]);
     const [deletePreview, setDeletePreview] = useState<{ keepIds: number[], dropIds: number[] } | null>(null);
     const [pathNodeIds, setPathNodeIds] = useState<number[]>([]);
     const [newlyExpandedNodeIds, setNewlyExpandedNodeIds] = useState<number[]>([]);
@@ -316,7 +344,12 @@ const App: React.FC = () => {
 
     const saveCacheNodeMeta = useCallback(async (
         nodeId: number,
-        meta: { imageUrl?: string | null, wikiSummary?: string | null, wikipedia_id?: string | null },
+        meta: {
+            imageUrl?: string | null,
+            wikiSummary?: string | null,
+            wikipedia_id?: string | null,
+            mentioningPageTitles?: string[] | null
+        },
         fallbackNode?: Partial<GraphNode> & { id: number; type?: string; title: string }
     ) => {
         if (!cacheEnabled) return;
@@ -327,9 +360,11 @@ const App: React.FC = () => {
             const img = meta.imageUrl ?? (node as any).imageUrl;
             const wiki = meta.wikiSummary ?? (node as any).wikiSummary;
             const wikiId = meta.wikipedia_id ?? (node as any).wikipedia_id;
+            const mentioning = meta.mentioningPageTitles ?? (node as any).mentioningPageTitles;
             if (img) metaToSend.imageUrl = img;
             if (wiki) metaToSend.wikiSummary = wiki;
             if (wikiId) metaToSend.wikipedia_id = wikiId;
+            if (mentioning) metaToSend.mentioningPageTitles = mentioning;
             await fetch(new URL("/node", cacheBaseUrl).toString(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -395,8 +430,8 @@ const App: React.FC = () => {
                     return {
                         ...n,
                         imageUrl: imageResult.url,
-                        image_wikipedia_id: imageResult.pageId?.toString(),
-                        image_wikipedia_title: imageResult.pageTitle,
+                        image_wikipedia_id: (imageResult as any).pageId?.toString(),
+                        image_wikipedia_title: (imageResult as any).pageTitle,
                         fetchingImage: false,
                         imageChecked: true
                     };
@@ -453,8 +488,8 @@ const App: React.FC = () => {
                             nodes: prev.nodes.map(n => n.id === nodeId ? {
                                 ...n,
                                 imageUrl: imageResult.url,
-                                image_wikipedia_id: imageResult.pageId?.toString(),
-                                image_wikipedia_title: imageResult.pageTitle,
+                                image_wikipedia_id: (imageResult as any).pageId?.toString(),
+                                image_wikipedia_title: (imageResult as any).pageTitle,
                                 fetchingImage: false,
                                 imageChecked: true
                             } : n)
@@ -567,6 +602,8 @@ const App: React.FC = () => {
     const fetchAndExpandNode = useCallback(async (node: GraphNode, isInitial = false, forceMore = false, nodesOverride?: GraphNode[], linksOverride?: GraphLink[], skipSelection = false, skipExpandingHighlight = false) => {
         const currentNodes = nodesOverride || graphDataRef.current.nodes;
         const currentLinks = linksOverride || graphDataRef.current.links;
+        const guardId = searchIdRef.current;
+        const isStale = () => searchIdRef.current !== guardId;
 
         if (!forceMore && (node.expanded || node.isLoading)) return;
 
@@ -578,6 +615,7 @@ const App: React.FC = () => {
         // Don't set expandingNodeId yet - wait until data is ready to display
         // Maintaining previous expansion highlight until new one is ready
 
+        if (isStale()) return;
         setGraphData(prev => {
             const existingNodeIds = new Set(prev.nodes.map(n => n.id));
             return {
@@ -586,6 +624,7 @@ const App: React.FC = () => {
             };
         });
         const loadingGuard = setTimeout(() => {
+            if (isStale()) return;
             setGraphData(prev => ({
                 ...prev,
                 nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
@@ -624,12 +663,21 @@ const App: React.FC = () => {
             }).filter(Boolean);
 
             // Fetch Wikipedia summary BEFORE classification to avoid ambiguity (e.g., "David" person vs sculpture).
-            let wiki = { extract: node.wikiSummary || null, pageid: node.wikipedia_id ? Number(node.wikipedia_id) : null };
-            if (!wiki.extract && !wiki.pageid) {
+            let wiki: any = {
+                extract: node.wikiSummary || null,
+                pageid: node.wikipedia_id ? Number(node.wikipedia_id) : null,
+                mentioningPageTitles: node.mentioningPageTitles || null
+            };
+            if ((!wiki.extract && !wiki.pageid) || (wiki.extract && !wiki.pageid && !wiki.mentioningPageTitles)) {
+                console.log(`📡 [Expand] Refreshing grounding for "${node.title}" (missing pageid or mentioningPageTitles)`);
                 wiki = await fetchWikipediaSummary(node.title, neighborNames.join(' '));
             }
             if (wiki.extract) {
-                nodeUpdates.set(node.id, { wikiSummary: wiki.extract, wikipedia_id: wiki.pageid?.toString() });
+                nodeUpdates.set(node.id, {
+                    wikiSummary: wiki.extract,
+                    wikipedia_id: wiki.pageid?.toString(),
+                    mentioningPageTitles: wiki.mentioningPageTitles || undefined
+                });
             }
 
             // 1. Ensure node has classification info
@@ -793,102 +841,15 @@ const App: React.FC = () => {
                                 .filter(cn => !existingNodeIdsBefore.has(cn.id))
                                 .map(cn => cn.id);
                             const cacheNewNodes = newChildIds.length;
-                            let cacheNewLinks = 0;
 
-                            setGraphData(prev => {
-                                const existingNodeIds = new Set(prev.nodes.map(n => n.id));
-                                const existingLinkIds = new Set(prev.links.map(l => l.id));
-                                const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
-                                const parentIsAtomic = !!(currentIsAtomic ?? node.is_atomic ?? (node as any).is_person);
-                                const expectedChildIsAtomic = !parentIsAtomic;
-
-                                // We already know some are new, but allow the reducer to handle the merge details
-                                validCached.forEach(cn => {
-                                    const meta = cn.meta || {};
-                                    const existing = nodeMap.get(cn.id);
-                                    const imageUrl = meta.imageUrl ?? existing?.imageUrl;
-
-                                    const initialX = node.x ? node.x + (Math.random() - 0.5) * 100 : undefined;
-                                    const initialY = node.y ? node.y + (Math.random() - 0.5) * 100 : undefined;
-
-                                    const merged: GraphNode = {
-                                        x: initialX,
-                                        y: initialY,
-                                        ...(existing || {}),
-                                        id: cn.id,
-                                        title: cn.title,
-                                        type: cn.type,
-                                        // Preserve/repair bipartite partition for cached expansions
-                                        is_atomic: (existing?.is_atomic ?? (existing as any)?.is_person ?? expectedChildIsAtomic),
-                                        wikipedia_id: cn.wikipedia_id,
-                                        description: meta.wikiSummary || cn.description || existing?.description || "",
-                                        year: cn.year ?? existing?.year,
-                                        imageUrl,
-                                        imageChecked: !!imageUrl || existing?.imageChecked,
-                                        wikiSummary: meta.wikiSummary ?? (existing as any)?.wikiSummary,
-                                        expanded: existing?.expanded || false,
-                                        isLoading: false
-                                    };
-                                    nodeMap.set(cn.id, merged);
-                                });
-                                if (nodeMap.has(node.id)) {
-                                    nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: false });
-                                }
-                                const updatedNodes = Array.from(nodeMap.values());
-
-                                const isAtomicForId = new Map<number, boolean>();
-                                updatedNodes.forEach(n => {
-                                    const v = (n.is_atomic ?? (n as any).is_person);
-                                    if (typeof v === 'boolean') isAtomicForId.set(n.id, v);
-                                    else if ((n.type || '').toLowerCase() === 'person') isAtomicForId.set(n.id, true);
-                                });
-
-                                const candidateLinks: GraphLink[] = validCached.map(cn => ({
-                                    source: node.id,
-                                    target: cn.id,
-                                    id: `${node.id}-${cn.id}`,
-                                    label: cn.edge_label || undefined,
-                                    evidence: cn.edge_meta?.evidence || { kind: 'none' }
-                                }));
-                                const bipartiteSafeCandidates = candidateLinks.filter(l => {
-                                    const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
-                                    const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
-                                    const sa = isAtomicForId.get(Number(s));
-                                    const ta = isAtomicForId.get(Number(t));
-                                    if (sa === undefined || ta === undefined) return true;
-                                    return sa !== ta;
-                                });
-
-                                // Merge evidence/label into existing links (so old cached edges get "upgraded")
-                                const updatedExistingLinks = prev.links.map(l => {
-                                    const cand = bipartiteSafeCandidates.find(c => c.id === l.id);
-                                    if (!cand) return l;
-                                    const merged: GraphLink = { ...l };
-                                    if (!merged.label && cand.label) merged.label = cand.label;
-                                    if ((!merged.evidence || merged.evidence.kind === 'none') && cand.evidence) merged.evidence = cand.evidence;
-                                    return merged;
-                                });
-
-                                const newLinksToAdd = bipartiteSafeCandidates.filter(l => !existingLinkIds.has(l.id));
-                                cacheNewLinks = newLinksToAdd.length;
-                                const combinedLinks = [...updatedExistingLinks, ...newLinksToAdd];
-
-                                // Prune any newly-added nodes that ended up with zero edges (can happen after filtering/dedupe).
-                                const degree = new Map<number, number>();
-                                combinedLinks.forEach(l => {
-                                    const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
-                                    const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
-                                    degree.set(Number(s), (degree.get(Number(s)) || 0) + 1);
-                                    degree.set(Number(t), (degree.get(Number(t)) || 0) + 1);
-                                });
-                                const prunedNodes = updatedNodes.filter(n => {
-                                    if (n.id === node.id) return true;
-                                    if (existingNodeIds.has(n.id)) return true;
-                                    return (degree.get(n.id) || 0) > 0;
-                                });
-
-                                return dedupeGraph(prunedNodes, combinedLinks);
-                            });
+                            if (isStale()) return;
+                            setGraphData(prev => mergeExpansionGraph({
+                                nodes: prev.nodes,
+                                links: prev.links,
+                                parent: node,
+                                targets: validCached,
+                                seedFromParent: true
+                            }));
 
                             // Auto "expand more" if this expansion produced very few targets
                             maybeAutoExpandMore(validCached.length);
@@ -1062,11 +1023,11 @@ const App: React.FC = () => {
                 console.log(`✅ [Expand] OpenAlex produced ${results.length} academic connections for "${node.title}"`);
             } else if (isPerson) {
                 // Pass a longer verified extract when available so the LLM can pick evidence sentences.
-                let data = await fetchPersonWorks(node.title, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                let data = await fetchPersonWorks(node.title, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
                 // If exclusions made the result set empty, retry once without exclusions.
                 if ((!data.works || data.works.length === 0) && neighborNames.length > 0) {
                     console.log(`↩️ [Expand] empty result with exclusions; retrying without exclusions for "${node.title}"`);
-                    data = await fetchPersonWorks(node.title, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                    data = await fetchPersonWorks(node.title, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
                 }
                 results = (data.works || [])
                     .filter(w => typeof (w as any)?.entity === 'string' && (w as any).entity.trim().length > 0)
@@ -1099,11 +1060,11 @@ const App: React.FC = () => {
                 console.log(`✅ [Expand] Found ${results.length} connections for atomic "${node.title}"`);
             } else {
                 // Pass a longer verified extract when available so the LLM can pick evidence sentences.
-                let data = await fetchConnections(node.title, undefined, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                let data = await fetchConnections(node.title, undefined, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
                 // If exclusions made the result set empty, retry once without exclusions.
                 if ((!data.people || data.people.length === 0) && neighborNames.length > 0) {
                     console.log(`↩️ [Expand] empty result with exclusions; retrying without exclusions for "${node.title}"`);
-                    data = await fetchConnections(node.title, undefined, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType);
+                    data = await fetchConnections(node.title, undefined, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
                 }
                 if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
 
@@ -1546,6 +1507,7 @@ const App: React.FC = () => {
                     .filter(cn => !existingNodeIdsBefore.has(cn.id))
                     .map(cn => cn.id);
 
+                if (isStale()) return;
                 setGraphData(prev => {
                     const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
                     const existingNodeIds = new Set(prev.nodes.map(n => n.id));
@@ -1660,10 +1622,17 @@ const App: React.FC = () => {
 
                 // Keep spinner visible until nodes have rendered
                 setTimeout(() => {
+                    if (isStale()) return;
                     setGraphData(prev => ({
                         ...prev,
                         nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false, ...nodeUpdates.get(node.id) } : n)
                     }));
+
+                    // Persist any grounding metadata (like mentioningPageTitles) found during expansion
+                    const updates = nodeUpdates.get(node.id);
+                    if (updates) {
+                        saveCacheNodeMeta(node.id, updates, node);
+                    }
 
                     // Center viewport on the expanded node after a brief delay for physics to settle
                     setTimeout(() => {
@@ -1675,11 +1644,13 @@ const App: React.FC = () => {
         } catch (error) {
             console.error("Failed to expand node", { nodeId: node.id, title: node.title, error });
             const msg = (error as any)?.message || 'unknown error';
-            setError(`Failed to fetch connections: ${msg}`);
-            setGraphData(prev => ({
-                ...prev,
-                nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: false } : n)
-            }));
+            if (!isStale()) {
+                setError(`Failed to fetch connections: ${msg}`);
+                setGraphData(prev => ({
+                    ...prev,
+                    nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: false } : n)
+                }));
+            }
             // Clear selection and expanding node on error
             setSelectedNode(null);
             setSelectedLink(null);
@@ -1687,14 +1658,18 @@ const App: React.FC = () => {
             setNewChildNodeIds(new Set());
         } finally {
             clearTimeout(loadingGuard);
-            setIsProcessing(false);
+            if (!isStale()) {
+                setIsProcessing(false);
+            }
         }
     }, [loadNodeImage, cacheEnabled, fetchCacheExpansion, saveCacheExpansion, cacheBaseUrl, saveCacheNodeMeta]);
 
     const handleStartSearch = async (term: string, recursiveDepth = 0) => {
         setIsProcessing(true);
         setError(null);
-        setSearchId(prev => prev + 1);
+        const nextSearchId = searchIdRef.current + 1;
+        searchIdRef.current = nextSearchId;
+        setSearchId(nextSearchId);
         setPathNodeIds([]); // Clear path highlighting when starting a new search
         setSelectedLink(null);
 
@@ -1712,7 +1687,8 @@ const App: React.FC = () => {
             console.log(`Type: ${type}, Atomic: ${isAtomic}, LockedPair: ${chosenPair.atomicType}/${chosenPair.compositeType}`);
 
             // 2. Fetch Wikipedia summary for display/disambiguation (not for classification).
-            const wiki = await fetchWikipediaSummary(term, selectedKioskDomain?.label);
+            const wikiContext = showControlPanel ? selectedKioskDomain?.label : undefined;
+            const wiki = await fetchWikipediaSummary(term, wikiContext);
             const canonicalTitle = (wiki.title || term).trim();
             // Never replace the user's input with list-style Wikipedia titles (these are often wrong for people).
             const lowerCanon = canonicalTitle.toLowerCase();
@@ -1820,10 +1796,21 @@ const App: React.FC = () => {
         }
     };
 
+    useEffect(() => {
+        if (!externalSearch?.term) return;
+        handleStartSearch(externalSearch.term);
+        if (externalSearch?.id !== undefined) {
+            onExternalSearchConsumed?.(externalSearch.id);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [externalSearch?.id]);
+
     const handlePathSearch = async (start: string, end: string) => {
         setIsProcessing(true);
         setError(null);
-        setSearchId(prev => prev + 1);
+        const nextSearchId = searchIdRef.current + 1;
+        searchIdRef.current = nextSearchId;
+        setSearchId(nextSearchId);
 
         // Clear screen first as requested
         setGraphData({ nodes: [], links: [] });
@@ -2680,62 +2667,50 @@ const App: React.FC = () => {
         }, 500);
     }, [pendingAutoExpandId, nodes, handleExpandLeaves]);
 
-    const handleNodeClick = useCallback((node: GraphNode | null) => {
-        if (!node) {
-            setSelectedNode(null);
+    const handleNodeClick = useNodeClickHandler({
+        selectedNode,
+        setSelectedNode,
+        setContextMenu,
+        onDeselect: () => {
             setSelectedLink(null);
-            setContextMenu(null);
-            setPathNodeIds([]); // Clear path highlighting when deselecting
-            setNewlyExpandedNodeIds([]); // Clear expansion highlighting on deselect
-            // Clear expansion highlighting when clicking background
+            setPathNodeIds([]);
+            setNewlyExpandedNodeIds([]);
             setExpandingNodeId(null);
             setNewChildNodeIds(new Set());
-            return;
-        }
-
-        // Retry image fetch if it failed previously
-        if (node.imageChecked && !node.imageUrl) {
-            loadNodeImage(node.id, node.title);
-        }
-
-        // If in connect mode, auto-fill start/end inputs ONLY if they are empty
-        if (searchMode === 'connect') {
-            setPathStart(prev => prev || node.title);
-            setPathEnd(prev => {
-                if (prev) return prev;
-                const currentStart = pathStart;
-                return node.title !== currentStart ? node.title : prev;
-            });
-        }
-
-        // Check if this is a second click on the already selected node
-        const isSecondClick = selectedNode && selectedNode.id === node.id;
-
-        if (isSecondClick) {
-            // Second click on selected node: show context menu
-            setContextMenu({
-                node,
-                x: window.innerWidth / 3,
-                y: window.innerHeight / 3
-            });
-        } else {
-            // First click: initiate selection request
-            setContextMenu(null);
+        },
+        onClearSecondarySelection: () => {
             setSelectedLink(null);
-
-            if (node.expanded || node.isLoading) {
-                // Already expanded: fulfill selection request immediately (connections are ready)
-                setSelectedNode(node);
-                setExpandingNodeId(null);
-                setNewChildNodeIds(new Set());
-            } else {
-                // Unexpanded: start expansion, selection will be fulfilled when data returns
-                // Maintaining previous selection/expansion highlight while waiting for data
-                console.log(`🖱️ [UI] node clicked -> expand`, { id: node.id, title: node.title, type: node.type });
-                fetchAndExpandNode(node);
+        },
+        onRetryImage: (node) => {
+            if (node.imageChecked && !node.imageUrl) {
+                loadNodeImage(node.id, node.title);
             }
-        }
-    }, [searchMode, pathStart, pathEnd, selectedNode, loadNodeImage, fetchAndExpandNode]);
+        },
+        onConnectSelect: (node) => {
+            if (searchMode === 'connect') {
+                setPathStart(prev => prev || node.title);
+                setPathEnd(prev => {
+                    if (prev) return prev;
+                    const currentStart = pathStart;
+                    return node.title !== currentStart ? node.title : prev;
+                });
+            }
+        },
+        onExpandedSelect: () => {
+            setExpandingNodeId(null);
+            setNewChildNodeIds(new Set());
+        },
+        onNavigate: onNodeNavigate,
+        onExpand: (node) => {
+            console.log(`🖱️ [UI] node clicked -> expand`, { id: node.id, title: node.title, type: node.type });
+            fetchAndExpandNode(node);
+        },
+        selectOnFirstClick: false,
+        getMenuPosition: () => ({
+            x: window.innerWidth / 3,
+            y: window.innerHeight / 3
+        })
+    });
 
     const handleLinkClick = useCallback((link: GraphLink) => {
         try {
@@ -3037,6 +3012,8 @@ const App: React.FC = () => {
         setShowBrowse(true);
     }, []);
 
+    const browseActive = showControlPanel && showBrowse;
+
     // Seeds are handled in the ControlPanel by setting exploreTerm and calling onSearch.
 
     if (!isKeyReady) {
@@ -3054,61 +3031,65 @@ const App: React.FC = () => {
 
     return (
         <div className="fixed inset-0 bg-slate-900 overflow-hidden">
-            <header className="fixed top-0 left-0 right-0 z-50 min-h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex items-center justify-between px-2 sm:px-3 py-2 gap-2 overflow-x-hidden max-w-full">
-                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                    <button
-                        onClick={() => setPanelCollapsed(c => !c)}
-                        className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition flex-shrink-0"
-                        title={panelCollapsed ? "Show controls" : "Hide controls"}
-                    >
-                        {panelCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-                    </button>
-                    <button
-                        onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); setShowBrowse(false); }}
-                        className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap hover:text-red-400 transition-colors"
-                    >
-                        Constellations
-                    </button>
-                </div>
-                <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0 mr-2">
-                    <button
-                        onClick={handleOpenPeopleBrowser}
-                        className={`text-sm font-bold uppercase tracking-widest transition-colors ${showBrowse ? 'text-red-500' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        People
-                    </button>
-                    {selectedNode && (
+            {showHeader && (
+                <header className="fixed top-0 left-0 right-0 z-50 min-h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 flex items-center justify-between px-2 sm:px-3 py-2 gap-2 overflow-x-hidden max-w-full">
+                    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                         <button
-                            onClick={() => { setSidebarCollapsed(c => !c); setSidebarToggleSignal(s => s + 1); }}
+                            onClick={() => setPanelCollapsed(c => !c)}
                             className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition flex-shrink-0"
-                            title="Toggle details"
+                            title={panelCollapsed ? "Show controls" : "Hide controls"}
                         >
-                            {sidebarCollapsed ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+                            {panelCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
                         </button>
-                    )}
-                </div>
-            </header>
+                        <button
+                            onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); setShowBrowse(false); }}
+                            className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap hover:text-red-400 transition-colors"
+                        >
+                            Constellations
+                        </button>
+                    </div>
+                    <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0 mr-2">
+                        <button
+                            onClick={handleOpenPeopleBrowser}
+                            className={`text-sm font-bold uppercase tracking-widest transition-colors ${showBrowse ? 'text-red-500' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            People
+                        </button>
+                        {selectedNode && (
+                            <button
+                                onClick={() => { setSidebarCollapsed(c => !c); setSidebarToggleSignal(s => s + 1); }}
+                                className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition flex-shrink-0"
+                                title="Toggle details"
+                            >
+                                {sidebarCollapsed ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+                            </button>
+                        )}
+                    </div>
+                </header>
+            )}
 
             {/* Always mount BrowsePeople to retain state, but hide it based on showBrowse */}
-            <div className={`fixed inset-0 z-40 ${showBrowse ? 'block' : 'hidden'}`}>
-                <Suspense fallback={<div className="flex items-center justify-center h-full bg-slate-900 text-slate-400">Loading People Browser...</div>}>
-                    <BrowsePeople
-                        baseUrl={window.location.origin}
-                        exploreTerm={exploreTerm}
-                        onSelect={(name) => {
-                            setExploreTerm(name);
-                            const newParams = new URLSearchParams(window.location.search);
-                            newParams.delete('browse');
-                            const newUrl = window.location.pathname + (newParams.toString() ? '?' + newParams.toString() : '');
-                            window.history.pushState({}, '', newUrl);
-                            setShowBrowse(false);
-                            setTimeout(() => handleStartSearch(name), 100);
-                        }}
-                    />
-                </Suspense>
-            </div>
+            {showControlPanel && (
+                <div className={`fixed inset-0 z-40 ${browseActive ? 'block' : 'hidden'}`}>
+                    <Suspense fallback={<div className="flex items-center justify-center h-full bg-slate-900 text-slate-400">Loading People Browser...</div>}>
+                        <BrowsePeople
+                            baseUrl={window.location.origin}
+                            exploreTerm={exploreTerm}
+                            onSelect={(name) => {
+                                setExploreTerm(name);
+                                const newParams = new URLSearchParams(window.location.search);
+                                newParams.delete('browse');
+                                const newUrl = window.location.pathname + (newParams.toString() ? '?' + newParams.toString() : '');
+                                window.history.pushState({}, '', newUrl);
+                                setShowBrowse(false);
+                                setTimeout(() => handleStartSearch(name), 100);
+                            }}
+                        />
+                    </Suspense>
+                </div>
+            )}
 
-            <div className={showBrowse ? 'hidden' : 'block'}>
+            <div className={browseActive ? 'hidden' : 'block'}>
                 <Graph
                     ref={graphRef}
                     nodes={nodes}
@@ -3129,75 +3110,82 @@ const App: React.FC = () => {
                     highlightDropIds={deletePreview ? deletePreview.dropIds : []}
                 />
 
-                <ControlPanel
-                    searchMode={searchMode}
-                    setSearchMode={setSearchMode}
-                    exploreTerm={exploreTerm}
-                    setExploreTerm={setExploreTerm}
-                    pathStart={pathStart}
-                    setPathStart={setPathStart}
-                    pathEnd={pathEnd}
-                    setPathEnd={setPathEnd}
-                    onSearch={handleStartSearch}
-                    onPathSearch={handlePathSearch}
-                    isAdminMode={isAdminMode}
-                    kioskSeedTerms={kioskSeedTerms}
-                    kioskDomains={kioskDomains}
-                    selectedKioskDomainId={selectedKioskDomainId}
-                    onSelectKioskDomain={(domainId) => {
-                        setSelectedKioskDomainId(domainId);
-                        // Clear any in-progress connect selection when switching domains
-                        setPathStart('');
-                        setPathEnd('');
-                    }}
-                    onUpdateKioskDomains={(domains) => setKioskDomains(domains)}
-                    onClear={handleClear}
-                    onExpandAllLeafNodes={handleExpandAllLeafNodes}
-                    isProcessing={isProcessing || isExpandingAllLeaves}
-                    isCompact={isCompact}
-                    onToggleCompact={() => setIsCompact(!isCompact)}
-                    isTimelineMode={isTimelineMode}
-                    onToggleTimeline={() => setIsTimelineMode(!isTimelineMode)}
-                    isTextOnly={isTextOnly}
-                    onToggleTextOnly={() => setIsTextOnly(!isTextOnly)}
-                    onPrune={handlePrune}
-                    error={error}
-                    onSave={handleSaveGraph}
-                    onLoad={handleLoadGraph}
-                    onDeleteGraph={handleDeleteGraph}
-                    onImport={handleImport}
-                    savedGraphs={savedGraphs}
-                    helpHover={helpHover}
-                    onHelpHoverChange={setHelpHover}
-                    isCollapsed={panelCollapsed}
-                    onSetCollapsed={setPanelCollapsed}
-                    onOpenPeopleBrowser={handleOpenPeopleBrowser}
-                />
-                <Sidebar
-                    selectedNode={selectedNode}
-                    selectedLink={selectedLink}
-                    onClose={() => { setSelectedNode(null); setSelectedLink(null); setContextMenu(null); setPathNodeIds([]); }}
-                    onCollapseChange={setSidebarCollapsed}
-                    externalToggleSignal={sidebarToggleSignal}
-                    onFindBetterImage={handleFindBetterImage}
-                    isAdminMode={isAdminMode}
-                />
-                <Suspense fallback={null}>
-                    <PeopleBrowserSidebar
-                        isOpen={peopleBrowserOpen}
-                        onClose={() => setPeopleBrowserOpen(false)}
-                        onSelectPerson={(personName) => {
-                            setExploreTerm(personName);
-                            setPeopleBrowserOpen(false);
-                            // Update URL with the selected person (remove browse param, add q param)
-                            const params = new URLSearchParams(window.location.search);
-                            params.delete('browse');
-                            params.set('q', personName);
-                            window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
-                            handleStartSearch(personName, 1);
+                {showControlPanel && (
+                    <ControlPanel
+                        searchMode={searchMode}
+                        setSearchMode={setSearchMode}
+                        exploreTerm={exploreTerm}
+                        setExploreTerm={setExploreTerm}
+                        pathStart={pathStart}
+                        setPathStart={setPathStart}
+                        pathEnd={pathEnd}
+                        setPathEnd={setPathEnd}
+                        onSearch={handleStartSearch}
+                        onPathSearch={handlePathSearch}
+                        isAdminMode={isAdminMode}
+                        kioskSeedTerms={kioskSeedTerms}
+                        kioskDomains={kioskDomains}
+                        selectedKioskDomainId={selectedKioskDomainId}
+                        onSelectKioskDomain={(domainId) => {
+                            setSelectedKioskDomainId(domainId);
+                            // Clear any in-progress connect selection when switching domains
+                            setPathStart('');
+                            setPathEnd('');
                         }}
+                        onUpdateKioskDomains={(domains) => setKioskDomains(domains)}
+                        onClear={handleClear}
+                        onExpandAllLeafNodes={handleExpandAllLeafNodes}
+                        isProcessing={isProcessing || isExpandingAllLeaves}
+                        isCompact={isCompact}
+                        onToggleCompact={() => setIsCompact(!isCompact)}
+                        isTimelineMode={isTimelineMode}
+                        onToggleTimeline={() => setIsTimelineMode(!isTimelineMode)}
+                        isTextOnly={isTextOnly}
+                        onToggleTextOnly={() => setIsTextOnly(!isTextOnly)}
+                        onPrune={handlePrune}
+                        error={error}
+                        onSave={handleSaveGraph}
+                        onLoad={handleLoadGraph}
+                        onDeleteGraph={handleDeleteGraph}
+                        onImport={handleImport}
+                        savedGraphs={savedGraphs}
+                        helpHover={helpHover}
+                        onHelpHoverChange={setHelpHover}
+                        isCollapsed={panelCollapsed}
+                        onSetCollapsed={setPanelCollapsed}
+                        onOpenPeopleBrowser={handleOpenPeopleBrowser}
                     />
-                </Suspense>
+                )}
+                {showSidebar && (
+                    <Sidebar
+                        selectedNode={selectedNode}
+                        selectedLink={selectedLink}
+                        onClose={() => { setSelectedNode(null); setSelectedLink(null); setContextMenu(null); setPathNodeIds([]); }}
+                        onCollapseChange={setSidebarCollapsed}
+                        externalToggleSignal={sidebarToggleSignal}
+                        onFindBetterImage={handleFindBetterImage}
+                        isAdminMode={isAdminMode}
+                    />
+                )}
+                {renderEvidencePopup && renderEvidencePopup(selectedLink, () => setSelectedLink(null))}
+                {showControlPanel && (
+                    <Suspense fallback={null}>
+                        <PeopleBrowserSidebar
+                            isOpen={peopleBrowserOpen}
+                            onClose={() => setPeopleBrowserOpen(false)}
+                            onSelectPerson={(personName) => {
+                                setExploreTerm(personName);
+                                setPeopleBrowserOpen(false);
+                                // Update URL with the selected person (remove browse param, add q param)
+                                const params = new URLSearchParams(window.location.search);
+                                params.delete('browse');
+                                params.set('q', personName);
+                                window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
+                                handleStartSearch(personName, 1);
+                            }}
+                        />
+                    </Suspense>
+                )}
 
                 {contextMenu && (
                     <NodeContextMenu
