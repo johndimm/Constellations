@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { buildWikiUrl } from './utils/wikiUtils';
 import { Key, Search, HelpCircle, Minimize2, Maximize2, ExternalLink } from 'lucide-react';
 import Graph from './components/Graph';
 import ControlPanel from './components/ControlPanel';
@@ -193,7 +194,13 @@ const App: React.FC<AppProps> = ({
 
     const onNodeClick = useNodeClickHandler({
         selectedNode, setSelectedNode, setContextMenu,
-        onNavigate: onNodeNavigate,
+        onNavigate: (node) => {
+            if (onNodeNavigate) {
+                onNodeNavigate(node);
+            } else {
+                window.open(buildWikiUrl(node.title, node.wikipedia_id), '_blank');
+            }
+        },
         onExpand: isTimelineMode ? undefined : fetchAndExpandNode,
         onDeselect: () => {
             setPathNodeIds([]);

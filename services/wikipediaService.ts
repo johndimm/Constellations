@@ -728,6 +728,13 @@ export const fetchWikipediaSummary = async (
           });
         }
 
+        // Penalize non-Latin characters if the query is Latin (prevents Japanese/Chinese/etc. titles on en.wikipedia)
+        const isLatinQuery = !/[^\u0000-\u024F]/.test(cleanQuery);
+        const titleHasNonLatin = /[^\u0000-\u024F]/.test(title);
+        if (isLatinQuery && titleHasNonLatin) {
+          s -= 2000;
+        }
+
         return s;
       };
 

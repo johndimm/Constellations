@@ -88,6 +88,7 @@ export const useNodeClickHandler = ({
             setSelectedNode(node);
             lastSelectedIdRef.current = node.id;
             onExpandedSelect?.(node);
+            onNavigate?.(node);
             lastClickRef.current = { id: node.id, at: now };
             onDebug?.(`click: ${node.title} -> select expanded:${!!node.expanded} loading:${!!node.isLoading}`);
             return;

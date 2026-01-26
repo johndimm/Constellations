@@ -265,35 +265,6 @@ export function useExpansion(options: UseExpansionOptions) {
                 }
             }
 
-            const fixMissingWiki = (targets: any[]) => {
-                targets.forEach((cn, idx) => {
-                    const hasWikiId = !!(cn.wikipedia_id && String(cn.wikipedia_id).trim());
-                    const hasSummary = !!(cn.meta?.wikiSummary || cn.wikiSummary);
-                    if (hasWikiId || hasSummary) return;
-                    setTimeout(async () => {
-                        try {
-                            setGraphData(prev => ({
-                                ...prev,
-                                nodes: prev.nodes.map(n => n.id === cn.id ? { ...n, wikiChecked: true } : n)
-                            }));
-                            const wiki = await fetchWikipediaSummary(cn.title);
-                            if (!wiki.extract && !wiki.pageid) return;
-                            setGraphData(prev => ({
-                                ...prev,
-                                nodes: prev.nodes.map(n => n.id === cn.id ? {
-                                    ...n,
-                                    wikiSummary: wiki.extract || n.wikiSummary,
-                                    wikipedia_id: wiki.pageid ? wiki.pageid.toString() : n.wikipedia_id
-                                } : n)
-                            }));
-                            saveCacheNodeMeta(cn.id, { wikiSummary: wiki.extract || null, wikipedia_id: wiki.pageid ? wiki.pageid.toString() : null }, { id: cn.id, title: cn.title, type: cn.type });
-                        } catch (e) {
-                            console.warn("Wiki fixup failed for", cn.title, e);
-                        }
-                    }, 50 * idx);
-                });
-            };
-
             const sourceLong = (await fetchWikipediaExtract(node.title, 2000)).extract || wiki.extract || '';
             const hasReliableWikipediaForThisTitle = !!(sourceLong && String(sourceLong).trim().length > 0);
 
@@ -370,48 +341,53 @@ export function useExpansion(options: UseExpansionOptions) {
                         }
                     }
                 }
-            } else if (isPerson) {
-                let data = await fetchPersonWorks(node.title, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
-                if ((!data.works || data.works.length === 0) && neighborNames.length > 0) {
-                    data = await fetchPersonWorks(node.title, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
+            }
+
+            // Fallback: If academic results were empty, proceed to standard expansion
+            if (results.length === 0) {
+                if (isPerson) {
+                    let data = await fetchPersonWorks(node.title, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
+                    if ((!data.works || data.works.length === 0) && neighborNames.length > 0) {
+                        data = await fetchPersonWorks(node.title, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
+                    }
+                    results = (data.works || []).filter(w => typeof (w as any).entity === 'string' && (w as any).entity.trim().length > 0).map(w => ({
+                        title: (w as any).wikipediaTitle || w.entity,
+                        type: (w as any).type || currentCompositeType,
+                        description: w.description, year: w.year ?? undefined, role: w.role ?? undefined, is_atomic: false,
+                        edge_meta: {
+                            evidence: {
+                                kind: 'ai', pageTitle: (w as any).evidencePageTitle || node.title, snippet: (w as any).evidenceSnippet || '',
+                                url: looksLikeWikipediaTitle((w as any).evidencePageTitle || node.title) ? (
+                                    ((String((w as any).evidencePageTitle || node.title) === node.title) && !hasReliableWikipediaForThisTitle)
+                                        ? undefined
+                                        : buildWikiUrl((w as any).evidencePageTitle || node.title, (String((w as any).evidencePageTitle || node.title) === node.title) ? node.wikipedia_id : undefined)
+                                ) : undefined
+                            }
+                        },
+                        edge_label: w.role || null
+                    }));
+                } else {
+                    let data = await fetchConnections(node.title, undefined, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
+                    if ((!data.people || data.people.length === 0) && neighborNames.length > 0) {
+                        data = await fetchConnections(node.title, undefined, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
+                    }
+                    if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
+                    const atomicTypeToUse = currentAtomicType || 'Person';
+                    results = (data.people || []).map(p => ({
+                        title: (p as any).wikipediaTitle || p.name, type: atomicTypeToUse, description: p.description, role: p.role, is_atomic: true,
+                        edge_meta: {
+                            evidence: {
+                                kind: 'ai', pageTitle: (p as any).evidencePageTitle || node.title, snippet: (p as any).evidenceSnippet || '',
+                                url: looksLikeWikipediaTitle((p as any).evidencePageTitle || node.title) ? (
+                                    ((String((p as any).evidencePageTitle || node.title) === node.title) && !hasReliableWikipediaForThisTitle)
+                                        ? undefined
+                                        : buildWikiUrl((p as any).evidencePageTitle || node.title, (String((p as any).evidencePageTitle || node.title) === node.title) ? node.wikipedia_id : undefined)
+                                ) : undefined
+                            }
+                        },
+                        edge_label: p.role || null
+                    }));
                 }
-                results = (data.works || []).filter(w => typeof (w as any).entity === 'string' && (w as any).entity.trim().length > 0).map(w => ({
-                    title: (w as any).wikipediaTitle || w.entity,
-                    type: (w as any).type || currentCompositeType,
-                    description: w.description, year: w.year ?? undefined, role: w.role ?? undefined, is_atomic: false,
-                    edge_meta: {
-                        evidence: {
-                            kind: 'ai', pageTitle: (w as any).evidencePageTitle || node.title, snippet: (w as any).evidenceSnippet || '',
-                            url: looksLikeWikipediaTitle((w as any).evidencePageTitle || node.title) ? (
-                                ((String((w as any).evidencePageTitle || node.title) === node.title) && !hasReliableWikipediaForThisTitle)
-                                    ? undefined
-                                    : buildWikiUrl((w as any).evidencePageTitle || node.title, (String((w as any).evidencePageTitle || node.title) === node.title) ? node.wikipedia_id : undefined)
-                            ) : undefined
-                        }
-                    },
-                    edge_label: w.role || null
-                }));
-            } else {
-                let data = await fetchConnections(node.title, undefined, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
-                if ((!data.people || data.people.length === 0) && neighborNames.length > 0) {
-                    data = await fetchConnections(node.title, undefined, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
-                }
-                if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
-                const atomicTypeToUse = currentAtomicType || 'Person';
-                results = (data.people || []).map(p => ({
-                    title: (p as any).wikipediaTitle || p.name, type: atomicTypeToUse, description: p.description, role: p.role, is_atomic: true,
-                    edge_meta: {
-                        evidence: {
-                            kind: 'ai', pageTitle: (p as any).evidencePageTitle || node.title, snippet: (p as any).evidenceSnippet || '',
-                            url: looksLikeWikipediaTitle((p as any).evidencePageTitle || node.title) ? (
-                                ((String((p as any).evidencePageTitle || node.title) === node.title) && !hasReliableWikipediaForThisTitle)
-                                    ? undefined
-                                    : buildWikiUrl((p as any).evidencePageTitle || node.title, (String((p as any).evidencePageTitle || node.title) === node.title) ? node.wikipedia_id : undefined)
-                            ) : undefined
-                        }
-                    },
-                    edge_label: p.role || null
-                }));
 
                 if (results.length === 0 && sourceLong) {
                     const sentences = splitIntoSentences(sourceLong);
@@ -427,6 +403,7 @@ export function useExpansion(options: UseExpansionOptions) {
                             if (m) {
                                 const name = String(m[1] || '').split(/,| and | who | which /i)[0].trim();
                                 if (name && name.split(/\s+/).length >= 2) {
+                                    const atomicTypeToUse = currentAtomicType || 'Person';
                                     results = [{ title: name, type: atomicTypeToUse, description: `${ptn.role} associated with ${node.title}.`, role: ptn.role, is_atomic: true, edge_meta: { evidence: { kind: 'wikipedia', pageTitle: node.title, snippet: sent, url: looksLikeWikipediaTitle(node.title) ? buildWikiUrl(node.title) : undefined } }, edge_label: ptn.role }];
                                     break;
                                 }
@@ -441,6 +418,7 @@ export function useExpansion(options: UseExpansionOptions) {
                         const castLabels = await fetchWikidataCastForTitle(node.title);
                         if (castLabels.length) {
                             const existingNames = new Set(results.map(r => normalizeForDedup(r.title)));
+                            const atomicTypeToUse = currentAtomicType || 'Person';
                             castLabels.forEach(name => {
                                 const key = normalizeForDedup(name);
                                 if (!key || existingNames.has(key)) return;
@@ -479,12 +457,9 @@ export function useExpansion(options: UseExpansionOptions) {
                     const pageLooksNonWiki = pageTitle.includes(' - ') || /^https?:\/\//i.test(pageTitle) || !looksLikeWikipediaTitle(pageTitle);
 
                     if (evidence && evidence.kind === 'ai' && snippet && pageTitle && !pageLooksNonWiki) {
-                        // (Ideally use the same getExtractCached logic here)
                     } else if (pageLooksNonWiki) {
                         evidence = { kind: 'none' as const };
                     }
-
-                    // (Additional verify logic simplified forbrevity but should match App.tsx)
 
                     return {
                         ...r, title: rWiki.title || r.title, wikipedia_id: rWiki.pageid?.toString(),

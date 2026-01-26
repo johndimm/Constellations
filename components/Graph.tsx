@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { GraphNode, GraphLink } from '../types';
+import { buildWikiUrl } from '../utils/wikiUtils';
 
 interface GraphProps {
     nodes: GraphNode[];
@@ -1019,7 +1020,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 baseOpacity = 0.18;
             } else if (hasHighlight) {
                 baseOpacity = isKeep ? 1 : 0.3;
-            } else if (!isTimelineMode) {
+            } else {
                 // Simple selection/expansion highlighting
                 if (expandingNodeId !== null) {
                     // Expansion in progress: dim all except expanding node and new children
@@ -1132,9 +1133,14 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                             background: transparent;
                         ">
                             ${imgH > 0 ? `<img src="${d.imageUrl}" style="width: 100%; height: ${imgH}px; object-fit: contain; display: block; margin-bottom: ${imgSpacing}px;" />` : ''}
-                            <div style="font-size: 13px; font-weight: bold; margin-bottom: 12px; line-height: 1.4; word-wrap: break-word; color: #ffffff;">${escapeHtml(d.title)}</div>
-                            ${displayDescription ? `<div style="font-size: 12px; margin-bottom: 12px; line-height: 1.4; word-wrap: break-word; color: #ffffff;">${escapeHtml(displayDescription)}</div>` : ''}
-                            ${hasPeople ? `<div style="font-size: 11px; color: #e2e8f0; font-style: italic; line-height: 1.4; word-wrap: break-word;">${escapeHtml(peopleText)}</div>` : ''}
+                            <div style="font-size: 13px; font-weight: bold; margin-bottom: 8px; line-height: 1.4; word-wrap: break-word; color: #ffffff; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;">
+                                <span>${escapeHtml(d.title)}</span>
+                                <a href="${buildWikiUrl(d.title, d.wikipedia_id)}" target="_blank" style="color: #6366f1; flex-shrink: 0; display: flex; align-items: center; margin-top: 1px;" onclick="event.stopPropagation();">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                </a>
+                            </div>
+                            ${displayDescription ? `<div style="font-size: 11px; margin-bottom: 8px; line-height: 1.4; word-wrap: break-word; color: #cbd5e1;">${escapeHtml(displayDescription)}</div>` : ''}
+                            ${hasPeople ? `<div style="font-size: 12px; color: #ffffff; font-weight: 600; line-height: 1.4; word-wrap: break-word; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px; text-transform: capitalize;">${escapeHtml(peopleText)}</div>` : ''}
                         </div>
                     `;
 
@@ -1275,25 +1281,23 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             }
         });
 
-        // In timeline mode, show links only for selected person, otherwise hide them
+        // In timeline mode, show links only for selected node, otherwise hide them
         if (isTimelineMode) {
             allLinks.style("display", d => {
                 if (!effectiveFocused) return "none";
-                const isPersonNode = effectiveFocused.is_person ?? effectiveFocused.type.toLowerCase() === 'person';
-                if (!isPersonNode) return "none";
                 const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source;
                 const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target;
-                // Show link if it connects to the selected person
+                // Show link if it connects to the selected node
                 return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? null : "none";
             }).style("stroke-opacity", d => {
                 if (!effectiveFocused) return 0;
-                const isPersonNode = effectiveFocused.is_person ?? effectiveFocused.type.toLowerCase() === 'person';
-                if (!isPersonNode) return 0;
                 const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source;
                 const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target;
                 return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? 0.9 : 0;
-            }).style("stroke", "#dc2626").style("stroke-width", 3.5);
-        } else {
+            });
+        }
+        allLinks.style("stroke", "#dc2626").style("stroke-width", 3.5);
+        if (!isTimelineMode) {
             allLinks.style("display", null)
                 .style("stroke-opacity", d => {
                     const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;

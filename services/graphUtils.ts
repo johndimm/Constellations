@@ -13,36 +13,40 @@ export const normalizeForDedup = (str: unknown) => {
         // Normalize to reduce visually-identical variants (e.g., curly quotes, composed accents)
         s = s.normalize('NFKC');
     } catch { }
-    return s
+
+    const base = s
         .replace(/[\u200B-\u200D\uFEFF]/g, '') // zero-width chars
         .replace(/\u00A0/g, ' ')              // NBSP -> space
         .trim()
         .replace(/\s*\([^)]*\)$/, '')         // Remove trailing parenthetical disambiguation (e.g. "(film)")
         .toLowerCase()
-        .replace(/^the\s+/i, '')              // Remove leading "The "
         .replace(/[^\p{L}\p{N}\s]/gu, '')     // Remove punctuation (keep letters/numbers)
-        .replace(/\s+/g, ' ');                // Collapse spaces
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    // Strip common articles from the entire string to handle "a" vs "the" mismatch.
+    // e.g. "Interview with a Vampire" vs "Interview with the Vampire"
+    const stripped = base.replace(/\b(a|an|the)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    return stripped || base;
 };
 
 export const canonicalType = (t?: string) => {
     const norm = (t || '').trim().toLowerCase();
     if (!norm) return '';
-    if (['film', 'movie', 'film series'].includes(norm) || norm.startsWith('film ')) return 'work';
-    if (norm === 'tv show' || norm === 'tv series' || norm === 'television series') return 'work';
-    // Collapse most "work-like" composites into a single bucket to avoid dupes like
-    // play/film/book adaptations returning as separate nodes with the same title.
+    // Unify all common creative works and events into a single bucket.
+    // This handles cases where Gemini might call a movie an "Event" in one context 
+    // and a "Movie/Work" in another.
     if ([
-        'work',
-        'event', // keep explicit Event as-is (handled by return norm)
+        'work', 'event', 'composite',
         'book', 'novel', 'short story', 'story', 'essay',
         'play', 'theatre', 'theater', 'musical',
-        'movie', 'tv', 'episode', 'series',
+        'movie', 'film', 'cinema', 'motion picture', 'film series',
+        'tv', 'tv show', 'tv series', 'television series', 'episode', 'series', 'miniseries',
         'song', 'track', 'album', 'record', 'single',
         'painting', 'artwork', 'sculpture', 'photograph',
         'opera', 'ballet', 'symphony', 'concerto', 'composition', 'piece'
-    ].includes(norm)) {
-        // If it's literally 'event', keep it distinct. Otherwise bucket as 'work'.
-        return norm === 'event' ? 'event' : 'work';
+    ].some(v => norm === v || (norm.startsWith(v) && norm.length <= v.length + 3))) {
+        return 'work';
     }
     return norm;
 };
@@ -116,20 +120,33 @@ export const dedupeGraph = (
     };
 
     nodes.forEach(n => {
-        // Use a partition-aware key for case-insensitive deduplication
         const key = baseDedupeKey(n as any);
-        // For composites, if we have a typed key but there's already a type-missing bucket for the same title,
-        // merge into that bucket so "missing type" acts like a wildcard.
         let existing = dedupMap.get(key);
         let targetKey = key;
-        if (!existing && key.startsWith('c|') && key.split('|').length === 3) {
+
+        // If no exact match, check for title-only collisions in the Composite partition.
+        // This handles merging a node with a generic/missing type into a more specific one (or vice versa).
+        if (!existing && key.startsWith('c|')) {
             const titleOnlyKey = key.split('|').slice(0, 2).join('|'); // "c|<title>"
+
+            // 1. Try to find a wildcard (title-only) entry
             const wildcard = dedupMap.get(titleOnlyKey);
             if (wildcard) {
                 existing = wildcard;
                 targetKey = titleOnlyKey;
+            } else {
+                // 2. Try to find ANY typed entry with the same title
+                // We search all keys for one that starts with our title-only key
+                for (const [k, node] of dedupMap.entries()) {
+                    if (k.startsWith(titleOnlyKey + '|') || k === titleOnlyKey) {
+                        existing = node;
+                        targetKey = k;
+                        break;
+                    }
+                }
             }
         }
+
         if (!existing) {
             dedupMap.set(key, n);
             idRemap.set(n.id, n.id);

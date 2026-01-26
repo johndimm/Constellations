@@ -155,6 +155,7 @@ Rules:
 - If "${term}" looks like an academic paper or author, choose "Author" or "Paper".
 - If "${term}" is a symptom, choose "Symptom".
 - If "${term}" is an ingredient, choose "Ingredient".
+- If "${term}" is a very famous person (actor, politician, musician), choose "Person" even if they have written a book or paper, unless the user explicitly provided a DOI or arXiv ID.
 
 Return JSON:
 {
