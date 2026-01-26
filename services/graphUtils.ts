@@ -27,8 +27,8 @@ export const normalizeForDedup = (str: unknown) => {
 export const canonicalType = (t?: string) => {
     const norm = (t || '').trim().toLowerCase();
     if (!norm) return '';
-    if (['film', 'movie', 'film series'].includes(norm) || norm.startsWith('film ')) return 'movie';
-    if (norm === 'tv show' || norm === 'tv series' || norm === 'television series') return 'tv';
+    if (['film', 'movie', 'film series'].includes(norm) || norm.startsWith('film ')) return 'work';
+    if (norm === 'tv show' || norm === 'tv series' || norm === 'television series') return 'work';
     // Collapse most "work-like" composites into a single bucket to avoid dupes like
     // play/film/book adaptations returning as separate nodes with the same title.
     if ([

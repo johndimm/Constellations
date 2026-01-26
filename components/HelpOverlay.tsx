@@ -110,6 +110,23 @@ const HelpOverlay: React.FC<HelpOverlayProps> = ({
                         <LinkIcon size={14} />
                         <span>Follow John Dimm on LinkedIn</span>
                     </a>
+
+                    {isExtension ? (
+                        <a
+                            href="https://constellations-beaf.onrender.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 transition-colors"
+                        >
+                            <LinkIcon size={14} />
+                            <span>Visit Standalone Website</span>
+                        </a>
+                    ) : (
+                        <div className="flex items-center gap-2 text-slate-500">
+                            <LinkIcon size={14} />
+                            <span>Chrome Extension (Coming Soon)</span>
+                        </div>
+                    )}
                 </section>
             </div>
         </div>

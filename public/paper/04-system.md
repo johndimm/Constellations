@@ -83,7 +83,11 @@ To keep exploration responsive and reduce repeated API calls, Constellations cac
 Caching supports repeated browsing, saving/loading graphs, and revisiting a previously explored frontier with evidence intact.
 
 ## Implementation notes
-The current implementation is a client-side React application with a small cache backend. While the core ideas are model- and stack-agnostic, a few design choices matter for reproducibility and user experience:
+The system is deployed as two primary interactive experiences:
+- **Standalone Web Application**: A full-canvas exploratory research interface. It supports deep-dive sessions, saved graph management, and a comprehensive "People Browser" for seeding new investigations.
+- **Chrome Extension (Wikipedia Sidebar)**: A context-aware implementation that lives alongside a user's active browsing. Specifically, when reading a Wikipedia article, the extension constructs a relational graph of the article's core entities. This provides something like a **physical location for the article in information space**, allowing the user to see the topological "neighborhood" of the topic they are currently reading.
+
+While the core ideas are model- and stack-agnostic, a few design choices matter for reproducibility and user experience:
 
 - **Graph rendering and interaction**: a force-directed node-link layout supports direct manipulation (dragging nodes), hover highlighting, and edge selection for evidence inspection. Nodes are visually differentiated by partition (Atomic vs Composite) to reinforce alternation.
 - **Bounded neighborhood expansion**: each expansion requests a small number of neighbors (typically 8–10) to avoid hairball growth and to keep the choice set cognitively manageable.

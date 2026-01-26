@@ -7,6 +7,7 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
         root: '.', // Build from root so we can access components
+        publicDir: 'chrome-extension/public',
         plugins: [tailwindcss(), react()],
         define: {
             // Force API keys to be empty in the extension build. 

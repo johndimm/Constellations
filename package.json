@@ -13,7 +13,7 @@
     "render:paper:pdf": "node scripts/renderPaperPdf.mjs",
     "render:paper:tex": "node scripts/renderPaperTex.mjs",
     "render:paper:tex:pdf": "node scripts/renderPaperTex.mjs && latexmk -pdf -interaction=nonstopmode -halt-on-error -jobname=paper -outdir=public/paper/rendered public/paper/tex/constellations.tex",
-    "build:ext": "vite build -c vite.config.ext.ts && cp chrome-extension/manifest.json dist-extension/ && cp -r chrome-extension/icons dist-extension/",
+    "build:ext": "vite build -c vite.config.ext.ts && cp chrome-extension/manifest.json dist-extension/ && cp -r chrome-extension/icons dist-extension/ && rm -f dist-extension/*.mp4",
     "bundle:ext": "npm run build:ext && rm -f constellations-extension.zip && zip -r constellations-extension.zip dist-extension/*"
   },
   "dependencies": {
