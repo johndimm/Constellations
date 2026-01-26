@@ -17,6 +17,7 @@ export const normalizeForDedup = (str: unknown) => {
         .replace(/[\u200B-\u200D\uFEFF]/g, '') // zero-width chars
         .replace(/\u00A0/g, ' ')              // NBSP -> space
         .trim()
+        .replace(/\s*\([^)]*\)$/, '')         // Remove trailing parenthetical disambiguation (e.g. "(film)")
         .toLowerCase()
         .replace(/^the\s+/i, '')              // Remove leading "The "
         .replace(/[^\p{L}\p{N}\s]/gu, '')     // Remove punctuation (keep letters/numbers)

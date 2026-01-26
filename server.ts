@@ -1075,12 +1075,23 @@ const resolveImageForTitle = async (title: string, context: string): Promise<{ u
         if (lt.includes('cover')) score += 200;
         if (lt.includes('film') || lt.includes('movie')) score += 150;
         if (lt.includes(normalizedTitle)) score += 200;
+
+        // Penalize junk keywords often found in museum/car photos
+        const junk = ['museum', 'car', 'grill', 'packard', 'automobile', 'vehicle', 'display', 'engine', 'cockpit', 'interior', 'exterior', 'restoration', 'may_2017'];
+        if (junk.some(j => lt.includes(j))) score -= 1000;
+
+        // Movie posters usually have clean filenames. Long, descriptive names often imply a photo OF a prop.
+        if (t.length > 100) score -= 400;
+
         if (lt.includes('.svg') || lt.includes('.webm') || lt.includes('.gif')) score -= 300;
         return { title: t, score };
       }).sort((a: any, b: any) => b.score - a.score);
 
       const best = scored[0];
-      if (!best || best.score <= 0) return null;
+      if (!best || best.score <= 0) {
+        console.warn(`[Image][Wiki-Poster] No good poster found for "${trimmedTitle}". Best score: ${best?.score || 0}`);
+        return null;
+      }
       return fetchImageInfo(best.title);
     } catch {
       return null;
@@ -1254,8 +1265,10 @@ app.get("/api/ddg-image-test", async (req, res) => {
 app.post("/api/ai/classify-start", async (req, res) => {
   const { term, wikiContext } = req.body;
   if (!term) return res.status(400).json({ error: "term is required" });
+  console.log(`📡 [Proxy] Classify-Start: "${term}"`);
   try {
     const result = await classifyStartPair(term, wikiContext);
+    console.log(`✅ [Proxy] Classify-Start result for "${term}":`, result);
     return res.status(200).json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
@@ -1265,8 +1278,10 @@ app.post("/api/ai/classify-start", async (req, res) => {
 app.post("/api/ai/classify", async (req, res) => {
   const { term, wikiContext } = req.body;
   if (!term) return res.status(400).json({ error: "term is required" });
+  console.log(`📡 [Proxy] Classify: "${term}"`);
   try {
     const result = await classifyEntity(term, wikiContext);
+    console.log(`✅ [Proxy] Classify internal result for "${term}":`, result);
     return res.status(200).json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
@@ -1276,8 +1291,10 @@ app.post("/api/ai/classify", async (req, res) => {
 app.post("/api/ai/connections", async (req, res) => {
   const { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
+  console.log(`📡 [Proxy] Connections: "${nodeName}" (Type: ${compositeType})`);
   try {
     const result = await fetchConnections(nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
+    console.log(`✅ [Proxy] Connections internal result for "${nodeName}":`, result.people?.length || 0, "people found");
     return res.status(200).json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
@@ -1287,8 +1304,10 @@ app.post("/api/ai/connections", async (req, res) => {
 app.post("/api/ai/works", async (req, res) => {
   const { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
+  console.log(`📡 [Proxy] Works: "${nodeName}" (Type: ${atomicType})`);
   try {
     const result = await fetchPersonWorks(nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
+    console.log(`✅ [Proxy] Works result for "${nodeName}":`, result.works?.length || 0, "works found");
     return res.status(200).json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });

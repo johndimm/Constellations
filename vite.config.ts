@@ -35,7 +35,9 @@ export default defineConfig(({ mode }) => {
       'process.env.API_KEY': JSON.stringify(apiKey),
       'process.env.GEMINI_API_KEY': JSON.stringify(apiKey),
       'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(apiKey),
-      'import.meta.env.GEMINI_API_KEY': JSON.stringify(apiKey)
+      'import.meta.env.GEMINI_API_KEY': JSON.stringify(apiKey),
+      'import.meta.env.VITE_CACHE_URL': JSON.stringify(env.VITE_CACHE_URL || env.VITE_CACHE_API_URL || ""),
+      'import.meta.env.VITE_CACHE_API_URL': JSON.stringify(env.VITE_CACHE_URL || env.VITE_CACHE_API_URL || "")
     },
     resolve: {
       alias: {

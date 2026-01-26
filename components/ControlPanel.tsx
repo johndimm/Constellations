@@ -42,6 +42,8 @@ interface ControlPanelProps {
   isCollapsed: boolean;
   onSetCollapsed: (val: boolean) => void;
   onOpenPeopleBrowser?: () => void;
+  onToggleHelp: () => void;
+  showHelp?: boolean;
 }
 
 const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -82,9 +84,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onHelpHoverChange,
   isCollapsed,
   onSetCollapsed,
-  onOpenPeopleBrowser
+  onOpenPeopleBrowser,
+  onToggleHelp,
+  showHelp = false
 }) => {
-  const [showHelp, setShowHelp] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [showEditDomains, setShowEditDomains] = useState(false);
@@ -245,7 +248,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       setShowSave(!showSave);
                       setShowLoad(false);
                       setShowShare(false);
-                      setShowHelp(false);
+                      onToggleHelp();
                       onHelpHoverChange(null);
                     }}
                     className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
@@ -258,7 +261,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       setShowLoad(!showLoad);
                       setShowSave(false);
                       setShowShare(false);
-                      setShowHelp(false);
+                      onToggleHelp();
                     }}
                     className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
                     title="Load Graph"
@@ -270,7 +273,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       setShowShare(!showShare);
                       setShowSave(false);
                       setShowLoad(false);
-                      setShowHelp(false);
+                      onToggleHelp();
                       onHelpHoverChange(null);
                     }}
                     className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
@@ -343,10 +346,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   )}
                   <button
                     onClick={() => {
-                      setShowHelp(!showHelp);
-                      setShowSave(false);
-                      setShowLoad(false);
-                      setShowShare(false);
+                      onToggleHelp();
                     }}
                     className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-white flex items-center gap-1 transition-colors ${helpHover === 'help' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
                     title="Help & Info"
@@ -357,162 +357,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               </div>
             </div>
 
-            {/* Help Dialog */}
-            {showHelp && (
-              <div className="mb-4 bg-slate-800 p-4 rounded-lg border border-slate-600 animate-in fade-in slide-in-from-top-2 duration-200 max-h-[60vh] overflow-y-auto">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <HelpCircle size={14} /> Help & Info
-                  </h3>
-                  <button onClick={() => { setShowHelp(false); onHelpHoverChange(null); }}><X size={14} className="text-slate-400" /></button>
-                </div>
-                <div className="space-y-3 text-xs text-slate-300">
-                  <p className="text-sm text-white">
-                    <strong>Browse People:</strong> Explore Wikipedia's people database:{" "}
-                    <button
-                      className="text-slate-200 hover:text-white font-semibold underline"
-                      onClick={(e) => { e.preventDefault(); if (onOpenPeopleBrowser) onOpenPeopleBrowser(); }}
-                    >
-                      Browse People
-                    </button>
-                  </p>
-                  <div className="grid gap-2 text-xs text-slate-200">
-                    <div className="bg-slate-700/40 rounded-lg p-2 border border-slate-700">
-                      <div className="font-semibold text-white mb-1">Toolbar (top left)</div>
-                      <div className="grid grid-cols-[120px_1fr] gap-x-2 gap-y-1 text-[11px] leading-tight">
-                        <span
-                          onMouseEnter={() => onHelpHoverChange('save')}
-                          onMouseLeave={() => onHelpHoverChange(null)}
-                          className="cursor-default"
-                        >
-                          <strong>Save</strong>
-                        </span>
-                        <span className="text-slate-300">Store the current graph locally</span>
-                        <span
-                          onMouseEnter={() => onHelpHoverChange('load')}
-                          onMouseLeave={() => onHelpHoverChange(null)}
-                          className="cursor-default"
-                        >
-                          <strong>Load</strong>
-                        </span>
-                        <span className="text-slate-300">Open a previously saved graph</span>
-                        <span
-                          onMouseEnter={() => onHelpHoverChange('share')}
-                          onMouseLeave={() => onHelpHoverChange(null)}
-                          className="cursor-default"
-                        >
-                          <strong>Share</strong>
-                        </span>
-                        <span className="text-slate-300">Copy link/JSON or download</span>
-                        <span
-                          onMouseEnter={() => onHelpHoverChange('timeline')}
-                          onMouseLeave={() => onHelpHoverChange(null)}
-                          className="cursor-default"
-                        >
-                          <strong>Timeline</strong>
-                        </span>
-                        <span className="text-slate-300">Switch to time view</span>
-                        <span
-                          onMouseEnter={() => onHelpHoverChange('compact')}
-                          onMouseLeave={() => onHelpHoverChange(null)}
-                          className="cursor-default"
-                        >
-                          <strong>Compact</strong>
-                        </span>
-                        <span className="text-slate-300">Tighter layout</span>
-                        <span
-                          onMouseEnter={() => onHelpHoverChange('text')}
-                          onMouseLeave={() => onHelpHoverChange(null)}
-                          className="cursor-default"
-                        >
-                          <strong>Text-only</strong>
-                        </span>
-                        <span className="text-slate-300">Hide images</span>
-                        <span
-                          onMouseEnter={() => onHelpHoverChange('clear')}
-                          onMouseLeave={() => onHelpHoverChange(null)}
-                          className="cursor-default"
-                        >
-                          <strong>Clear</strong>
-                        </span>
-                        <span className="text-slate-300">Remove all nodes</span>
-                      </div>
-                    </div>
-                    <div className="bg-slate-700/40 rounded-lg p-2 border border-slate-700">
-                      <div className="font-semibold text-white mb-1">Sidebar (top right, when a node is selected)</div>
-                      <div className="grid grid-cols-[120px_1fr] gap-x-2 gap-y-1 text-[11px] leading-tight">
-                        <span
-                          onMouseEnter={() => onHelpHoverChange('expand')}
-                          onMouseLeave={() => onHelpHoverChange(null)}
-                          className="cursor-default"
-                        >
-                          <strong>Expand all</strong>
-                        </span>
-                        <span className="text-slate-300">Expand unexpanded neighbors of the selected node</span>
-                        <span
-                          onMouseEnter={() => onHelpHoverChange('add')}
-                          onMouseLeave={() => onHelpHoverChange(null)}
-                          className="cursor-default"
-                        >
-                          <strong>Add more</strong>
-                        </span>
-                        <span className="text-slate-300">Fetch more links from this node</span>
-                        <span
-                          onMouseEnter={() => onHelpHoverChange('delete')}
-                          onMouseLeave={() => onHelpHoverChange(null)}
-                          className="cursor-default"
-                        >
-                          <strong>Delete</strong>
-                        </span>
-                        <span className="text-slate-300">Remove node and orphaned branches</span>
-                      </div>
-                    </div>
-                  </div>
-                  <ul className="list-disc pl-4 space-y-1">
-                    <li><strong>Explore:</strong> Find entities and expand their connections.</li>
-                    <li><strong>Connect:</strong> Discover the hidden path between any two points.</li>
-                    <li><strong>Timeline:</strong> View events and lives across the river of time.</li>
-                  </ul>
-                  <div className="pt-2 border-t border-slate-700 flex flex-col gap-2">
-                    <a
-                      href="/doc/api_queries.html"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-slate-200 hover:text-white transition-colors font-medium"
-                    >
-                      <LinkIcon size={14} /> API queries (examples)
-                    </a>
-                    <a
-                      href="/paper/rendered/paper.pdf"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-slate-200 hover:text-white transition-colors font-medium"
-                    >
-                      <LinkIcon size={14} /> Read the paper (PDF)
-                    </a>
-                    <a
-                      href="https://www.linkedin.com/in/johndimm/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors font-medium"
-                    >
-                      <LinkIcon size={14} /> Created by John Dimm
-                    </a>
-                    <div className="flex justify-between items-center">
-                      <a
-                        href="https://github.com/johndimm/Constellations"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 transition-colors font-medium"
-                      >
-                        <Github size={14} /> View on GitHub
-                      </a>
-                      <span className="text-[10px] text-slate-500 italic">v1.2.0</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Help Dialog moved to shared App-level HelpOverlay */}
 
             {/* Share Dialog */}
             {showShare && (

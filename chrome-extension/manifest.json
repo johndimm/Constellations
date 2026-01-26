@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "Constellations",
     "version": "1.0.0",
-    "description": "Universal, AI-powered bipartite knowledge graphs.",
+    "description": "Explore the hidden connections between people, events, and ideas with AI-powered bipartite knowledge graphs.",
     "permissions": [
         "contextMenus",
         "sidePanel",

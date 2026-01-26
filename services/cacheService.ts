@@ -1,36 +1,10 @@
-
-// Helper to get environment cache URL
-export const getEnvCacheUrl = () => {
-    let url = "";
-    try {
-        // @ts-ignore
-        if (typeof import.meta !== 'undefined' && import.meta.env) {
-            // @ts-ignore
-            url = import.meta.env.VITE_CACHE_API_URL || "";
-        }
-    } catch (e) { }
-    if (url) return url;
-    try {
-        if (typeof process !== 'undefined' && process.env) {
-            url = process.env.VITE_CACHE_API_URL || "";
-        }
-    } catch (e) { }
-    return url;
-};
+import { getEnvCacheUrl } from "./aiUtils";
 
 // Logic to determine effective cache base URL
 // If running in extension, we might need a fixed URL or env var.
 // For now, defaulting to localhost:4000 if not set, similar to App.tsx logic.
 export const getEffectiveCacheBaseUrl = () => {
-    const envUrl = getEnvCacheUrl();
-    if (envUrl) return envUrl;
-    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-        return 'http://localhost:4000';
-    }
-    if (typeof window !== 'undefined' && window.location.protocol === 'chrome-extension:') {
-        return 'http://localhost:4000';
-    }
-    return "";
+    return getEnvCacheUrl();
 };
 
 export const fetchCacheExpansion = async (sourceId: number, baseUrl: string) => {

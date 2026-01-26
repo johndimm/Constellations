@@ -34,6 +34,12 @@ Success signals (simple, measurable)
 - Repeat engagement (do guests return to try a new seed?)
 - Qualitative: “surprise discoveries” / “frontier moments” (what did guests find that they didn’t expect?)
 
+
+Next step
+If you’re open to it, I’d love a 20-minute call to discuss placement (where it would live), the WNDR-specific seed list, and a lightweight pilot timeline (e.g., 2–4 weeks). I can provide a kiosk-friendly configuration and a first-pass WNDR domain pack quickly.
+
+
+
 Links
 - WNDR example graph: https://constellations-delta.vercel.app/?q=WNDR%20Museum
 - Paper (PDF draft): https://constellations-delta.vercel.app/paper/rendered/paper.pdf
@@ -43,7 +49,3 @@ Links
 About me
 - LinkedIn: https://www.linkedin.com/in/johndimm/
 - Resume: https://johndimm.vercel.app/cv/2025/johndimm_classic.pdf
-
-Next step
-If you’re open to it, I’d love a 20-minute call to discuss placement (where it would live), the WNDR-specific seed list, and a lightweight pilot timeline (e.g., 2–4 weeks). I can provide a kiosk-friendly configuration and a first-pass WNDR domain pack quickly.
-

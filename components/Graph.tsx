@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { GraphNode, GraphLink } from '../types';
 
@@ -23,30 +23,31 @@ interface GraphProps {
 }
 
 export interface GraphHandle {
-    centerOnNode: (nodeId: number) => void;
+    centerOnNode: (nodeId: number, scale?: number) => void;
 }
 
 const DEFAULT_CARD_SIZE = 220;
 
-const Graph = forwardRef<GraphHandle, GraphProps>(({
-    nodes,
-    links,
-    onNodeClick,
-    onLinkClick,
-    onViewportChange,
-    width,
-    height,
-    isCompact = false,
-    isTimelineMode = false,
-    isTextOnly = false,
-    searchId = 0,
-    selectedNode = null,
-    expandingNodeId = null,
-    newChildNodeIds = new Set<number>(),
-    highlightKeepIds = [],
-    highlightDropIds = [],
-    onNodeContextMenu
-}, ref) => {
+const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
+    const {
+        nodes,
+        links,
+        onNodeClick,
+        onLinkClick,
+        onViewportChange,
+        width,
+        height,
+        isCompact = false,
+        isTimelineMode = false,
+        isTextOnly = false,
+        searchId = 0,
+        selectedNode = null,
+        expandingNodeId = null,
+        newChildNodeIds = new Set<number>(),
+        highlightKeepIds = [],
+        highlightDropIds = [],
+        onNodeContextMenu,
+    } = props;
     const svgRef = useRef<SVGSVGElement>(null);
     const zoomGroupRef = useRef<SVGGElement>(null);
     const simulationRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
@@ -98,10 +99,62 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         return div.innerHTML;
     }
 
+    const isPersonNode = useCallback((node: GraphNode) => node.is_atomic === true || node.is_person === true || node.type?.toLowerCase() === 'person', []);
+
+    const timelineNodes = useMemo(() => {
+        return nodes
+            .filter(n => !isPersonNode(n))
+            .sort((a, b) => {
+                const hasA = a.year !== undefined && a.year !== null && a.year !== 0;
+                const hasB = b.year !== undefined && b.year !== null && b.year !== 0;
+
+                // Sort undated to the end
+                if (hasA && !hasB) return -1;
+                if (!hasA && hasB) return 1;
+
+                if (hasA && hasB) {
+                    const yearA = Number(a.year ?? 0);
+                    const yearB = Number(b.year ?? 0);
+                    if (yearA !== yearB) return yearA - yearB;
+                }
+
+                return a.id - b.id;
+            });
+    }, [nodes, isPersonNode]);
+
+    const centerOnNode = useCallback((nodeId: number, scale?: number) => {
+        const node = nodes.find(n => n.id === nodeId);
+        if (!node || !svgRef.current || !zoomBehaviorRef.current) return;
+
+        const svg = d3.select(svgRef.current);
+        const currentTransform = d3.zoomTransform(svgRef.current);
+
+        let targetX = node.x;
+        let targetY = node.y;
+
+        if (isTimelineMode) {
+            const fixed = timelinePositionsRef.current.get(nodeId);
+            if (fixed) {
+                targetX = fixed.x;
+                targetY = fixed.y;
+            }
+        }
+
+        if (targetX === undefined) targetX = width / 2;
+        if (targetY === undefined) targetY = height / 2;
+
+        const k = scale !== undefined ? scale : currentTransform.k;
+        const transform = d3.zoomIdentity
+            .translate(width / 2, height / 2)
+            .scale(k)
+            .translate(-targetX, -targetY);
+
+        svg.transition().duration(800).call(zoomBehaviorRef.current.transform, transform);
+    }, [nodes, width, height, isTimelineMode]);
+
     // Calculate dynamic dimensions for nodes
     const getNodeDimensions = (node: GraphNode, isTimeline: boolean, textOnly: boolean): { w: number, h: number, r: number, type: string } => {
-        const isPersonNode = node.is_atomic ?? node.is_person ?? node.type.toLowerCase() === 'person';
-        if (isPersonNode) {
+        if (isPersonNode(node)) {
             if (isTimeline) {
                 // Larger size in timeline mode (2x)
                 return { w: 96, h: 96, r: 110, type: 'circle' }; // r is collision radius
@@ -150,59 +203,25 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
     // Expose centerOnNode function via ref
     useImperativeHandle(ref, () => ({
-        centerOnNode: (nodeId: number) => {
-            const node = nodes.find(n => n.id === nodeId);
-            if (!node || !svgRef.current || isTimelineMode) return;
-
-            const svg = d3.select(svgRef.current);
-            const zoom = d3.zoom<SVGSVGElement, unknown>().on("zoom", (event) => {
-                if (zoomGroupRef.current) {
-                    d3.select(zoomGroupRef.current).attr("transform", event.transform);
-                }
-            });
-
-            // Get current transform
-            const currentTransform = d3.zoomTransform(svgRef.current);
-            const targetX = node.x ?? width / 2;
-            const targetY = node.y ?? height / 2;
-
-            // Keep current scale, pan to center the node
-            const k = currentTransform.k;
-            const transform = d3.zoomIdentity
-                .translate(width / 2, height / 2)
-                .scale(k)
-                .translate(-targetX, -targetY);
-
-            svg.transition().duration(500).call(zoom.transform, transform);
-        }
-    }), [nodes, width, height, isTimelineMode]);
+        centerOnNode
+    }), [centerOnNode]);
 
     // Center on selected node when it changes
     useEffect(() => {
-        if (!selectedNode || !svgRef.current || isTimelineMode) return;
+        if (!selectedNode || !svgRef.current) return;
+        centerOnNode(selectedNode.id);
+    }, [selectedNode?.id, centerOnNode]);
 
-        const svg = d3.select(svgRef.current);
-        const zoom = d3.zoom<SVGSVGElement, unknown>().on("zoom", (event) => {
-            if (zoomGroupRef.current) {
-                d3.select(zoomGroupRef.current).attr("transform", event.transform);
-            }
-        });
-
-        // Get current transform
-        const currentTransform = d3.zoomTransform(svgRef.current);
-        const targetX = selectedNode.x ?? width / 2;
-        const targetY = selectedNode.y ?? height / 2;
-
-        // Calculate transition to center the node
-        // We keep the current scale (k) but move to targetX, targetY
-        const k = currentTransform.k;
-        const transform = d3.zoomIdentity
-            .translate(width / 2, height / 2)
-            .scale(k)
-            .translate(-targetX, -targetY);
-
-        svg.transition().duration(1000).call(zoom.transform, transform);
-    }, [selectedNode?.id, width, height, isTimelineMode]);
+    // Auto-center and zoom when entering timeline mode
+    useEffect(() => {
+        if (isTimelineMode && timelineNodes.length > 0) {
+            // Small delay to ensure layout positions are calculated
+            const timer = setTimeout(() => {
+                centerOnNode(timelineNodes[0].id, 1.15);
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [isTimelineMode, timelineNodes, centerOnNode]);
 
     // Reset zoom and focused state when searchId changes (new graph)
     useEffect(() => {
@@ -302,12 +321,29 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
 
             event.preventDefault();
 
+            if (isTimelineMode && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+                // Navigate chronologically
+                const currentIndex = selectedNode ? timelineNodes.findIndex(n => n.id === selectedNode.id) : -1;
+                let nextNode = null;
+
+                if (event.key === 'ArrowRight') {
+                    if (currentIndex === -1) nextNode = timelineNodes[0];
+                    else if (currentIndex < timelineNodes.length - 1) nextNode = timelineNodes[currentIndex + 1];
+                } else if (event.key === 'ArrowLeft') {
+                    if (currentIndex > 0) nextNode = timelineNodes[currentIndex - 1];
+                }
+
+                if (nextNode) {
+                    onNodeClick(nextNode);
+                    return;
+                }
+            }
+
             const svg = d3.select(svgRef.current);
             const currentTransform = d3.zoomTransform(svgRef.current);
 
             // Pan distance (adjustable)
             const panDistance = 50;
-
             let newX = currentTransform.x;
             let newY = currentTransform.y;
 
@@ -342,7 +378,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, []);
+    }, [isTimelineMode, timelineNodes, selectedNode, onNodeClick, width, height]);
 
     // Handle Mode Switching and Forces
     useEffect(() => {
@@ -395,26 +431,21 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 timelinePositionsRef.current.set(node.id, { x, y });
             };
 
-            // Sort timeline nodes by year (ensure numeric comparison), then by id for stability
-            // Treat missing/zero years as "unknown" and keep out of the timeline row
-            const timelineNodes = nodes
-                .filter(n => n.year !== undefined && n.year !== null && n.year !== 0)
-                .sort((a, b) => {
-                    const yearA = Number(a.year ?? 0);
-                    const yearB = Number(b.year ?? 0);
-                    if (yearA !== yearB) return yearA - yearB;
-                    return a.id - b.id;
-                });
+
 
             const nodeIndexMap = new Map<number, number>(
                 timelineNodes.map((n, i) => [n.id, i] as [number, number])
             );
-            // Increased spacing to account for card width (220px) plus padding
-            const itemSpacing = 260;
+
+            const itemSpacing = 280; // More horizontal breathing room
+            const vGap = 300; // Vertical distance between staggered dated events
+            const tierGap = 350; // Vertical distance between tiered layers
+            const personRadius = 110;
+            const minPersonDistance = personRadius * 2 + 50;
+
             const totalWidth = timelineNodes.length * itemSpacing;
             const startX = -(totalWidth / 2) + (itemSpacing / 2);
             const centerY = height / 2;
-            const yOffset = 120;
 
             // Reset all fixed positions first
             nodes.forEach(node => {
@@ -427,100 +458,65 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 }
             });
 
-            // Fix event positions - they don't move
+            // tier 3: Fix timeline event positions (Bottom)
             timelineNodes.forEach((node, index) => {
                 const fixedX = width / 2 + startX + (index * itemSpacing);
-                const fixedY = centerY + ((index % 2 === 0) ? -yOffset : yOffset);
+                const fixedY = centerY + ((index % 2 === 0) ? -vGap / 4 : vGap / 4);
                 lockNodePosition(node, fixedX, fixedY);
             });
 
-            // Position people (and yearless non-people) in multiple horizontal lines above events (wrap to match event width)
-            const peopleNodes = nodes.filter(n => n.is_person ?? n.type.toLowerCase() === 'person');
-            const unknownEvents = nodes.filter(n =>
-                !(n.is_person ?? n.type.toLowerCase() === 'person') &&
-                (n.year === undefined || n.year === null || n.year === 0)
-            );
+            // tier 1: Position people (Top)
+            const peopleNodes = nodes.filter(isPersonNode);
+            const availableWidth = Math.min(Math.max(totalWidth, width), width * 2);
 
-            if (timelineNodes.length > 0) {
-                const personRadius = 110; // Match Person collision radius for timeline (2x size)
-                const minPersonDistance = personRadius * 2 + 20; // Spacing between people
-                // Place lines above the highest events (top events are at centerY - yOffset)
-                const cardHeightGuess = timelineNodes.reduce((max, event) => {
-                    const h = event.h && event.h > 0 ? event.h : DEFAULT_CARD_SIZE;
-                    return Math.max(max, h);
-                }, DEFAULT_CARD_SIZE);
-                const basePersonLineY = centerY - yOffset - (cardHeightGuess / 2) - personRadius - 60;
+            // Compute desired X for people based on connections to placed events
+            const desiredPositions = peopleNodes.map(person => {
+                const connectedEvents = links
+                    .filter(l => {
+                        const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
+                        const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
+                        return (sId === person.id || tId === person.id);
+                    })
+                    .map(l => {
+                        const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
+                        const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
+                        const eventId = sId === person.id ? tId : sId;
+                        return nodes.find(n => n.id === eventId && n.year !== undefined && !isPersonNode(n));
+                    })
+                    .filter((e): e is GraphNode => e !== undefined);
 
-                // Compute available width - use the full event span
-                const eventSpan = Math.max(itemSpacing, (timelineNodes.length - 1) * itemSpacing + DEFAULT_CARD_SIZE);
-                const availableWidth = Math.min(eventSpan * 1.1, width * 0.95); // Use most of available width
-
-                // Compute desired X based on connected events; fall back to center
-                const desiredPositions = peopleNodes.map(person => {
-                    const connectedEvents = links
-                        .filter(l => {
-                            const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
-                            const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
-                            return (sId === person.id || tId === person.id);
-                        })
-                        .map(l => {
-                            const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
-                            const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
-                            const eventId = sId === person.id ? tId : sId;
-                            return nodes.find(n => n.id === eventId && n.year !== undefined);
-                        })
-                        .filter((e): e is GraphNode => e !== undefined);
-
-                    if (connectedEvents.length > 0) {
-                        const sumX = connectedEvents.reduce((sum, event) => {
-                            const index = nodeIndexMap.get(event.id) ?? 0;
-                            return sum + (width / 2 + startX + (index * itemSpacing));
-                        }, 0);
-                        return { person, desiredX: sumX / connectedEvents.length };
-                    }
-                    return { person, desiredX: width / 2 };
-                });
-
-                // Sort by desired X to place left-to-right
-                desiredPositions.sort((a, b) => a.desiredX - b.desiredX);
-
-                // Always try to fit all people in one row, spacing them out evenly
-                // Calculate spacing: if they don't fit with minPersonDistance, reduce spacing slightly
-                const totalRowCount = desiredPositions.length + unknownEvents.length;
-                const totalWidthNeeded = totalRowCount * minPersonDistance;
-                let actualSpacing = minPersonDistance;
-                if (totalWidthNeeded > availableWidth && totalRowCount > 1) {
-                    // Reduce spacing to fit, but keep at least personRadius * 1.8 to avoid overlap
-                    actualSpacing = Math.max(personRadius * 1.8, availableWidth / totalRowCount);
+                if (connectedEvents.length > 0) {
+                    const sumX = connectedEvents.reduce((sum, event) => {
+                        const index = nodeIndexMap.get(event.id) ?? 0;
+                        return sum + (width / 2 + startX + (index * itemSpacing));
+                    }, 0);
+                    return { person, desiredX: sumX / connectedEvents.length };
                 }
+                return { person, desiredX: width / 2 };
+            });
+            desiredPositions.sort((a, b) => a.desiredX - b.desiredX);
 
-                const totalRowWidth = actualSpacing * Math.max(0, totalRowCount - 1);
-                const rowStartX = width / 2 - (totalRowWidth / 2);
+            const peoplePerRow = Math.max(1, Math.floor(availableWidth / minPersonDistance));
+            const totalPeopleRows = Math.ceil(desiredPositions.length / peoplePerRow);
+            const topTierYBase = centerY - tierGap - (totalPeopleRows * minPersonDistance);
 
-                // Place all people in a single row
-                desiredPositions.forEach((entry, index) => {
-                    const { person } = entry;
-                    const prev = prevPositions.get(person.id);
-                    if (prev) {
-                        lockNodePosition(person, (prev as { x: number, y: number }).x, (prev as { x: number, y: number }).y);
-                    } else {
-                        const x = rowStartX + actualSpacing * index;
-                        lockNodePosition(person, x, basePersonLineY);
-                    }
-                });
-                // Place unknown-year non-people on the same row to avoid wandering
-                unknownEvents.forEach((ev, idxOffset) => {
-                    const x = rowStartX + actualSpacing * (desiredPositions.length + idxOffset);
-                    lockNodePosition(ev, x, basePersonLineY);
-                });
-            }
+            desiredPositions.forEach((entry, index) => {
+                const { person } = entry;
+                const row = Math.floor(index / peoplePerRow);
+                const col = index % peoplePerRow;
+                const countInRow = Math.min(peoplePerRow, desiredPositions.length - row * peoplePerRow);
+                const rWidth = (countInRow - 1) * minPersonDistance;
+                const rStartX = width / 2 - (rWidth / 2);
+                lockNodePosition(person, rStartX + col * minPersonDistance, topTierYBase + row * minPersonDistance);
+            });
+
+            // tier 2: (Removed separate unknown-year tier, now merged into timelineNodes)
 
             // Safety net: ensure every node has a fixed position to eliminate wandering cards
             nodes.forEach((node, idx) => {
                 if (!timelinePositionsRef.current.has(node.id)) {
-                    // Place any stragglers near the people row, spaced modestly
-                    const fallbackX = width / 2 - (itemSpacing / 2) + (idx * 40);
-                    const fallbackY = (height / 2) - yOffset - DEFAULT_CARD_SIZE;
+                    const fallbackX = width / 2 + (idx * 40);
+                    const fallbackY = centerY - tierGap;
                     lockNodePosition(node, fallbackX, fallbackY);
                 } else {
                     const locked = timelinePositionsRef.current.get(node.id)!;
@@ -534,15 +530,11 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             });
 
             if (centerForce) centerForce.strength(0.01);
-            if (chargeForce) chargeForce.strength(-50); // Reduced charge to minimize movement
+            if (chargeForce) chargeForce.strength(-50);
             if (linkForce) linkForce.strength(0);
 
-            // Events and people have fixed positions (fx, fy already set above)
-            // No need for positioning forces since everything is fixed
             simulation.force("x", null);
             simulation.force("y", null);
-
-            // Increase velocity decay to stop all movement quickly
             simulation.velocityDecay(0.9);
 
         } else {
@@ -636,9 +628,18 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 const svg = d3.select(svgRef.current);
                 svg.transition().duration(500).call(zoomBehaviorRef.current.transform, d3.zoomIdentity);
             }
+        } else if (!wasTimeline && isTimelineMode && timelineNodes.length > 0) {
+            // Center on the leftmost (first sorted) event
+            const firstEvent = timelineNodes[0];
+            if (firstEvent) {
+                // Use a slight timeout to ensure positions are established
+                setTimeout(() => {
+                    centerOnNode(firstEvent.id);
+                }, 100);
+            }
         }
         wasTimelineRef.current = isTimelineMode;
-    }, [isTimelineMode, nodes, width, height]);
+    }, [isTimelineMode, nodes, width, height, timelineNodes, centerOnNode]);
 
     // 4. Structural Effect: Only runs when overall graph structure (nodes/links) changes.
     // This handles D3 enter/exit/merge and restarts the simulation.
@@ -726,8 +727,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
         const dragBehavior = d3.drag<SVGGElement, GraphNode>()
             .on("start", (event, d) => {
                 if (isTimelineMode) {
-                    const isPerson = (d.is_person ?? d.type.toLowerCase()) === 'person';
-                    if (isPerson) {
+                    if (isPersonNode(d)) {
                         event.sourceEvent.stopPropagation();
                         return; // Don't allow dragging people in timeline mode
                     }
@@ -736,15 +736,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             })
             .on("drag", (event, d) => {
                 if (isTimelineMode) {
-                    const isPerson = (d.is_person ?? d.type.toLowerCase()) === 'person';
-                    if (isPerson) return; // Don't allow dragging people in timeline mode
+                    if (isPersonNode(d)) return; // Don't allow dragging people in timeline mode
                 }
                 dragged(event, d);
             })
             .on("end", (event, d) => {
                 if (isTimelineMode) {
-                    const isPerson = (d.is_person ?? d.type.toLowerCase()) === 'person';
-                    if (isPerson) return; // Don't allow dragging people in timeline mode
+                    if (isPersonNode(d)) return; // Don't allow dragging people in timeline mode
                 }
                 dragended(event, d);
             });
@@ -778,7 +776,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             .attr("id", d => `clip-desc-${String(d.id)}`)
             .append("rect").attr("x", 0).attr("y", 0);
 
-        nodeEnter.append("image").style("pointer-events", "none").attr("preserveAspectRatio", "xMidYMid slice");
+        nodeEnter.append("image").style("pointer-events", "none");
 
         nodeEnter.append("text")
             .attr("class", "node-label")
@@ -799,7 +797,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
             .attr("text-anchor", "middle")
             .style("font-size", "10px")
             .style("font-family", "monospace")
-            .style("pointer-events", "none");
+            .style("pointer-events", "none")
+            .attr("fill", "#fbbf24"); // amber-400
 
         // Click and Context Menu listeners
         const clickHandler = (event: any, d: GraphNode) => {
@@ -1020,7 +1019,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 baseOpacity = 0.18;
             } else if (hasHighlight) {
                 baseOpacity = isKeep ? 1 : 0.3;
-            } else {
+            } else if (!isTimelineMode) {
                 // Simple selection/expansion highlighting
                 if (expandingNodeId !== null) {
                     // Expansion in progress: dim all except expanding node and new children
@@ -1059,20 +1058,37 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                 g.select(".card-content").style("display", "none");
                 const r = dims.w / 2;
                 g.select(".node-circle").style("display", "block").attr("r", r).attr("fill", color).attr("stroke", strokeColor).attr("stroke-width", strokeWidth);
-                g.select("image").style("display", (d.imageUrl && !isTextOnly) ? "block" : "none").attr("href", d.imageUrl || "").attr("x", -r).attr("y", -r).attr("width", r * 2).attr("height", r * 2)
+                g.select("image")
+                    .style("display", (d.imageUrl && !isTextOnly) ? "block" : "none")
+                    .attr("href", d.imageUrl || "")
+                    .attr("x", -r)
+                    .attr("y", -r)
+                    .attr("width", r * 2)
+                    .attr("height", r * 2)
+                    .attr("preserveAspectRatio", "xMidYMid slice")
                     .attr("clip-path", `url(#clip-circle-${String(d.id)})`);
                 g.select(`#clip-circle-${String(d.id)}`).select("circle").attr("r", r);
 
                 const labelText = g.select(".node-label").style("display", "block").text(null).attr("y", r + 15);
                 wrapText(d.title, 90).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", "10px").text(line));
-                g.select(".year-label").text(d.year || "").attr("y", -r - 10).style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
+                const isPerson = d.is_atomic === true || d.is_person === true || d.type?.toLowerCase() === 'person';
+                const isEventWithYear = !isPerson && d.year;
+                g.select(".year-label").text(d.year || "").attr("y", -r - 10).style("display", (isTimelineMode || isHovered || isEventWithYear) && d.year ? "block" : "none");
 
             } else {
                 const w = dims.w, h = dims.h;
                 g.select(".node-rect").style("display", "block").attr("width", w).attr("height", h).attr("x", -w / 2).attr("y", -h / 2).attr("fill", color).attr("stroke", strokeColor).attr("stroke-width", strokeWidth);
 
                 if (dims.type === 'box' && d.imageUrl && !isTextOnly) {
-                    g.select("image").style("display", "block").attr("href", d.imageUrl).attr("x", -w / 2).attr("y", -h / 2).attr("width", w).attr("height", h).attr("clip-path", `url(#clip-rect-${String(d.id)})`);
+                    g.select("image")
+                        .style("display", "block")
+                        .attr("href", d.imageUrl)
+                        .attr("x", -w / 2)
+                        .attr("y", -h / 2)
+                        .attr("width", w)
+                        .attr("height", h)
+                        .attr("preserveAspectRatio", "xMidYMid meet")
+                        .attr("clip-path", `url(#clip-rect-${String(d.id)})`);
                     g.select(`#clip-rect-${String(d.id)}`).select("rect").attr("x", -w / 2).attr("y", -h / 2).attr("width", w).attr("height", h);
                 } else {
                     g.select("image").style("display", "none");
@@ -1165,7 +1181,9 @@ const Graph = forwardRef<GraphHandle, GraphProps>(({
                     wrapText(d.title, dims.type === 'box' ? 100 : 200).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", dims.type === 'card' ? "13px" : "10px").style("font-weight", dims.type === 'card' ? "bold" : "normal").text(line));
                 }
 
-                g.select(".year-label").text(d.year || "").attr("y", -h / 2 - 10).style("display", (isTimelineMode || isHovered) && d.year ? "block" : "none");
+                const isPerson = d.is_atomic === true || d.is_person === true || d.type?.toLowerCase() === 'person';
+                const isEventWithYear = !isPerson && d.year;
+                g.select(".year-label").text(d.year || "").attr("y", -h / 2 - 10).style("display", (isTimelineMode || isHovered || isEventWithYear) && d.year ? "block" : "none");
             }
             g.select(".spinner-group").style("display", d.isLoading ? "block" : "none")
                 .select(".spinner").attr("r", (dims.type === 'circle' || dims.type === 'box') ? (dims.w / 2) + 8 : (dims.h / 2) + 10);

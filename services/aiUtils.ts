@@ -1,22 +1,89 @@
+export const getEnvVar = (name: string): string => {
+  // Try process.env first (Node.js / Server)
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      const val = process.env[name];
+      if (val) return val;
+    }
+  } catch (e) { }
+
+  // Try import.meta.env (Vite / Browser)
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      // @ts-ignore
+      const val = import.meta.env[name];
+      if (val) return val;
+    }
+  } catch (e) { }
+
+  return "";
+};
+
+export const getEnvCacheUrl = (): string => {
+  // Use literal access for Vite static replacement
+  let url = "";
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      // @ts-ignore
+      url = import.meta.env.VITE_CACHE_URL || import.meta.env.VITE_CACHE_API_URL || "";
+    }
+  } catch (e) { }
+
+  if (url) return url;
+
+  return getEnvVar("VITE_CACHE_URL") || getEnvVar("VITE_CACHE_API_URL");
+};
+
+export const getEnvGeminiModel = (): string => {
+  // Literal access for Vite
+  let urlModel = "";
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      // @ts-ignore
+      urlModel = import.meta.env.VITE_GEMINI_MODEL || "";
+    }
+  } catch (e) { }
+  if (urlModel) return urlModel;
+
+  return getEnvVar("VITE_GEMINI_MODEL") || "gemini-2.0-flash";
+};
+
+export const getEnvGeminiModelClassify = (): string => {
+  // Literal access for Vite
+  let urlModel = "";
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      // @ts-ignore
+      urlModel = import.meta.env.VITE_GEMINI_MODEL_CLASSIFY || "";
+    }
+  } catch (e) { }
+  if (urlModel) return urlModel;
+
+  return getEnvVar("VITE_GEMINI_MODEL_CLASSIFY") || getEnvGeminiModel();
+};
 
 // Robust text extraction from Gemini API response
 export function getResponseText(response: any): string {
   if (!response) return "";
-  
+
   // 1. Check if this is the GenerateContentResult wrapper
   const actualResponse = response.response || response;
-  
+
   // 2. Check for .text() method (Standard SDK)
   if (typeof actualResponse.text === 'function') {
     try {
       const t = actualResponse.text();
       if (t) return t;
-    } catch (e) {}
+    } catch (e) { }
   }
-  
+
   // 3. Check for .text property
   if (typeof actualResponse.text === 'string') return actualResponse.text;
-  
+
   // 4. Deep dive into candidates
   try {
     const candidates = actualResponse.candidates || [];
@@ -25,8 +92,8 @@ export function getResponseText(response: any): string {
       const textPart = parts.find((p: any) => p.text);
       if (textPart) return textPart.text;
     }
-  } catch (e) {}
-  
+  } catch (e) { }
+
   return "";
 }
 
@@ -40,30 +107,30 @@ export function cleanJson(text: unknown): string {
 // Safely retrieve API key
 export async function getApiKey() {
   let key = "";
+
+  // Try process.env first (Node.js)
   try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
-      const env: any = import.meta.env;
+    if (typeof process !== 'undefined' && process.env) {
+      const env = process.env;
       key = env.VITE_API_KEY ||
         env.NEXT_PUBLIC_API_KEY ||
+        env.REACT_APP_API_KEY ||
         env.API_KEY ||
         env.VITE_GEMINI_API_KEY ||
-        env.GEMINI_API_KEY ||
         env.GEMINI_API_KEY ||
         "";
     }
   } catch (e) { }
-  
+
   if (!key) {
     try {
-      if (typeof process !== 'undefined' && process.env) {
-        const env = process.env;
-        key = env.VITE_API_KEY ||
-          env.NEXT_PUBLIC_API_KEY ||
-          env.REACT_APP_API_KEY ||
-          env.API_KEY ||
-          env.VITE_GEMINI_API_KEY ||
-          env.GEMINI_API_KEY ||
+      // @ts-ignore
+      if (typeof import.meta !== 'undefined' && import.meta.env) {
+        // Use literal access for Vite static replacement
+        // @ts-ignore
+        key = import.meta.env.VITE_API_KEY ||
+          // @ts-ignore
+          import.meta.env.VITE_GEMINI_API_KEY ||
           "";
       }
     } catch (e) { }

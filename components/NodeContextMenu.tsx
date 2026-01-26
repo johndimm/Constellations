@@ -9,7 +9,7 @@ interface NodeContextMenuProps {
     onExpandLeaves: (node: GraphNode) => void;
     onAddMore: (node: GraphNode) => void;
     onFindBetterPhoto: (nodeId: number) => void;
-    onDelete: (nodeId: number) => void;
+    onDelete: (node: GraphNode) => void;
     onClose: () => void;
     isProcessing?: boolean;
 }
@@ -134,7 +134,7 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                 <div style={{ height: '1px', background: '#334155', margin: '6px 0' }} />
 
                 <button
-                    onClick={() => handleAction(() => onDelete(node.id))}
+                    onClick={() => handleAction(() => onDelete(node))}
                     style={{
                         width: '100%',
                         padding: '8px 12px',

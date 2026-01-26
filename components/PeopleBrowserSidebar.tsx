@@ -92,25 +92,27 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
 
   const itemsPerPage = 50;
 
+  const isPureBrowse = useCallback(() => !searchTerm.trim() && !occupation && !nationality, [searchTerm, occupation, nationality]);
+
   const buildSearchQuery = useCallback(() => {
     const parts: string[] = [];
-    
+
     if (searchTerm.trim()) {
       parts.push(searchTerm.trim());
     }
-    
+
     if (occupation.trim()) {
       parts.push(occupation.trim());
     }
-    
+
     if (nationality.trim()) {
       parts.push(nationality.trim());
     }
-    
+
     if (parts.length === 0) {
       return '';
     }
-    
+
     const query = parts.join(' ');
     if (!/\b(person|people|biography|biographical)\b/i.test(query)) {
       return query + ' (person OR biography)';
@@ -120,7 +122,7 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
 
   const enrichPeople = useCallback(async (batch: Person[]) => {
     if (batch.length === 0) return;
-    
+
     // Only enrich those that lack thumbnails, extracts, or categories
     const toEnrich = batch.filter(p => !p.thumbnail || !p.extract || !p.categories);
     if (toEnrich.length === 0) return;
@@ -131,13 +133,13 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
       const currentBatch = toEnrich.slice(i, i + batchSize);
       const titles = currentBatch.map(p => p.title).join('|');
       const infoUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=info|pageimages|extracts|pageviews|categories&inprop=displaytitle&titles=${encodeURIComponent(titles)}&pithumbsize=150&exintro&explaintext&exchars=500&exlimit=max&cllimit=20&clshow=!hidden&pvipdays=60&origin=*&redirects=1`;
-      
+
       try {
         const infoRes = await fetch(infoUrl);
         const infoData = await infoRes.json();
         const pages = infoData.query?.pages || {};
         const pagesByTitle = new Map<string, any>();
-        
+
         const titleMap = new Map<string, string>();
         if (infoData.query?.normalized) {
           infoData.query.normalized.forEach((n: any) => titleMap.set(n.to, n.from));
@@ -187,7 +189,7 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
     if (!listToUse) return;
     const nextBatchEnd = Math.min(seedLoaded + itemsPerPage, listToUse.length);
     const nextBatch = listToUse.slice(seedLoaded, nextBatchEnd);
-    
+
     // Add them immediately as placeholders
     setPeople(prev => [...prev, ...nextBatch]);
     setSeedLoaded(nextBatchEnd);
@@ -220,7 +222,7 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
     try {
       let url: string;
       let results: Person[] = [];
-      
+
       // Always use search API - use a more specific query to find biographies
       // Search for articles in biographical categories or with biographical terms
       const searchQuery = search.trim() || 'insource:"born" (biography OR "was a" OR "is a" OR "was an" OR "is an")';
@@ -347,7 +349,7 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
               natMap.set(formatted, (natMap.get(formatted) || 0) + 1);
             });
           });
-          
+
           setAvailableOccupations(Array.from(occMap.entries())
             .sort((a, b) => b[1] - a[1])
             .map(e => e[0]));
@@ -356,15 +358,15 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
             .map(e => e[0]));
 
           setFilteredSeedPeople(transformed);
-          
+
           // Enrich the first batch immediately
           const firstBatch = transformed.slice(0, itemsPerPage);
           setPeople(firstBatch);
           setSeedLoaded(firstBatch.length);
           setHasMore(transformed.length > firstBatch.length);
-          
+
           enrichPeople(firstBatch);
-          
+
           setLoading(false);
           setError(null);
           return;
@@ -390,27 +392,27 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
     setCurrentPage(0);
     setContinueParam(null);
     setHasMore(true);
-    
+
     if (seedPeople) {
       let filtered = [...seedPeople];
-      
+
       if (searchTerm.trim()) {
         const lowerSearch = searchTerm.toLowerCase().trim();
-        filtered = filtered.filter(p => 
+        filtered = filtered.filter(p =>
           p.title.toLowerCase().includes(lowerSearch) ||
           (p.occupation_keywords || []).some((o: string) => o.toLowerCase().includes(lowerSearch)) ||
           (p.nationality_keywords || []).some((n: string) => n.toLowerCase().includes(lowerSearch))
         );
       }
-      
+
       if (occupation) {
-        filtered = filtered.filter(p => 
+        filtered = filtered.filter(p =>
           (p.occupation_keywords || []).some((o: string) => o.toLowerCase() === occupation.toLowerCase())
         );
       }
-      
+
       if (nationality) {
-        filtered = filtered.filter(p => 
+        filtered = filtered.filter(p =>
           (p.nationality_keywords || []).some((n: string) => n.toLowerCase() === nationality.toLowerCase())
         );
       }
@@ -422,7 +424,7 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
       setHasMore(filtered.length > initial.length);
 
       enrichPeople(initial);
-      
+
       if (filtered.length > 0 || !searchTerm.trim()) {
         return;
       }
@@ -519,11 +521,10 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
             </div>
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className={`px-2 py-1.5 rounded-lg text-sm border ${
-                showFilters
+              className={`px-2 py-1.5 rounded-lg text-sm border ${showFilters
                   ? 'bg-slate-700 border-slate-500 text-white'
                   : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
-              }`}
+                }`}
               title="Filters"
             >
               <Filter size={14} />

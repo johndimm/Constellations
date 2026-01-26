@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { getApiKey, getResponseText, cleanJson, withTimeout, withRetry } from "./aiUtils";
+import { getApiKey, getResponseText, cleanJson, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify } from "./aiUtils";
 
-export { getApiKey, getResponseText, cleanJson, withTimeout, withRetry } from "./aiUtils";
+export { getApiKey, getResponseText, cleanJson, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify } from "./aiUtils";
 
 const SYSTEM_INSTRUCTION = `
 You are a Bipartite Graph Generator.
@@ -27,8 +27,8 @@ const CLASSIFY_TIMEOUT_MS = 15000; // 15 seconds for classification
 // Model selection (configurable via Vite env vars)
 // - VITE_GEMINI_MODEL: used for expansions + pathfinding (default)
 // - VITE_GEMINI_MODEL_CLASSIFY: optional override for classification
-const GEMINI_MODEL = (import.meta as any)?.env?.VITE_GEMINI_MODEL || "gemini-2.0-flash";
-const GEMINI_MODEL_CLASSIFY = (import.meta as any)?.env?.VITE_GEMINI_MODEL_CLASSIFY || GEMINI_MODEL;
+const getGeminiModel = getEnvGeminiModel;
+const getGeminiModelClassify = getEnvGeminiModelClassify;
 
 export type LockedPair = {
   atomicType: string;
@@ -37,27 +37,35 @@ export type LockedPair = {
 
 // --- Proxy Helper ---
 async function callAiProxy(endpoint: string, body: any) {
-  const env: any = (import.meta as any)?.env || {};
-  const baseUrl = env.VITE_CACHE_API_URL || "";
-
+  const baseUrl = getEnvCacheUrl();
   let resolvedBase = baseUrl;
-  // If no base URL is found and we're in the browser on localhost, default to port 4000
-  if (!resolvedBase && typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    resolvedBase = 'http://localhost:4000';
-  }
 
   const url = new URL(endpoint, resolvedBase || (typeof window !== 'undefined' ? window.location.origin : '')).toString();
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`AI Proxy Error (${resp.status}): ${err}`);
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    if (resp.status === 404 && endpoint === "/api/ai/classify-start") {
+      console.warn(`⚠️ [Proxy] ${endpoint} not found, falling back to /api/ai/classify`);
+      return callAiProxy("/api/ai/classify", body);
+    }
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`AI Proxy Error (${resp.status}): ${err}`);
+    }
+    return resp.json();
+  } catch (e: any) {
+    if (endpoint === "/api/ai/classify-start" && !e.message?.includes("AI Proxy Error")) {
+      // Network error or fetch failure, try fallback anyway if it's the start pair
+      console.warn(`⚠️ [Proxy] ${endpoint} failed, trying fallback /api/ai/classify`, e);
+      return callAiProxy("/api/ai/classify", body);
+    }
+    throw e;
   }
-  return resp.json();
 }
 
 /**
@@ -67,14 +75,7 @@ function shouldProxy(): boolean {
   if (typeof window === 'undefined') return false;
   if ((window as any).__PRERENDER_INJECTED) return false;
 
-  const env: any = (import.meta as any)?.env || {};
-  const baseUrl = env.VITE_CACHE_API_URL || "";
-
-  // Localhost fallback
-  if (!baseUrl && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    return true;
-  }
-
+  const baseUrl = getEnvCacheUrl();
   return !!baseUrl;
 }
 
@@ -135,50 +136,61 @@ export const classifyStartPair = async (
   const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `Choose the bipartite pair for this session based ONLY on the first input: "${term}".
-You MUST choose EXACTLY ONE of these pairs:
-1) Person ↔ Event
-2) Ingredient ↔ Recipe
-3) Symptom ↔ Disease
-4) Author ↔ Paper
+You MUST choose EXACTLY ONE of these types for the input:
+- "Person" (if it is an individual human)
+- "Event" (if it is a historical event, organization, work, concept, or location)
+- "Ingredient"
+- "Recipe"
+- "Symptom"
+- "Disease"
+- "Author"
+- "Paper"
 
 Rules:
-- If "${term}" is a person (an individual human), choose Person ↔ Event.
-- If "${term}" is a historical event/incident/scandal/battle, choose Person ↔ Event.
-- If "${term}" is a named work (album, song, book, novel, film, painting, sculpture, artwork), choose Person ↔ Event and set isAtomic=false and type="Event".
-- If "${term}" contains an explicit disambiguator like "(album)" / "(song)" / "(film)" / "(book)", it is NOT a person: choose Person ↔ Event and set isAtomic=false and type="Event".
-- If "${term}" is an organization/institution/committee (NOT an individual human), choose Person ↔ Event and set isAtomic=false and type="Event".
-- If "${term}" is a major scientific theory, concept, discovery, or area of study (e.g., "General Relativity", "Evolution", "Quantum Mechanics"), choose Person ↔ Event and set isAtomic=false and type="Event".
-- If "${term}" looks like an academic paper (paper title, DOI, arXiv ID) or an academic author, choose Author ↔ Paper.
-- If "${term}" is a symptom (e.g., sore throat, runny nose), choose Symptom ↔ Disease.
-- If "${term}" is an ingredient (e.g., pepper, chicken, beef), choose Ingredient ↔ Recipe.
-- Otherwise, prefer Person ↔ Event unless it clearly implies Symptom or Ingredient.
+- If "${term}" is a person (an individual human), choose "Person".
+- If "${term}" is a historical event/incident/scandal/battle/period, choose "Event".
+- If "${term}" is a named work (album, song, book, novel, film, painting, sculpture, artwork), choose "Event" and set isAtomic=false.
+- If "${term}" is an organization/institution/committee, choose "Event" and set isAtomic=false.
+- If "${term}" is a scientific theory, concept, or discovery, choose "Event" and set isAtomic=false.
+- If "${term}" looks like an academic paper or author, choose "Author" or "Paper".
+- If "${term}" is a symptom, choose "Symptom".
+- If "${term}" is an ingredient, choose "Ingredient".
 
 Return JSON:
 {
-  "type": "Person | Event | Ingredient | Recipe | Symptom | Disease | Author | Paper",
+  "type": "Exactly one of: Person, Event, Ingredient, Recipe, Symptom, Disease, Author, Paper",
   "description": "Vivid, factual, and extremely concise 1-sentence description (NOT generic)",
   "isAtomic": true/false,
-  "atomicType": "Person | Ingredient | Symptom | Author",
-  "compositeType": "Event | Recipe | Disease | Paper",
-  "reasoning": "Brief explanation of the chosen pair and which side the term is on"
+  "atomicType": "The atomic side (Person, Ingredient, Symptom, or Author)",
+  "compositeType": "The composite side (Event, Recipe, Disease, or Paper)",
+  "reasoning": "Brief explanation"
 }`;
 
   const makeApiCall = () => ai.models.generateContent({
-    model: GEMINI_MODEL_CLASSIFY,
+    model: getGeminiModelClassify(),
     contents: prompt,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          type: { type: Type.STRING },
+          type: {
+            type: Type.STRING,
+            enum: ["Person", "Event", "Ingredient", "Recipe", "Symptom", "Disease", "Author", "Paper"]
+          },
           description: { type: Type.STRING },
           isAtomic: { type: Type.BOOLEAN },
-          atomicType: { type: Type.STRING },
-          compositeType: { type: Type.STRING },
+          atomicType: {
+            type: Type.STRING,
+            enum: ["Person", "Ingredient", "Symptom", "Author"]
+          },
+          compositeType: {
+            type: Type.STRING,
+            enum: ["Event", "Recipe", "Disease", "Paper"]
+          },
           reasoning: { type: Type.STRING }
         },
-        required: ["type", "description", "isAtomic", "atomicType", "compositeType", "reasoning"]
+        required: ["type", "isAtomic", "atomicType", "compositeType"]
       }
     }
   });
@@ -190,6 +202,7 @@ Return JSON:
   );
 
   const rawText = getResponseText(response);
+  console.log(`🤖 [Gemini] Raw Classify-Start response for "${term}":`, rawText);
   const text = cleanJson(rawText);
   const json = text ? JSON.parse(text) : {};
 
@@ -290,32 +303,41 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
       
       Return JSON:
       {
-        "type": "Specific Type (e.g. Symptom)",
+        "type": "Specific Type (one of: Person, Event, Ingredient, Recipe, Symptom, Disease, Author, Paper)",
         "description": "Short 1-sentence description",
         "isAtomic": true/false,
-        "atomicType": "What the atomic side of the pair is called (e.g. Symptom)",
-        "compositeType": "What the composite side of the pair is called (e.g. Disease)",
-        "reasoning": "Brief explanation of why it is atomic or composite in this bipartite context"
+        "atomicType": "The atomic labels (Person, Ingredient, Symptom, or Author)",
+        "compositeType": "The composite labels (Event, Recipe, Disease, or Paper)",
+        "reasoning": "Brief explanation"
       }`;
 
     console.log("🤖 [Gemini] Classify Prompt:", prompt);
 
     const makeApiCall = () => ai.models.generateContent({
-      model: GEMINI_MODEL_CLASSIFY,
+      model: getGeminiModelClassify(),
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            type: { type: Type.STRING },
+            type: {
+              type: Type.STRING,
+              enum: ["Person", "Event", "Ingredient", "Recipe", "Symptom", "Disease", "Author", "Paper"]
+            },
             description: { type: Type.STRING, description: "Short 1-sentence description" },
             isAtomic: { type: Type.BOOLEAN },
-            atomicType: { type: Type.STRING },
-            compositeType: { type: Type.STRING },
+            atomicType: {
+              type: Type.STRING,
+              enum: ["Person", "Ingredient", "Symptom", "Author"]
+            },
+            compositeType: {
+              type: Type.STRING,
+              enum: ["Event", "Recipe", "Disease", "Paper"]
+            },
             reasoning: { type: Type.STRING }
           },
-          required: ["type", "description", "isAtomic", "atomicType", "compositeType", "reasoning"]
+          required: ["type", "isAtomic", "atomicType", "compositeType"]
         }
       }
     });
@@ -327,6 +349,7 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
     );
 
     const rawText = getResponseText(response);
+    console.log(`🤖 [Gemini] Raw Classify response for "${term}":`, rawText);
     const text = cleanJson(rawText);
     console.log("Classify response text:", text);
     if (!text) return { type: 'Event', description: '', isAtomic: false };
@@ -389,9 +412,9 @@ export const fetchConnections = async (
   const personOnlyRule =
     (atomicType || "").trim().toLowerCase() === "person"
       ? `\nCRITICAL: The atomic side is "Person" meaning INDIVIDUAL HUMAN BEINGS ONLY.
-- Return ONLY specific individual people with proper names (e.g., "Jane Doe"), not categories, groups, or locations.
-- DO NOT return organizations, institutions, committees, councils, companies, museums, foundations, agencies, or any group entities.
-- DO NOT return locations, places, buildings, or geographical entities (e.g., do NOT return "Saint-Paul" as a person if it refers to the asylum or town).
+- Return ONLY specific individual people with proper names (e.g., "Leonardo da Vinci"), not categories, groups, or locations.
+- DO NOT return organizations, institutions, committees, councils, companies, museums, foundations, agencies, or any group entities (e.g., do NOT return "Republic of Florence" as a person).
+- DO NOT return locations, places, buildings, or geographical entities (e.g., do NOT return "Florence" or "Italy").
 - DO NOT return generic or collective phrases like "Various Local Artists", "Local Artists", "Staff", "Visitors", "Students", "Members", "Volunteers", "Team", "The Public", "Curators".
 - If you cannot find enough specific individual humans, return fewer.`
       : "";
@@ -436,7 +459,7 @@ export const fetchConnections = async (
     console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
 
     const makeApiCall = () => ai.models.generateContent({
-      model: GEMINI_MODEL,
+      model: getGeminiModel(),
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -451,13 +474,13 @@ export const fetchConnections = async (
                 type: Type.OBJECT,
                 properties: {
                   name: { type: Type.STRING },
-                  wikipediaTitle: { type: Type.STRING, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
-                  role: { type: Type.STRING, description: "Role in the requested Source Node" },
-                  description: { type: Type.STRING, description: "Short 1-sentence bio" },
+                  wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
+                  role: { type: Type.STRING, nullable: true, description: "Role in the requested Source Node" },
+                  description: { type: Type.STRING, nullable: true, description: "Short 1-sentence bio" },
                   evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
                   evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
                 },
-                required: ["name", "role", "description", "evidenceSnippet", "evidencePageTitle"]
+                required: ["name", "evidenceSnippet", "evidencePageTitle"]
               }
             }
           },
@@ -473,6 +496,7 @@ export const fetchConnections = async (
     );
 
     const rawText = getResponseText(response);
+    console.log(`🤖 [Gemini] Raw response for "${nodeName}":`, rawText);
     const text = cleanJson(rawText);
     if (!text) return { people: [] };
 
@@ -594,7 +618,7 @@ export const fetchPersonWorks = async (
     console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
 
     const makeApiCall = () => ai.models.generateContent({
-      model: GEMINI_MODEL,
+      model: getGeminiModel(),
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -608,15 +632,15 @@ export const fetchPersonWorks = async (
                 type: Type.OBJECT,
                 properties: {
                   entity: { type: Type.STRING },
-                  wikipediaTitle: { type: Type.STRING, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
+                  wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
                   type: { type: Type.STRING },
-                  description: { type: Type.STRING, description: "Short 1-sentence description" },
+                  description: { type: Type.STRING, nullable: true, description: "Short 1-sentence description" },
                   role: { type: Type.STRING, nullable: true },
-                  year: { type: Type.INTEGER, description: "4-digit year (YYYY), required for events/works" },
+                  year: { type: Type.INTEGER, nullable: true, description: "4-digit year (YYYY), required for events/works" },
                   evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
                   evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
                 },
-                required: ["entity", "type", "description", "evidenceSnippet", "evidencePageTitle", "year"]
+                required: ["entity", "type", "evidenceSnippet", "evidencePageTitle"]
               }
             }
           },
@@ -632,6 +656,7 @@ export const fetchPersonWorks = async (
     );
 
     const rawText = getResponseText(response);
+    console.log(`🤖 [Gemini] Raw response for "${nodeName}" (works):`, rawText);
     const text = cleanJson(rawText);
     if (!text) return { works: [] };
     const parsed = JSON.parse(text) as PersonWorksResponse;
@@ -692,7 +717,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
 
   try {
     const response = await withTimeout(ai.models.generateContent({
-      model: GEMINI_MODEL,
+      model: getGeminiModel(),
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -840,7 +865,7 @@ Rules:
       () =>
         withTimeout(
           ai.models.generateContent({
-            model: GEMINI_MODEL,
+            model: getGeminiModel(),
             contents: prompt,
             config: {
               systemInstruction: "You are a careful research assistant. Use Google Search for grounding and do not invent facts.",

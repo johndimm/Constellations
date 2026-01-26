@@ -473,7 +473,7 @@ export const fetchWikipediaSummary = async (
   visited: Set<string> = new Set(),
   depth: number = 0,
   triedNoContext = false
-): Promise<{ extract: string | null; pageid: number | null; title: string | null; mentioningPageTitles?: string[] | null; searchContext?: string | null }> => {
+): Promise<{ extract: string | null; pageid: number | null; title: string | null; year?: number | null; mentioningPageTitles?: string[] | null; searchContext?: string | null }> => {
   const normKey = `${query.trim().toLowerCase()}|${context || ''}`;
   if (visited.has(normKey) || depth > 2) {
     return { extract: null, pageid: null, title: null };
@@ -510,7 +510,14 @@ export const fetchWikipediaSummary = async (
             }
             const finalExtract = firstParagraph || null;
             if (finalExtract) {
-              return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null };
+              const redirected = !!directData.query?.redirects;
+              // Simple heuristic to extract a year (first 4-digit number that looks like a year)
+              let year: number | null = null;
+              const yearMatch = finalExtract.match(/\b(18|19|20)\d{2}\b/);
+              if (yearMatch) {
+                year = parseInt(yearMatch[0], 10);
+              }
+              return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null, redirected, year };
             }
           }
         }
@@ -559,10 +566,11 @@ export const fetchWikipediaSummary = async (
     if (directExact?.extract) {
       if (queryLastName) {
         const titleParts = String(directExact.title || "").toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
-        if (!titleParts.includes(queryLastName)) {
-          console.log(`⚠️ [Wiki] Ignoring direct match "${directExact.title}" for "${cleanQuery}" (missing last-name match).`);
+        // If it's a redirect, we are MUCH more lenient. Napoleon Bonaparte -> Napoleon is a classic case.
+        if (!titleParts.includes(queryLastName) && !directExact.redirected) {
+          console.log(`⚠️ [Wiki] Ignoring direct match "${directExact.title}" for "${cleanQuery}" (missing last-name match and no redirect).`);
         } else {
-          console.log(`🎯 [Wiki] Exact title match found for "${cleanQuery}". Using primary page.`);
+          console.log(`🎯 [Wiki] Exact title match found for "${cleanQuery}". Using primary page (redirected: ${directExact.redirected}).`);
           return directExact;
         }
       } else {
@@ -712,6 +720,14 @@ export const fetchWikipediaSummary = async (
 
         if (/born\s\d{4}/.test(snippet)) s += 80;
 
+        // General Infrastructure/Geographic penalty when searching for a proper person-like name
+        if (looksLikePersonName) {
+          const infraTerms = ['airport', 'station', 'stadium', 'university', 'bridge', 'plaza', 'square', 'park', 'boulevard', 'avenue', 'road', 'highway', 'complex', 'tower'];
+          infraTerms.forEach(t => {
+            if (title.includes(t)) s -= 2000;
+          });
+        }
+
         return s;
       };
 
@@ -737,7 +753,13 @@ export const fetchWikipediaSummary = async (
           // This prevents "Perry Neubauer" from matching "Jeff Neubauer".
           if (queryNameParts.length >= 2) {
             const allMatch = queryNameParts.every(q => candidateParts.includes(q));
-            if (!allMatch) {
+            // Special exemption: if the candidate title is a single word and it is the FIRST result
+            // and it is one of the query parts, allow it (e.g. "Napoleon").
+            const isFirstMatch = titleToTry === candidates[0];
+            const queryNameMatchesTitle = queryNameParts.some(q => candidateParts.includes(q));
+            const isShortFamousName = candidateParts.length === 1 && queryNameMatchesTitle;
+
+            if (!allMatch && !(isFirstMatch && isShortFamousName)) {
               console.log(`⚠️ [Wiki] Skipping title "${titleToTry}" for query "${cleanQuery}" (not all name parts match).`);
               continue;
             }
@@ -813,7 +835,13 @@ export const fetchWikipediaSummary = async (
               if (retry.extract) return retry;
             }
 
-            return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null, mentioningPageTitles: null, searchContext: null };
+            let year: number | null = null;
+            const yearMatch = (finalExtract || '').match(/\b(18|19|20)\d{2}\b/);
+            if (yearMatch) {
+              year = parseInt(yearMatch[0], 10);
+            }
+
+            return { extract: finalExtract, pageid: page.pageid || null, title: page.title || null, year, mentioningPageTitles: null, searchContext: null };
           }
         }
       }

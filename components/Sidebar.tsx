@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GraphNode, GraphLink } from '../types';
-import { X, ExternalLink, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { buildWikiUrl } from '../utils/wikiUtils';
 
 interface SidebarProps {
   selectedNode: GraphNode | null;
@@ -8,12 +9,11 @@ interface SidebarProps {
   onClose: () => void;
   onCollapseChange?: (collapsed: boolean) => void;
   externalToggleSignal?: number;
-  onFindBetterImage?: (nodeId: number) => void;
   isAdminMode?: boolean;
   forceExpanded?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, onCollapseChange, externalToggleSignal, onFindBetterImage, isAdminMode, forceExpanded }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, onCollapseChange, externalToggleSignal, isAdminMode, forceExpanded }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFullSummary, setShowFullSummary] = useState(false);
@@ -46,7 +46,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
   // Auto-expand logic: Only auto-expand on desktop if user hasn't manually collapsed it
   // On mobile, keep it collapsed so it doesn't block the graph.
   useEffect(() => {
-    if (!selectedNode) return;
+    if (!selectedNode && !selectedLink) return;
     if (forceExpanded) {
       setIsCollapsed(false);
       setShowFullSummary(false);
@@ -58,7 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
       setIsCollapsed(true);
     }
     setShowFullSummary(false);
-  }, [selectedNode, isMobile, forceExpanded]);
+  }, [selectedNode, selectedLink, isMobile, forceExpanded]);
 
   // External toggle (from header button)
   useEffect(() => {
@@ -80,10 +80,10 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
     userManuallyCollapsedRef.current = newCollapsed;
   };
 
-  if (!selectedNode) return null;
+  if (!selectedNode && !selectedLink) return null;
 
   const nonPersonTypes = ['Movie', 'Event', 'Battle', 'Project', 'Company', 'Organization', 'Album', 'Song', 'Book', 'War', 'Treaty', 'Administration'];
-  const isPerson = selectedNode.is_atomic ?? selectedNode.is_person ?? selectedNode.type.toLowerCase() === 'person';
+  const isPerson = selectedNode ? (selectedNode.is_atomic ?? selectedNode.is_person ?? selectedNode.type.toLowerCase() === 'person') : false;
 
   // Unified side panel styling - slides right on both mobile and desktop
   // Side panel styling - always slides right.
@@ -109,7 +109,9 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
 
           <div className="flex-1 overflow-visible">
             <div className="flex justify-between items-start mb-4">
-              <h2 className="text-xl font-bold text-white leading-tight">{selectedNode.title}</h2>
+              <h2 className="text-xl font-bold text-white leading-tight">
+                {selectedNode ? selectedNode.title : "Connection Details"}
+              </h2>
             </div>
 
             <div className="space-y-4 overflow-y-auto pr-1">
@@ -154,7 +156,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
               )}
 
               {/* AI Classification Info (Admin only) */}
-              {isAdminMode && (selectedNode.atomic_type || selectedNode.composite_type) && (
+              {isAdminMode && selectedNode && (selectedNode.atomic_type || selectedNode.composite_type) && (
                 <div className="p-3 bg-blue-900/20 rounded-lg border border-blue-500/20">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-blue-400 px-1.5 py-0.5 bg-blue-500/10 rounded">
@@ -173,29 +175,44 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
               )}
 
               {/* Display type for events only (not for persons) */}
-              {!isPerson && selectedNode.type && (
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Type</span>
-                  <p className="text-blue-400 font-medium">{selectedNode.type}</p>
+              {selectedNode && !isPerson && selectedNode.type && (
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Type</span>
+                    <p className="text-blue-400 font-medium">{selectedNode.type}</p>
+                  </div>
+                  {selectedNode.year && selectedNode.year !== 0 && (
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Date</span>
+                      <p className="text-amber-400 font-medium">{selectedNode.year}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {selectedNode.description && !isRedundant(selectedNode.description, selectedNode.wikiSummary) && (
+              {selectedNode && isPerson && selectedNode.year && selectedNode.year !== 0 && (
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Active Around</span>
+                  <p className="text-amber-400 font-medium">{selectedNode.year}</p>
+                </div>
+              )}
+
+              {selectedNode && selectedNode.description && !isRedundant(selectedNode.description, selectedNode.wikiSummary) && (
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Description</span>
                   <p className="text-slate-300 text-sm leading-relaxed mt-1 whitespace-pre-wrap">{selectedNode.description}</p>
                 </div>
               )}
 
-              {selectedNode.wikiSummary && (
+              {selectedNode && selectedNode.wikiSummary && (
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Wikipedia Summary</span>
                   <p className="text-slate-200 text-sm leading-relaxed mt-1 whitespace-pre-wrap">
-                    {showFullSummary || selectedNode.wikiSummary.length <= 600
+                    {showFullSummary || (selectedNode.wikiSummary || '').length <= 600
                       ? selectedNode.wikiSummary
-                      : `${selectedNode.wikiSummary.slice(0, 600)}…`}
+                      : `${(selectedNode.wikiSummary || '').slice(0, 600)}…`}
                   </p>
-                  {selectedNode.wikiSummary.length > 600 && (
+                  {selectedNode.wikiSummary && selectedNode.wikiSummary.length > 600 && (
                     <button
                       onClick={() => setShowFullSummary(!showFullSummary)}
                       className="mt-1 text-xs text-amber-300 hover:text-amber-200"
@@ -208,50 +225,41 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
 
 
               {/* Action Buttons */}
-              <div className="pt-4 border-t border-slate-800 flex flex-col gap-2">
-                {(selectedNode as any)?.meta?.openAlexUrl && (
+              {selectedNode && (
+                <div className="pt-4 border-t border-slate-800 flex flex-col gap-2">
+                  {(selectedNode as any)?.meta?.openAlexUrl && (
+                    <a
+                      href={(selectedNode as any).meta.openAlexUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm"
+                    >
+                      <ExternalLink size={16} />
+                      <span>View on OpenAlex</span>
+                    </a>
+                  )}
+                  {(selectedNode as any)?.meta?.doi && (
+                    <a
+                      href={`https://doi.org/${String((selectedNode as any).meta.doi).replace(/^https?:\/\/doi\.org\//i, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm"
+                    >
+                      <ExternalLink size={16} />
+                      <span>View DOI</span>
+                    </a>
+                  )}
                   <a
-                    href={(selectedNode as any).meta.openAlexUrl}
+                    href={buildWikiUrl(selectedNode.title, selectedNode.wikipedia_id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm"
                   >
                     <ExternalLink size={16} />
-                    <span>View on OpenAlex</span>
+                    <span>Read on Wikipedia</span>
                   </a>
-                )}
-                {(selectedNode as any)?.meta?.doi && (
-                  <a
-                    href={`https://doi.org/${String((selectedNode as any).meta.doi).replace(/^https?:\/\/doi\.org\//i, '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm"
-                  >
-                    <ExternalLink size={16} />
-                    <span>View DOI</span>
-                  </a>
-                )}
-                <a
-                  href={`https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(selectedNode.title)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm"
-                >
-                  <ExternalLink size={16} />
-                  <span>Read on Wikipedia</span>
-                </a>
-
-                {onFindBetterImage && (
-                  <button
-                    onClick={() => onFindBetterImage(selectedNode.id)}
-                    disabled={selectedNode.fetchingImage}
-                    className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm mb-4 disabled:opacity-50"
-                  >
-                    <Search size={16} />
-                    <span>{selectedNode.fetchingImage ? 'Finding...' : 'Find better photo'}</span>
-                  </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

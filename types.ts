@@ -93,4 +93,5 @@ export interface PathEntity {
 
 export interface PathResponse {
   path: PathEntity[];
+  found: boolean;
 }

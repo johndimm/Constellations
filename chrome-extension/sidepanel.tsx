@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from '../App';
 import { GraphLink, GraphNode } from '../types';
 import '../index.css';
+import { buildWikiUrl } from '../utils/wikiUtils';
 
 const EvidencePopup = ({ link, onClose }: { link: GraphLink | null; onClose: () => void }) => {
     if (!link) return null;
@@ -78,10 +79,18 @@ const EvidencePopup = ({ link, onClose }: { link: GraphLink | null; onClose: () 
     );
 };
 
-const openWikiInActiveTab = (title?: string | null) => {
+const sanitizeTitle = (title: string): string => {
+    return title
+        .split(' - Wikipedia')[0]
+        .split(' – Wikipedia')[0]
+        .split(' - Google Search')[0]
+        .split(' - IMDb')[0]
+        .trim();
+};
+
+const openWikiInActiveTab = (title?: string | null, wikipediaId?: string | number) => {
     if (!title) return;
-    const safe = title.replace(/ /g, '_');
-    const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(safe)}`;
+    const url = buildWikiUrl(title, wikipediaId);
     // @ts-ignore
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const tab = tabs && tabs.length ? tabs[0] : null;
@@ -95,17 +104,32 @@ const SidePanelApp = () => {
     const [externalSearch, setExternalSearch] = useState<{ term: string; id: number } | null>(null);
 
     useEffect(() => {
-        const loadQuery = async () => {
+        const loadInitialQuery = async () => {
+            // Priority 1: Selection from chrome storage (via context menu)
             // @ts-ignore
             const data = await chrome.storage.local.get(['pendingQuery', 'timestamp']);
             if (data.pendingQuery) {
                 setExternalSearch({ term: data.pendingQuery, id: Date.now() });
                 // @ts-ignore
                 chrome.storage.local.remove(['pendingQuery', 'timestamp']);
+                return;
             }
-        };
-        loadQuery();
 
+            // Priority 2: Current active tab title
+            // @ts-ignore
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                const title = tabs?.[0]?.title;
+                if (title) {
+                    const sanitized = sanitizeTitle(title);
+                    if (sanitized) {
+                        setExternalSearch({ term: sanitized, id: Date.now() });
+                    }
+                }
+            });
+        };
+        loadInitialQuery();
+
+        // Listen for new selections
         // @ts-ignore
         const listener = (changes, area) => {
             if (area === 'local' && changes.pendingQuery?.newValue) {
@@ -128,7 +152,7 @@ const SidePanelApp = () => {
             onExternalSearchConsumed={(id) => {
                 setExternalSearch(prev => (prev?.id === id ? null : prev));
             }}
-            onNodeNavigate={(node: GraphNode) => openWikiInActiveTab(node.title)}
+            onNodeNavigate={(node: GraphNode) => openWikiInActiveTab(node.title, node.wikipedia_id)}
             renderEvidencePopup={(link, onClose) => (
                 <EvidencePopup link={link} onClose={onClose} />
             )}
