@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support & Help - Constellations</title>
+    <meta name="description" content="Get help using Constellations, the AI-powered knowledge graph explorer.">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 50px 40px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.95;
+        }
+
+        .content {
+            padding: 50px 40px;
+        }
+
+        h2 {
+            color: #667eea;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        h2:first-child {
+            margin-top: 0;
+        }
+
+        h3 {
+            color: #764ba2;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        p {
+            margin-bottom: 15px;
+            color: #4a4a4a;
+            font-size: 1.05rem;
+        }
+
+        ul,
+        ol {
+            margin-left: 25px;
+            margin-bottom: 20px;
+            color: #4a4a4a;
+        }
+
+        li {
+            margin-bottom: 10px;
+        }
+
+        .faq-item {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .faq-item h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #e83e8c;
+        }
+
+        .contact-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            margin-top: 40px;
+        }
+
+        .contact-box h3 {
+            color: white;
+            margin: 0 0 15px 0;
+        }
+
+        .contact-box a {
+            color: white;
+            text-decoration: underline;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 30px;
+            background: #f9f9f9;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌌 Support & Help</h1>
+            <p class="subtitle">Everything you need to know about Constellations</p>
+        </div>
+
+        <div class="content">
+            <h2>Getting Started</h2>
+
+            <div class="faq-item">
+                <h3>What is Constellations?</h3>
+                <p>
+                    Constellations is an AI-powered knowledge explorer that creates interactive graphs
+                    showing how entities are connected. It works across any domain - from world history
+                    to cooking, academic research to sports.
+                </p>
+            </div>
+
+            <div class="faq-item">
+                <h3>How do I start exploring?</h3>
+                <p>Simply search for any topic, person, or concept you're interested in. The AI will:</p>
+                <ol>
+                    <li>Identify the appropriate knowledge domain (e.g., Person ↔ Event, Ingredient ↔ Recipe)</li>
+                    <li>Find related entities and build a graph around your starting point</li>
+                    <li>Let you expand nodes to discover more connections</li>
+                </ol>
+            </div>
+
+            <h2>Features & How to Use</h2>
+
+            <div class="faq-item">
+                <h3>What are "Atomic" and "Composite" nodes?</h3>
+                <p>
+                    <strong>Atomic nodes</strong> (shown as circles) are fundamental building blocks like people,
+                    ingredients, or symptoms. <strong>Composite nodes</strong> (shown as cards) are collections
+                    that bring atomics together - like events, recipes, or diseases.
+                </p>
+                <p>
+                    This bipartite structure prevents false connections and keeps the graph logically organized.
+                </p>
+            </div>
+
+            <div class="faq-item">
+                <h3>How do I expand a node?</h3>
+                <p>
+                    Click on any node to select it. If it hasn't been expanded yet, it will automatically
+                    find and display connected entities. For nodes already expanded, you can click
+                    "Expand More" to reveal additional connections.
+                </p>
+            </div>
+
+            <div class="faq-item">
+                <h3>What is Timeline mode?</h3>
+                <p>
+                    Timeline mode arranges nodes chronologically instead of as a network. This is particularly
+                    useful for historical exploration, showing events and people in temporal order.
+                </p>
+            </div>
+
+            <div class="faq-item">
+                <h3>How does Path Finding work?</h3>
+                <p>
+                    Switch to "Connect" mode (instead of "Explore") to find paths between any two entities.
+                    Enter a start and end point, and the AI will discover the shortest connection path,
+                    expanding the graph as needed.
+                </p>
+            </div>
+
+            <h2>Supported Domains</h2>
+
+            <p>Constellations automatically detects and works across many domains, including:</p>
+            <ul>
+                <li><strong>History:</strong> Person ↔ Event</li>
+                <li><strong>Culinary:</strong> Ingredient ↔ Recipe</li>
+                <li><strong>Medicine:</strong> Symptom ↔ Disease</li>
+                <li><strong>Academia:</strong> Author ↔ Paper</li>
+                <li><strong>Film:</strong> Actor ↔ Movie</li>
+                <li><strong>Music:</strong> Musician ↔ Album</li>
+                <li>...and more!</li>
+            </ul>
+
+            <h2>Troubleshooting</h2>
+
+            <div class="faq-item">
+                <h3>I got "No connections found" - what should I do?</h3>
+                <p>
+                    Try being more specific with your search term. For example, instead of just "Smith",
+                    try "Will Smith" or "Adam Smith (economist)". You can also try a different starting point.
+                </p>
+            </div>
+
+            <div class="faq-item">
+                <h3>An image looks wrong - can I fix it?</h3>
+                <p>
+                    Yes! Click the node, then use the "Find Better Image" option in the context menu.
+                    The AI will search for a more appropriate photo.
+                </p>
+            </div>
+
+            <div class="faq-item">
+                <h3>Can I save my graphs?</h3>
+                <p>
+                    Yes! Use the "Save Graph" button to store your current exploration. You can load
+                    it later or export it as an image or JSON file.
+                </p>
+            </div>
+
+            <h2>Privacy & Data</h2>
+
+            <div class="faq-item">
+                <h3>What data is collected?</h3>
+                <p>
+                    Constellations caches AI responses and graph data to improve performance and reduce
+                    API costs. No personal information or browsing history is collected. All data is
+                    stored securely and used only to enhance your exploration experience.
+                </p>
+            </div>
+
+            <div class="contact-box">
+                <h3>Still Need Help?</h3>
+                <p>
+                    For additional support, bug reports, or feature requests, please visit our
+                    <a href="https://github.com/johndimm/Constellations/issues" target="_blank">GitHub Issues</a>
+                    page or contact us at <a href="mailto:support@constellations.app">support@constellations.app</a>.
+                </p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>
+                <a href="index.html">Home</a> ·
+                <a href="https://constellations-delta.vercel.app/">Live Demo</a> ·
+                <a href="https://github.com/johndimm/Constellations">GitHub</a>
+            </p>
+        </div>
+    </div>
+</body>
+
+</html>

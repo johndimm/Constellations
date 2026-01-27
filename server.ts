@@ -980,7 +980,15 @@ const resolveImageForTitle = async (title: string, context: string): Promise<{ u
   const trimmedTitle = title.trim();
   const trimmedContext = context.trim();
   const looksLikeScreenWork = (s: string) => /\b(film|movie|television series|tv series|miniseries|sitcom|drama series|comedy series|series)\b/i.test(s.toLowerCase());
-  const isPersonContext = (s: string) => /^(person|author)$/i.test(s.trim());
+  // Recognize person types: exact match OR if context contains person-related type (Actor, Musician, etc.)
+  const isPersonContext = (s: string) => {
+    const normalized = s.trim().toLowerCase();
+    // Exact matches
+    if (/^(person|author|actor|musician|artist|scientist|mathematician|researcher)$/i.test(normalized)) return true;
+    // Check if context contains person type anywhere (e.g., "Actor ↔ Movie")
+    if (/\b(person|author|actor|musician|artist|scientist|mathematician|researcher|composer|director|writer|poet|playwright)\b/i.test(normalized)) return true;
+    return false;
+  };
   let isScreenWork = looksLikeScreenWork(`${trimmedTitle} ${trimmedContext}`);
   const isPerson = isPersonContext(trimmedContext);
 

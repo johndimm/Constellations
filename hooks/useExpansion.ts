@@ -549,7 +549,14 @@ export function useExpansion(options: UseExpansionOptions) {
                 const existingByNorm = new Map<string, GraphNode>(currentNodesForDedupe.map(n => [baseDedupeKey(n as any), n]));
                 const verifiedNorm = normalizeForEvidence(sourceLong);
                 nodesToUse = nodesToUse.map(cn => sanitizeEvidenceAndRole(cn, verifiedNorm));
-                nodesToUse = nodesToUse.filter((cn: any) => String(cn?.type || '').toLowerCase() !== 'person' || looksLikeSpecificPersonName(cn?.title));
+                // Only filter person nodes for specific names; allow all other types through
+                nodesToUse = nodesToUse.filter((cn: any) => {
+                    const nodeType = String(cn?.type || '').toLowerCase();
+                    if (nodeType === 'person' || nodeType === 'actor' || nodeType === 'author') {
+                        return looksLikeSpecificPersonName(cn?.title);
+                    }
+                    return true; // Allow all non-person nodes
+                });
 
                 console.log(`📡 [Expansion] AI returned ${nodesToUse.length} nodes for "${node.title}"`);
                 const processedNodes = nodesToUse.map(cn => {

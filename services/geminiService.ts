@@ -559,6 +559,12 @@ export const fetchPersonWorks = async (
        - Set the returned item's "type" to "Album" (or "Composition" / "Symphony" / "Song" when clearly applicable).
        - QUOTA: For a musician, return AT LEAST 6-8 specific major albums or compositions.
 
+       SPECIAL CASE (ingredient/food): If "${nodeName}" is an ingredient or food item, return 8-10 specific recipes that prominently feature this ingredient.
+       - Set the returned item's "type" field to "Recipe".
+       - Return well-known, named recipes (e.g., for "Beef": "Beef Wellington", "Beef Bourguignon", "Steak Tartare", "Korean Bulgogi", "Beef Stroganoff", "Pho", "Beef Rendang", "Chili con Carne").
+       - Ensure variety in cuisines and preparation styles.
+       - Do NOT return generic terms like "beef dishes" - return specific, named recipes.
+
        SPECIAL CASE (academia/math): If "${nodeName}" is a mathematician/scientist/researcher, include major named papers (often coauthored).
        - Papers are valid ${compositeLabel} in this system.
        - Prefer coauthored papers when possible (they connect to multiple people).

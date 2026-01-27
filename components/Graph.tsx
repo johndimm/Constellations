@@ -1349,9 +1349,10 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     if (expandingNodeId !== null) {
                         const sourceNode = nodes.find(n => n.id === sId);
                         const targetNode = nodes.find(n => n.id === tId);
-                        const sourceDimmed = sourceNode && sourceNode.id !== expandingNodeId && !newChildNodeIds.has(sourceNode.id);
-                        const targetDimmed = targetNode && targetNode.id !== expandingNodeId && !newChildNodeIds.has(targetNode.id);
-                        if (sourceDimmed || targetDimmed) return 0.25;
+                        const sourceBright = sourceNode && (sourceNode.id === expandingNodeId || newChildNodeIds.has(sourceNode.id));
+                        const targetBright = targetNode && (targetNode.id === expandingNodeId || newChildNodeIds.has(targetNode.id));
+                        // Only dim the link if BOTH endpoints are dimmed (neither is bright)
+                        if (!sourceBright && !targetBright) return 0.25;
                     } else if (effectiveFocused) {
                         const isConnected = neighborIds.has(sId) || neighborIds.has(tId);
                         if (!isConnected) return 0.25;
