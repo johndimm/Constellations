@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Constellations - Universal Bipartite Knowledge Explorer</title>
+    <meta name="description" content="AI-powered bipartite knowledge graphs for exploring connections across any domain - from history to recipes, science to sports.">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 60px 40px;
+            text-align: center;
+        }
+        
+        .logo {
+            font-size: 4rem;
+            margin-bottom: 10px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .tagline {
+            font-size: 1.2rem;
+            opacity: 0.95;
+            font-weight: 300;
+        }
+        
+        .content {
+            padding: 50px 40px;
+        }
+        
+        h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+        
+        p {
+            margin-bottom: 20px;
+            color: #4a4a4a;
+            font-size: 1.05rem;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 30px;
+            margin: 40px 0;
+        }
+        
+        .feature {
+            text-align: center;
+        }
+        
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+        
+        .feature h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+        
+        .feature p {
+            font-size: 0.95rem;
+            color: #666;
+        }
+        
+        .cta {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 40px;
+            border-top: 1px solid #eee;
+        }
+        
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 40px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 30px;
+            background: #f9f9f9;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🌌</div>
+            <h1>Constellations</h1>
+            <p class="tagline">Universal AI-powered bipartite knowledge graphs</p>
+        </div>
+        
+        <div class="content">
+            <h2>Explore Knowledge Like Never Before</h2>
+            <p>
+                Constellations is an AI-powered knowledge explorer that reveals the hidden connections 
+                across any domain. From world history to culinary arts, academic research to sports, 
+                discover how ideas, people, and concepts interconnect.
+            </p>
+            
+            <div class="features">
+                <div class="feature">
+                    <div class="feature-icon">🔍</div>
+                    <h3>Smart Discovery</h3>
+                    <p>AI identifies key entities and their relationships on the fly</p>
+                </div>
+                
+                <div class="feature">
+                    <div class="feature-icon">🌐</div>
+                    <h3>Universal Domains</h3>
+                    <p>Works across history, science, food, sports, and more</p>
+                </div>
+                
+                <div class="feature">
+                    <div class="feature-icon">📊</div>
+                    <h3>Visual Graphs</h3>
+                    <p>Interactive network and timeline views</p>
+                </div>
+                
+                <div class="feature">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Path Finding</h3>
+                    <p>Trace connections between any two entities</p>
+                </div>
+            </div>
+            
+            <h2>How It Works</h2>
+            <p>
+                Constellations uses a <strong>bipartite graph structure</strong> to organize knowledge:
+            </p>
+            <ul style="margin-left: 20px; margin-bottom: 20px;">
+                <li style="margin-bottom: 10px;"><strong>Atomic Nodes</strong> (circles): Fundamental entities like People, Ingredients, or Symptoms</li>
+                <li style="margin-bottom: 10px;"><strong>Composite Nodes</strong> (cards): Collections like Events, Recipes, or Diseases</li>
+                <li style="margin-bottom: 10px;"><strong>Connections</strong>: Only link atomics to their related composites</li>
+            </ul>
+            <p>
+                This prevents hallucinated connections and creates a logical, verifiable structure 
+                powered by live AI queries and enriched with Wikipedia and academic data.
+            </p>
+            
+            <div class="cta">
+                <a href="https://constellations-delta.vercel.app/" class="button">Try Live Demo</a>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>
+                <a href="support.html">Support & Help</a> · 
+                <a href="https://github.com/johndimm/Constellations">GitHub</a> · 
+                Built with ❤️ by John Dimm
+            </p>
+        </div>
+    </div>
+</body>
+</html>
