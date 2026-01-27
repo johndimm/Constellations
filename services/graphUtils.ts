@@ -85,7 +85,7 @@ export const dedupeGraph = (
 ): { nodes: GraphNode[]; links: GraphLink[] } => {
     // Use base key (normalized title + type) for deduplication, regardless of wikipedia_id
     const dedupMap = new Map<string, GraphNode>();
-    const idRemap = new Map<number, number>();
+    const idRemap = new Map<string, string>();
 
     const normalizeType = (t?: string) => {
         return (t || '').trim().toLowerCase();
@@ -149,19 +149,19 @@ export const dedupeGraph = (
 
         if (!existing) {
             dedupMap.set(key, n);
-            idRemap.set(n.id, n.id);
+            idRemap.set(String(n.id), String(n.id));
         } else {
             const merged = mergeNode(existing, n);
             dedupMap.set(targetKey, merged);
-            idRemap.set(n.id, merged.id);
-            idRemap.set(existing.id, merged.id);
+            idRemap.set(String(n.id), String(merged.id));
+            idRemap.set(String(existing.id), String(merged.id));
         }
     });
 
     const nodesOut = Array.from(dedupMap.values());
 
-    const remapId = (value: number | GraphNode) => {
-        const id = typeof value === 'number' ? value : value.id;
+    const remapId = (value: number | string | GraphNode) => {
+        const id = String(typeof value === 'object' ? value.id : value);
         return idRemap.get(id) ?? id;
     };
 
@@ -199,21 +199,27 @@ export const mergeExpansionGraph = (params: {
     seedFromParent?: boolean;
 }): { nodes: GraphNode[]; links: GraphLink[] } => {
     const { nodes, links, parent, targets, seedFromParent = true } = params;
-    const existingNodeIds = new Set(nodes.map(n => n.id));
-    const nodeMap = new Map<number, GraphNode>(nodes.map(n => [n.id, n]));
+    const existingNodeIds = new Set(nodes.map(n => String(n.id)));
+    const nodeMap = new Map<string, GraphNode>(nodes.map(n => [String(n.id), n]));
 
     const parentIsAtomic = !!(parent.is_atomic ?? parent.is_person ?? (parent.type || '').toLowerCase() === 'person');
     const expectedChildIsAtomic = !parentIsAtomic;
 
+    console.warn(`🔧 [mergeExpansionGraph] Parent "${parent.title}" isAtomic=${parentIsAtomic}, expected child isAtomic=${expectedChildIsAtomic}`);
+
     targets.forEach(t => {
         const meta = (t.meta || {}) as Record<string, any>;
-        const existing = nodeMap.get(t.id);
+        const existing = nodeMap.get(String(t.id));
         const imageUrl = meta.imageUrl ?? existing?.imageUrl ?? t.imageUrl;
         const wikiSummary = meta.wikiSummary ?? (t as any).wikiSummary ?? existing?.wikiSummary;
+
+        // Trust the LLM's classification first, then existing node, then infer from parent
         const isAtomic =
             (typeof t.is_atomic === 'boolean' ? t.is_atomic : (typeof (t as any).is_person === 'boolean' ? (t as any).is_person : undefined)) ??
             (existing?.is_atomic ?? (existing as any)?.is_person) ??
             expectedChildIsAtomic;
+
+        console.warn(`🔧 [mergeExpansionGraph] Target "${t.title}": t.is_atomic=${t.is_atomic}, t.type="${t.type}", computed isAtomic=${isAtomic}`);
 
         const initialX = (!existing && seedFromParent && parent.x != null)
             ? parent.x + (Math.random() - 0.5) * 100
@@ -239,19 +245,19 @@ export const mergeExpansionGraph = (params: {
             expanded: existing?.expanded || false,
             isLoading: false
         };
-        nodeMap.set(t.id, merged);
+        nodeMap.set(String(t.id), merged);
     });
 
-    if (nodeMap.has(parent.id)) {
-        nodeMap.set(parent.id, { ...nodeMap.get(parent.id)!, expanded: true, isLoading: false });
+    if (nodeMap.has(String(parent.id))) {
+        nodeMap.set(String(parent.id), { ...nodeMap.get(String(parent.id))!, expanded: true, isLoading: false });
     }
 
     const updatedNodes = Array.from(nodeMap.values());
-    const isAtomicForId = new Map<number, boolean>();
+    const isAtomicForId = new Map<string, boolean>();
     updatedNodes.forEach(n => {
         const v = (n.is_atomic ?? (n as any).is_person);
-        if (typeof v === 'boolean') isAtomicForId.set(n.id, v);
-        else if ((n.type || '').toLowerCase() === 'person') isAtomicForId.set(n.id, true);
+        if (typeof v === 'boolean') isAtomicForId.set(String(n.id), v);
+        else if ((n.type || '').toLowerCase() === 'person') isAtomicForId.set(String(n.id), true);
     });
 
     const candidateLinks: GraphLink[] = targets.map(t => ({
@@ -262,14 +268,21 @@ export const mergeExpansionGraph = (params: {
         evidence: t.evidence || t.edge_meta?.evidence || { kind: 'none' }
     }));
 
+    console.warn(`🔧 [mergeExpansionGraph] Created ${candidateLinks.length} candidate links`);
+
     const bipartiteSafeCandidates = candidateLinks.filter(l => {
-        const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
-        const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
-        const sa = isAtomicForId.get(Number(s));
-        const ta = isAtomicForId.get(Number(t));
-        if (sa === undefined || ta === undefined) return true;
-        return sa !== ta;
+        const s = String(typeof l.source === 'object' ? l.source.id : l.source);
+        const t = String(typeof l.target === 'object' ? l.target.id : l.target);
+        const sa = isAtomicForId.get(s);
+        const ta = isAtomicForId.get(t);
+        const pass = (sa === undefined || ta === undefined) || (sa !== ta);
+        if (!pass) {
+            console.warn(`🔧 [mergeExpansionGraph] Link ${s}->${t} FILTERED: parent isAtomic=${sa}, child isAtomic=${ta}`);
+        }
+        return pass;
     });
+
+    console.warn(`🔧 [mergeExpansionGraph] After bipartite filter: ${bipartiteSafeCandidates.length} links`);
 
     const existingLinkIds = new Set(links.map(l => l.id));
     const updatedExistingLinks = links.map(l => {
@@ -283,18 +296,27 @@ export const mergeExpansionGraph = (params: {
     const newLinksToAdd = bipartiteSafeCandidates.filter(l => !existingLinkIds.has(l.id));
     const combinedLinks = [...updatedExistingLinks, ...newLinksToAdd];
 
-    const degree = new Map<number, number>();
+    console.warn(`🔧 [mergeExpansionGraph] Combined links: ${combinedLinks.length}`);
+
+    const degree = new Map<string, number>();
     combinedLinks.forEach(l => {
-        const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
-        const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
-        degree.set(Number(s), (degree.get(Number(s)) || 0) + 1);
-        degree.set(Number(t), (degree.get(Number(t)) || 0) + 1);
+        const s = String(typeof l.source === 'object' ? l.source.id : l.source);
+        const t = String(typeof l.target === 'object' ? l.target.id : l.target);
+        degree.set(s, (degree.get(s) || 0) + 1);
+        degree.set(t, (degree.get(t) || 0) + 1);
     });
     const prunedNodes = updatedNodes.filter(n => {
-        if (n.id === parent.id) return true;
-        if (existingNodeIds.has(n.id)) return true;
-        return (degree.get(n.id) || 0) > 0;
+        if (String(n.id) === String(parent.id)) return true;
+        if (existingNodeIds.has(String(n.id))) return true;
+        const deg = degree.get(String(n.id)) || 0;
+        const keep = deg > 0;
+        if (!keep && !existingNodeIds.has(String(n.id))) {
+            console.warn(`🔧 [mergeExpansionGraph] Node "${n.title}" (${n.id}) PRUNED: degree=${deg}`);
+        }
+        return keep;
     });
+
+    console.warn(`🔧 [mergeExpansionGraph] After pruning: ${prunedNodes.length} nodes from ${updatedNodes.length}`);
 
     return dedupeGraph(prunedNodes, combinedLinks);
 };

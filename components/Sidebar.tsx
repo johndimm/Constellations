@@ -83,7 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
   if (!selectedNode && !selectedLink) return null;
 
   const nonPersonTypes = ['Movie', 'Event', 'Battle', 'Project', 'Company', 'Organization', 'Album', 'Song', 'Book', 'War', 'Treaty', 'Administration'];
-  const isPerson = selectedNode ? (selectedNode.is_atomic ?? selectedNode.is_person ?? selectedNode.type.toLowerCase() === 'person') : false;
+  const isPerson = selectedNode ? (selectedNode.is_atomic ?? selectedNode.is_person ?? (selectedNode.type.toLowerCase() === 'person' || selectedNode.type.toLowerCase() === 'actor')) : false;
 
   // Unified side panel styling - slides right on both mobile and desktop
   // Side panel styling - always slides right.

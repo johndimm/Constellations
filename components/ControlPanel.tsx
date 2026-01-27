@@ -22,6 +22,7 @@ interface ControlPanelProps {
   onSelectKioskDomain?: (domainId: string) => void;
   onUpdateKioskDomains?: (domains: KioskDomain[]) => void;
   onClear: () => void;
+  onClearCache?: () => void;
   onExpandAllLeafNodes?: () => void;
   isProcessing: boolean;
   isCompact: boolean;
@@ -65,6 +66,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onSelectKioskDomain,
   onUpdateKioskDomains,
   onClear,
+  onClearCache,
   onExpandAllLeafNodes,
   isProcessing,
   isCompact,
@@ -333,6 +335,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   >
                     <Trash2 size={16} />
                   </button>
+                  {onClearCache && (
+                    <button
+                      onClick={onClearCache}
+                      className="px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-orange-300 transition-colors text-xs"
+                      title="Clear API cache (forces fresh data from LLM)"
+                    >
+                      CLEAR CACHE
+                    </button>
+                  )}
                   {onExpandAllLeafNodes && (
                     <button
                       onClick={onExpandAllLeafNodes}

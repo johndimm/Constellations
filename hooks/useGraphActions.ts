@@ -11,7 +11,7 @@ interface UseGraphActionsOptions {
     setNotification: (notif: any) => void;
     setConfirmDialog: (dialog: any) => void;
     setDeletePreview: (preview: any) => void;
-    setPathNodeIds: (ids: number[]) => void;
+    setPathNodeIds: (ids: (number | string)[]) => void;
     fetchAndExpandNode: (node: GraphNode, isInitial?: boolean, forceMore?: boolean) => Promise<void>;
     setIsProcessing: (val: boolean) => void;
     searchIdRef: React.MutableRefObject<number>;
@@ -43,42 +43,76 @@ export function useGraphActions(options: UseGraphActionsOptions) {
         setPathNodeIds([]);
     }, [setGraphData, setSelectedNode, setSelectedLink, setPathNodeIds]);
 
+    const handleClearCache = useCallback(async () => {
+        if (!cacheEnabled) {
+            setNotification({ message: 'Cache is not enabled.', type: 'error' });
+            return;
+        }
+
+        setConfirmDialog({
+            isOpen: true,
+            message: 'Clear all cached API data? This will force fresh data from the LLM on next expansion.',
+            onConfirm: async () => {
+                try {
+                    setIsProcessing(true);
+                    const res = await fetch(new URL('/cache/clear', cacheBaseUrl).toString(), {
+                        method: 'DELETE'
+                    });
+                    if (!res.ok) throw new Error('Failed to clear cache');
+                    setNotification({ message: 'Cache cleared successfully!', type: 'success' });
+                } catch (e) {
+                    console.error('Cache clear failed:', e);
+                    setNotification({ message: 'Failed to clear cache.', type: 'error' });
+                } finally {
+                    setIsProcessing(false);
+                }
+            }
+        });
+    }, [cacheEnabled, cacheBaseUrl, setConfirmDialog, setNotification, setIsProcessing]);
+
+
     const handlePrune = useCallback(() => {
         const leafIds = nodes.filter(n => {
-            const isSource = links.some(l => (typeof l.source === 'number' ? l.source : (l.source as any).id) === n.id);
+            const isSource = links.some(l => {
+                const sid = String(typeof l.source === 'object' ? (l.source as GraphNode).id : l.source);
+                return sid === String(n.id);
+            });
             return !isSource;
         }).map(n => n.id);
 
         setGraphData(prev => ({
-            nodes: prev.nodes.filter(n => !leafIds.includes(n.id)),
+            nodes: prev.nodes.filter(n => !leafIds.some(id => String(id) === String(n.id))),
             links: prev.links.filter(l => {
-                const s = typeof l.source === 'number' ? l.source : (l.source as any).id;
-                const t = typeof l.target === 'number' ? l.target : (l.target as any).id;
-                return !leafIds.includes(s) && !leafIds.includes(t);
+                const s = String(typeof l.source === 'object' ? (l.source as GraphNode).id : l.source);
+                const t = String(typeof l.target === 'object' ? (l.target as GraphNode).id : l.target);
+                return !leafIds.some(id => String(id) === s) && !leafIds.some(id => String(id) === t);
             })
         }));
         setNotification({ message: 'Removed leaf nodes.', type: 'success' });
     }, [nodes, links, setGraphData, setNotification]);
 
-    const computeDeleteOutcome = (nodeId: number) => {
-        const keeps = new Set<number>();
+    const computeDeleteOutcome = (nodeId: number | string) => {
+        const keeps = new Set<string>();
         const stack = nodes.filter(n => {
-            const isRoot = !links.some(l => (typeof l.target === 'number' ? l.target : (l.target as any).id) === n.id);
-            return isRoot && n.id !== nodeId;
+            const isRoot = !links.some(l => {
+                const tid = String(typeof l.target === 'object' ? (l.target as GraphNode).id : l.target);
+                return tid === String(n.id);
+            });
+            return isRoot && String(n.id) !== String(nodeId);
         }).map(n => n.id);
-        stack.forEach(id => keeps.add(id));
+        stack.forEach(id => keeps.add(String(id)));
         while (stack.length > 0) {
             const curr = stack.pop()!;
             links.forEach(l => {
-                const s = typeof l.source === 'number' ? l.source : (l.source as any).id;
-                const t = typeof l.target === 'number' ? l.target : (l.target as any).id;
-                if (s === curr && !keeps.has(t) && t !== nodeId) {
+                const s = String(typeof l.source === 'object' ? (l.source as GraphNode).id : l.source);
+                const t = String(typeof l.target === 'object' ? (l.target as GraphNode).id : l.target);
+                if (s === curr && !keeps.has(t) && t !== String(nodeId)) {
                     keeps.add(t);
                     stack.push(t);
                 }
             });
         }
-        const dropIds = nodes.map(n => n.id).filter(id => !keeps.has(id));
+        const dropIds = nodes.map(n => n.id).filter(id => !keeps.has(String(id)));
         return { keepIds: Array.from(keeps), dropIds };
     };
 
@@ -92,11 +126,11 @@ export function useGraphActions(options: UseGraphActionsOptions) {
             message: `Delete "${nodeLabel}" and its sub-tree (${outcome.dropIds.length} nodes total)?`,
             onConfirm: () => {
                 setGraphData(prev => ({
-                    nodes: prev.nodes.filter(n => outcome.keepIds.includes(n.id)),
+                    nodes: prev.nodes.filter(n => outcome.keepIds.some(id => String(id) === String(n.id))),
                     links: prev.links.filter(l => {
-                        const s = typeof l.source === 'number' ? l.source : (l.source as any).id;
-                        const t = typeof l.target === 'number' ? l.target : (l.target as any).id;
-                        return outcome.keepIds.includes(s) && outcome.keepIds.includes(t);
+                        const s = String(typeof l.source === 'object' ? (l.source as GraphNode).id : l.source);
+                        const t = String(typeof l.target === 'object' ? (l.target as GraphNode).id : l.target);
+                        return outcome.keepIds.some(id => String(id) === s) && outcome.keepIds.some(id => String(id) === t);
                     })
                 }));
                 setSelectedNode(null);
@@ -107,10 +141,10 @@ export function useGraphActions(options: UseGraphActionsOptions) {
     }, [nodes, links, setDeletePreview, setConfirmDialog, setGraphData, setSelectedNode, setNotification]);
 
     const handleExpandLeaves = useCallback(async (node: GraphNode) => {
-        const leafLinks = links.filter(l => (typeof l.source === 'number' ? l.source : (l.source as any).id) === node.id);
-        const leafIds = leafLinks.map(l => (typeof l.target === 'number' ? l.target : (l.target as any).id));
+        const leafLinks = links.filter(l => String(typeof l.source === 'object' ? (l.source as GraphNode).id : l.source) === String(node.id));
+        const leafIds = leafLinks.map(l => String(typeof l.target === 'object' ? (l.target as GraphNode).id : l.target));
         const unexpandedLeafIds = leafIds.filter(id => {
-            const n = nodes.find(nn => nn.id === id);
+            const n = nodes.find(nn => String(nn.id) === String(id));
             return n && !n.expanded && !n.isLoading;
         });
 
@@ -121,7 +155,7 @@ export function useGraphActions(options: UseGraphActionsOptions) {
 
         setNotification({ message: `Expanding ${unexpandedLeafIds.length} connections...`, type: 'success' });
         for (const id of unexpandedLeafIds) {
-            const n = nodes.find(nn => nn.id === id);
+            const n = nodes.find(nn => String(nn.id) === String(id));
             if (n) await fetchAndExpandNode(n, false, false);
         }
         setNotification({ message: `Completed expansion of ${unexpandedLeafIds.length} connections.`, type: 'success' });
@@ -133,7 +167,7 @@ export function useGraphActions(options: UseGraphActionsOptions) {
 
     const handleExpandAllLeafNodes = useCallback(async () => {
         const unexpandedLeafNodes = nodes.filter(n => {
-            const isSource = links.some(l => (typeof l.source === 'number' ? l.source : (l.source as any).id) === n.id);
+            const isSource = links.some(l => String(typeof l.source === 'object' ? (l.source as GraphNode).id : l.source) === String(n.id));
             return !isSource && !n.expanded && !n.isLoading;
         });
 
@@ -234,6 +268,7 @@ export function useGraphActions(options: UseGraphActionsOptions) {
 
     return {
         handleClear,
+        handleClearCache,
         handlePrune,
         handleSmartDelete,
         handleExpandLeaves,

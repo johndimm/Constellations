@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { GraphNode } from '../types';
+import { GraphNode, GraphLink } from '../types';
 
 export type NodeContextMenuState = { node: GraphNode; x: number; y: number };
 
@@ -7,6 +7,9 @@ export type NodeClickHandlers = {
     selectedNode: GraphNode | null;
     setSelectedNode: (node: GraphNode | null) => void;
     setContextMenu: (menu: NodeContextMenuState | null) => void;
+    graphData?: { nodes: GraphNode[]; links: GraphLink[] };
+    setExpandingNodeId?: (id: string | number | null) => void;
+    setNewChildNodeIds?: (ids: Set<string>) => void;
     onDebug?: (message: string) => void;
     onDeselect?: () => void;
     onClearSecondarySelection?: () => void;
@@ -24,6 +27,9 @@ export const useNodeClickHandler = ({
     selectedNode,
     setSelectedNode,
     setContextMenu,
+    graphData,
+    setExpandingNodeId,
+    setNewChildNodeIds,
     onDebug,
     onDeselect,
     onClearSecondarySelection,
@@ -36,8 +42,8 @@ export const useNodeClickHandler = ({
     shouldExpand,
     getMenuPosition
 }: NodeClickHandlers) => {
-    const lastSelectedIdRef = useRef<number | null>(selectedNode?.id ?? null);
-    const lastClickRef = useRef<{ id: number; at: number } | null>(null);
+    const lastSelectedIdRef = useRef<number | string | null>(selectedNode?.id ?? null);
+    const lastClickRef = useRef<{ id: number | string; at: number } | null>(null);
 
     useEffect(() => {
         lastSelectedIdRef.current = selectedNode?.id ?? null;
@@ -56,12 +62,12 @@ export const useNodeClickHandler = ({
         onRetryImage?.(node);
         onConnectSelect?.(node);
 
-        const isSecondClick = lastSelectedIdRef.current === node.id;
+        const isSecondClick = lastSelectedIdRef.current !== null && String(lastSelectedIdRef.current) === String(node.id);
         const now = Date.now();
-        const isRepeatSameNode = lastClickRef.current?.id === node.id;
+        const isRepeatSameNode = lastClickRef.current !== null && String(lastClickRef.current.id) === String(node.id);
         const lastClickAge = lastClickRef.current ? (now - lastClickRef.current.at) : null;
         const isRapidSameNode = isRepeatSameNode && !!lastClickAge && lastClickAge < 800;
-        const isSelectedAgain = selectedNode?.id === node.id;
+        const isSelectedAgain = selectedNode !== null && String(selectedNode.id) === String(node.id);
         const isDoubleClick = !!event && typeof event.detail === 'number' && event.detail >= 2;
         if (isSecondClick || isRapidSameNode || isDoubleClick || isSelectedAgain || isRepeatSameNode) {
             const pos = getMenuPosition
@@ -91,6 +97,26 @@ export const useNodeClickHandler = ({
             onNavigate?.(node);
             lastClickRef.current = { id: node.id, at: now };
             onDebug?.(`click: ${node.title} -> select expanded:${!!node.expanded} loading:${!!node.isLoading}`);
+
+            // Highlight the clicked node and all its connected nodes
+            if (graphData && setExpandingNodeId && setNewChildNodeIds) {
+                const connectedNodeIds: string[] = [];
+                graphData.links.forEach(link => {
+                    const sourceId = String(typeof link.source === 'object' ? (link.source as any).id : link.source);
+                    const targetId = String(typeof link.target === 'object' ? (link.target as any).id : link.target);
+
+                    if (String(sourceId) === String(node.id)) {
+                        connectedNodeIds.push(String(targetId));
+                    } else if (String(targetId) === String(node.id)) {
+                        connectedNodeIds.push(String(sourceId));
+                    }
+                });
+
+                setExpandingNodeId(node.id);
+                setNewChildNodeIds(new Set(connectedNodeIds));
+                onDebug?.(`highlight: ${node.title} + ${connectedNodeIds.length} connected nodes`);
+            }
+
             return;
         }
 
@@ -99,6 +125,25 @@ export const useNodeClickHandler = ({
             lastSelectedIdRef.current = node.id;
             lastClickRef.current = { id: node.id, at: now };
             onDebug?.(`click: ${node.title} -> select`);
+
+            // Highlight the clicked node and all its connected nodes
+            if (graphData && setExpandingNodeId && setNewChildNodeIds) {
+                const connectedNodeIds: string[] = [];
+                graphData.links.forEach(link => {
+                    const sourceId = String(typeof link.source === 'object' ? (link.source as any).id : link.source);
+                    const targetId = String(typeof link.target === 'object' ? (link.target as any).id : link.target);
+
+                    if (String(sourceId) === String(node.id)) {
+                        connectedNodeIds.push(String(targetId));
+                    } else if (String(targetId) === String(node.id)) {
+                        connectedNodeIds.push(String(sourceId));
+                    }
+                });
+
+                setExpandingNodeId(node.id);
+                setNewChildNodeIds(new Set(connectedNodeIds));
+                onDebug?.(`highlight: ${node.title} + ${connectedNodeIds.length} connected nodes`);
+            }
         }
 
         onNavigate?.(node);
@@ -116,6 +161,9 @@ export const useNodeClickHandler = ({
         selectedNode,
         setSelectedNode,
         setContextMenu,
+        graphData,
+        setExpandingNodeId,
+        setNewChildNodeIds,
         onDebug,
         onDeselect,
         onClearSecondarySelection,

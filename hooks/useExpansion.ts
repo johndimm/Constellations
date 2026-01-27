@@ -31,7 +31,7 @@ interface UseExpansionOptions {
     setIsProcessing: (val: boolean) => void;
     setError: (val: string | null) => void;
     searchIdRef: React.MutableRefObject<number>;
-    lockedPairRef: React.MutableRefObject<{ atomicType: string, compositeType: string }>;
+    lockedPairRef: React.MutableRefObject<LockedPair>;
     nodesRef: React.MutableRefObject<GraphNode[]>;
     selectedNodeRef: React.MutableRefObject<GraphNode | null>;
     autoExpandMoreDoneRef: React.MutableRefObject<Set<number>>;
@@ -41,9 +41,9 @@ interface UseExpansionOptions {
     ENABLE_WEB_SEARCH: boolean;
     loadNodeImage: (nodeId: number, title: string, context?: string, fallbackNode?: any, opts?: any) => Promise<void>;
     saveCacheNodeMeta: (nodeId: number, meta: any, fallbackNode?: any) => Promise<void>;
-    setNewlyExpandedNodeIds: (ids: number[]) => void;
-    setExpandingNodeId: (id: number | null) => void;
-    setNewChildNodeIds: (ids: Set<number> | ((prev: Set<number>) => Set<number>)) => void;
+    setNewlyExpandedNodeIds: (ids: (number | string)[]) => void;
+    setExpandingNodeId: (id: number | string | null) => void;
+    setNewChildNodeIds: (ids: Set<string | number> | ((prev: Set<string | number>) => Set<string | number>)) => void;
     setSelectedNode: (node: GraphNode | null) => void;
     setSelectedLink: (link: GraphLink | null) => void;
     exploreTerm: string;
@@ -90,6 +90,7 @@ export function useExpansion(options: UseExpansionOptions) {
                         year: n.year || null,
                         meta: n.meta || {},
                         wikipedia_id: n.wikipedia_id,
+                        is_atomic: n.is_atomic,
                         edge_label: n.edge_label || null,
                         edge_meta: n.edge_meta || null
                     }))
@@ -117,6 +118,8 @@ export function useExpansion(options: UseExpansionOptions) {
         if (!forceMore && (node.expanded || node.isLoading)) return;
 
         console.log(`🚀 [UI] expand request`, { id: node.id, title: node.title, type: node.type, forceMore, isInitial });
+        console.warn(`⚠️ [DEBUG] Starting expansion for "${node.title}", isStale=${isStale()}`);
+
 
         if (isStale()) return;
         setGraphData(prev => ({
@@ -140,8 +143,8 @@ export function useExpansion(options: UseExpansionOptions) {
             const maybeAutoExpandMore = (neighborCount: number) => {
                 if (forceMore) return;
                 if (neighborCount > 3) return;
-                if (autoExpandMoreDoneRef.current.has(node.id)) return;
-                autoExpandMoreDoneRef.current.add(node.id);
+                if (autoExpandMoreDoneRef.current.has(String(node.id))) return;
+                autoExpandMoreDoneRef.current.add(String(node.id));
                 setTimeout(() => {
                     if (selectedNodeRef.current?.id !== node.id) return;
                     console.log(`➕ [Auto] expand more (small initial expansion: ${neighborCount}) for "${node.title}"`);
@@ -152,18 +155,31 @@ export function useExpansion(options: UseExpansionOptions) {
             if (cacheEnabled && !forceMore) {
                 const cacheHit = await fetchCacheExpansion(node.id);
                 if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
-                    let validCached: any[] = cacheHit.nodes.filter((cn: any) => cn.id !== node.id);
+                    let validCached: any[] = cacheHit.nodes.filter((cn: any) => String(cn.id) !== String(node.id));
                     // Concurrent upgrade of Wikipedia summaries if needed
                     const upgraded = await Promise.all(validCached.map(async (cn: any) => {
                         const meta = cn.meta || {};
-                        const text = String(meta.wikiSummary || cn.description || '').toLowerCase();
-                        if (text.includes(' is a song') || text.includes(' song written') || text.includes(' song by')) {
-                            const w = await fetchWikipediaSummary(cn.title, node.title);
-                            if (w.extract) return {
+                        if (!cn.wikiChecked && (String(meta.wikiSummary || cn.description || '').toLowerCase().includes(' is a song') || String(meta.wikiSummary || cn.description || '').toLowerCase().includes(' song written') || String(meta.wikiSummary || cn.description || '').toLowerCase().includes(' song by'))) {
+                            setGraphData(prev => ({
+                                ...prev,
+                                nodes: prev.nodes.map(n => String(n.id) === String(cn.id) ? { ...n, wikiChecked: true } : n)
+                            }));
+                            const wiki = await fetchWikipediaSummary(cn.title);
+                            if (!wiki.extract && !wiki.pageid) return cn; // Return original if no new wiki data
+                            setGraphData(prev => ({
+                                ...prev,
+                                nodes: prev.nodes.map(n => String(n.id) === String(cn.id) ? {
+                                    ...n,
+                                    wikiSummary: wiki.extract || n.wikiSummary,
+                                    wikipedia_id: wiki.pageid ? wiki.pageid.toString() : n.wikipedia_id
+                                } : n)
+                            }));
+                            return {
                                 ...cn,
-                                wikipedia_id: w.pageid ? String(w.pageid) : cn.wikipedia_id,
-                                description: w.extract,
-                                meta: { ...meta, wikiSummary: w.extract }
+                                wikipedia_id: wiki.pageid ? String(wiki.pageid) : cn.wikipedia_id,
+                                description: wiki.extract,
+                                meta: { ...meta, wikiSummary: wiki.extract },
+                                wikiChecked: true
                             };
                         }
                         return cn;
@@ -171,23 +187,31 @@ export function useExpansion(options: UseExpansionOptions) {
                     validCached = upgraded;
 
                     if (validCached.length >= 5) {
-                        const existingNodeIdsBefore = new Set(graphDataRef.current.nodes.map(n => n.id));
-                        const newChildIds: number[] = validCached.filter(cn => !existingNodeIdsBefore.has(cn.id)).map(cn => cn.id);
+                        const existingNodeIdsBefore = new Set(graphDataRef.current.nodes.map(n => String(n.id)));
+                        const newChildIds: (string | number)[] = validCached.filter(cn => !existingNodeIdsBefore.has(String(cn.id))).map(cn => cn.id);
+                        // Include ALL connected nodes for highlighting, not just new ones
+                        const allConnectedNodeIds = validCached.map(cn => cn.id);
 
                         if (isStale()) return;
-                        setGraphData(prev => mergeExpansionGraph({
-                            nodes: prev.nodes,
-                            links: prev.links,
+                        console.warn(`⚠️ [DEBUG] Merging ${validCached.length} cached nodes:`, validCached.map(n => ({ id: n.id, title: n.title })));
+                        console.warn(`⚠️ [DEBUG] Graph before merge: ${graphDataRef.current.nodes.length} nodes, ${graphDataRef.current.links.length} links`);
+                        const mergedGraph = mergeExpansionGraph({
+                            nodes: graphDataRef.current.nodes,
+                            links: graphDataRef.current.links,
                             parent: node,
                             targets: validCached,
                             seedFromParent: true
-                        }));
+                        });
+                        console.warn(`⚠️ [DEBUG] Graph after merge: ${mergedGraph.nodes.length} nodes, ${mergedGraph.links.length} links`);
+                        setGraphData(mergedGraph);
 
                         maybeAutoExpandMore(validCached.length);
                         if (!skipSelection) setSelectedNode(node);
                         if (!skipExpandingHighlight) {
+                            console.warn(`⚠️ [DEBUG] Setting highlights: expandingNodeId=${node.id}, allConnectedNodeIds=`, allConnectedNodeIds);
                             setExpandingNodeId(node.id);
-                            setNewChildNodeIds(new Set(newChildIds));
+                            // Highlight ALL connected nodes, not just new ones
+                            setNewChildNodeIds(new Set(allConnectedNodeIds.map(id => String(id))));
                         }
 
                         validCached.forEach((cn, idx) => {
@@ -196,23 +220,26 @@ export function useExpansion(options: UseExpansionOptions) {
                             }
                         });
 
+                        console.warn(`⚠️ [DEBUG] Cache hit with ${validCached.length} nodes for "${node.title}", returning early`);
                         setIsProcessing(false);
                         return;
                     }
                 }
             }
 
+            console.warn(`⚠️ [DEBUG] Cache miss or insufficient cache for "${node.title}", proceeding with full fetch`);
             const neighborLinks = currentLinks.filter(l =>
-                (typeof l.source === 'number' ? l.source === node.id : (l.source as GraphNode).id === node.id) ||
-                (typeof l.target === 'number' ? l.target === node.id : (l.target as GraphNode).id === node.id)
+                (typeof l.source === 'number' ? String(l.source) === String(node.id) : String((l.source as GraphNode).id) === String(node.id)) ||
+                (typeof l.target === 'number' ? String(l.target) === String(node.id) : String((l.target as GraphNode).id) === String(node.id))
             );
             const neighborNames = neighborLinks.map(l => {
                 const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
                 const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
-                const nid = s === node.id ? t : s;
-                return currentNodes.find(n => n.id === nid)?.title || '';
+                const nid = String(s) === String(node.id) ? t : s;
+                return currentNodes.find(n => String(n.id) === String(nid))?.title || '';
             }).filter(Boolean);
 
+            console.log(`🔷 [Expansion] Step 1: Getting wiki data for "${node.title}"`);
             let wiki: any = {
                 extract: node.wikiSummary || null,
                 pageid: node.wikipedia_id ? Number(node.wikipedia_id) : null,
@@ -233,6 +260,7 @@ export function useExpansion(options: UseExpansionOptions) {
                 });
             }
 
+            console.log(`🔷 [Expansion] Step 2: Determining atomic type for "${node.title}"`);
             let currentIsAtomic = node.is_atomic ?? (node as any).is_person;
             let currentType = node.type;
             const pair = lockedPairRef.current || { atomicType: "Person", compositeType: "Event" };
@@ -248,10 +276,13 @@ export function useExpansion(options: UseExpansionOptions) {
                 });
             }
 
+            console.log(`🔷 [Expansion] Step 3: currentIsAtomic=${currentIsAtomic}, type=${node.type}`);
             if (currentIsAtomic === undefined) {
+                console.log(`🔷 [Expansion] Step 3a: Inferring atomic type...`);
                 const inferred = (node.type || '').toLowerCase() === pair.atomicType.toLowerCase() ? true
                     : (node.type || '').toLowerCase() === pair.compositeType.toLowerCase() ? false
                         : undefined;
+                console.log(`🔷 [Expansion] Step 3b: inferred=${inferred}`);
                 if (typeof inferred === 'boolean') {
                     currentIsAtomic = inferred;
                     nodeUpdates.set(node.id, { is_atomic: inferred });
@@ -265,14 +296,20 @@ export function useExpansion(options: UseExpansionOptions) {
                 }
             }
 
+            console.log(`📖 [Expansion] Fetching Wikipedia extract for "${node.title}"...`);
             const sourceLong = (await fetchWikipediaExtract(node.title, 2000)).extract || wiki.extract || '';
+            console.log(`📖 [Expansion] Wikipedia extract fetched for "${node.title}", length: ${sourceLong.length}`);
             const hasReliableWikipediaForThisTitle = !!(sourceLong && String(sourceLong).trim().length > 0);
 
             let verifiedContext = sourceLong;
             try {
                 const expandingComposite = !(currentIsAtomic ?? currentType.toLowerCase() === 'person');
+                console.log(`🔍 [Expansion] Expanding composite=${expandingComposite}, isAcademicPair=${isAcademicPair}, atomicType=${pair.atomicType}`);
                 if (!isAcademicPair && pair.atomicType.toLowerCase() === 'person' && expandingComposite) {
+                    console.log(`📊 [Expansion] Fetching Wikidata for "${node.title}"...`);
                     const wd = await fetchWikidataKeyPeopleForTitle(node.title);
+                    console.log(`📊 [Expansion] Wikidata fetch complete for "${node.title}"`);
+
                     if (wd) {
                         const lines: string[] = [];
                         if (wd.founders.length) lines.push(`Founders: ${wd.founders.join(', ')}`);
@@ -353,7 +390,10 @@ export function useExpansion(options: UseExpansionOptions) {
                     results = (data.works || []).filter(w => typeof (w as any).entity === 'string' && (w as any).entity.trim().length > 0).map(w => ({
                         title: (w as any).wikipediaTitle || w.entity,
                         type: (w as any).type || currentCompositeType,
-                        description: w.description, year: w.year ?? undefined, role: w.role ?? undefined, is_atomic: false,
+                        description: w.description,
+                        year: w.year ?? undefined,
+                        role: w.role ?? undefined,
+                        is_atomic: (w as any).isAtomic !== undefined ? (w as any).isAtomic : false,
                         edge_meta: {
                             evidence: {
                                 kind: 'ai', pageTitle: (w as any).evidencePageTitle || node.title, snippet: (w as any).evidenceSnippet || '',
@@ -374,7 +414,11 @@ export function useExpansion(options: UseExpansionOptions) {
                     if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
                     const atomicTypeToUse = currentAtomicType || 'Person';
                     results = (data.people || []).map(p => ({
-                        title: (p as any).wikipediaTitle || p.name, type: atomicTypeToUse, description: p.description, role: p.role, is_atomic: true,
+                        title: (p as any).wikipediaTitle || p.name,
+                        type: atomicTypeToUse,
+                        description: p.description,
+                        role: p.role,
+                        is_atomic: (p as any).isAtomic !== undefined ? (p as any).isAtomic : true,
                         edge_meta: {
                             evidence: {
                                 kind: 'ai', pageTitle: (p as any).evidencePageTitle || node.title, snippet: (p as any).evidenceSnippet || '',
@@ -388,6 +432,8 @@ export function useExpansion(options: UseExpansionOptions) {
                         edge_label: p.role || null
                     }));
                 }
+
+                console.log(`🤖 [Expansion] AI RAW results for "${node.title}":`, results.map(r => ({ title: r.title, type: r.type })));
 
                 if (results.length === 0 && sourceLong) {
                     const sentences = splitIntoSentences(sourceLong);
@@ -442,7 +488,7 @@ export function useExpansion(options: UseExpansionOptions) {
                     setExpandingNodeId(null);
                     setNewChildNodeIds(new Set());
                 } else {
-                    setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false } : n) }));
+                    setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => String(n.id) === String(node.id) ? { ...n, expanded: true, isLoading: false } : n) }));
                     setExpandingNodeId(null);
                     setNewChildNodeIds(new Set());
                 }
@@ -505,6 +551,7 @@ export function useExpansion(options: UseExpansionOptions) {
                 nodesToUse = nodesToUse.map(cn => sanitizeEvidenceAndRole(cn, verifiedNorm));
                 nodesToUse = nodesToUse.filter((cn: any) => String(cn?.type || '').toLowerCase() !== 'person' || looksLikeSpecificPersonName(cn?.title));
 
+                console.log(`📡 [Expansion] AI returned ${nodesToUse.length} nodes for "${node.title}"`);
                 const processedNodes = nodesToUse.map(cn => {
                     const norm = baseDedupeKey(cn as any);
                     const existing = existingByNorm.get(norm);
@@ -514,18 +561,26 @@ export function useExpansion(options: UseExpansionOptions) {
                 });
 
                 const currentNodesForNewIds = graphDataRef.current.nodes;
-                const existingNodeIdsBefore = new Set(currentNodesForNewIds.map(n => n.id));
-                const newChildIds = processedNodes.filter(cn => !existingNodeIdsBefore.has(cn.id)).map(cn => cn.id);
+                const existingNodeIdsBefore = new Set(currentNodesForNewIds.map(n => String(n.id)));
+                const newChildIds = processedNodes.filter(cn => !existingNodeIdsBefore.has(String(cn.id))).map(cn => cn.id);
+
+                // Include ALL connected nodes for highlighting, not just new ones
+                const allConnectedNodeIds = processedNodes.map(cn => cn.id);
+
+                console.log(`🎯 [Expansion] existingNodeIdsBefore:`, Array.from(existingNodeIdsBefore));
+                console.log(`🎯 [Expansion] processedNodes IDs:`, processedNodes.map(cn => String(cn.id)));
+                console.log(`🎯 [Expansion] newChildIds:`, newChildIds);
+                console.log(`🎯 [Expansion] allConnectedNodeIds:`, allConnectedNodeIds);
 
                 if (isStale()) return;
                 setGraphData(prev => {
-                    const nodeMap = new Map<number, GraphNode>(prev.nodes.map(n => [n.id, n]));
-                    const existingNodeIds = new Set(prev.nodes.map(n => n.id));
+                    const nodeMap = new Map<string, GraphNode>(prev.nodes.map(n => [String(n.id), n]));
+                    const existingNodeIds = new Set(prev.nodes.map(n => String(n.id)));
                     const expectedChildIsAtomic = !currentIsAtomic;
                     processedNodes.forEach(cn => {
                         const meta = cn.meta || {};
-                        const existing = nodeMap.get(cn.id);
-                        nodeMap.set(cn.id, {
+                        const existing = nodeMap.get(String(cn.id));
+                        nodeMap.set(String(cn.id), {
                             id: cn.id, title: cn.title, type: cn.type,
                             is_atomic: (existing?.is_atomic ?? (existing as any)?.is_person ?? (typeof (cn as any).is_atomic === 'boolean' ? (cn as any).is_atomic : expectedChildIsAtomic)),
                             wikipedia_id: cn.wikipedia_id, description: cn.description || existing?.description || "",
@@ -537,44 +592,86 @@ export function useExpansion(options: UseExpansionOptions) {
                             expanded: existing?.expanded || false, isLoading: false
                         });
                     });
-                    if (nodeMap.has(node.id)) nodeMap.set(node.id, { ...nodeMap.get(node.id)!, expanded: true, isLoading: true, ...nodeUpdates.get(node.id) });
+                    if (nodeMap.has(String(node.id))) nodeMap.set(String(node.id), { ...nodeMap.get(String(node.id))!, expanded: true, isLoading: true, ...nodeUpdates.get(node.id) });
 
-                    const candidateLinks: GraphLink[] = processedNodes.map(cn => ({ source: node.id, target: cn.id, id: `${node.id}-${cn.id}`, label: cn.edge_label || undefined, evidence: cn.edge_meta?.evidence || { kind: 'none' as const } }));
-                    const isAtomicForId = new Map<number, boolean>();
-                    Array.from(nodeMap.values()).forEach(n => isAtomicForId.set(n.id, !!(n.is_atomic ?? (n as any).is_person ?? (n.type || '').toLowerCase() === 'person')));
-                    const bipartiteSafeCandidates = candidateLinks.filter(l => {
-                        const sa = isAtomicForId.get(Number(typeof l.source === 'number' ? l.source : (l.source as any).id));
-                        const ta = isAtomicForId.get(Number(typeof l.target === 'number' ? l.target : (l.target as any).id));
-                        return sa !== ta;
+                    const getLinkId = (thing: any) => String(typeof thing === 'object' ? thing?.id : thing);
+                    const linkMap = new Map<string, GraphLink>(prev.links.map(l => [`${getLinkId(l.source)}↔${getLinkId(l.target)}`, l]));
+                    const candidateLinks: GraphLink[] = processedNodes.map(cn => {
+                        // Find the original result to get the raw evidence before any wiki/dedupe processing
+                        const sanitizedResults = nodesToUse; // nodesToUse already contains the sanitized results
+                        const rawEvidence = (sanitizedResults.find(r => baseDedupeKey(r) === baseDedupeKey(cn))?.edge_meta?.evidence) || { kind: 'none' as const };
+                        const sourceNodeId = node.id;
+                        const targetNodeId = cn.id;
+                        const sid = getLinkId(sourceNodeId);
+                        const tid = getLinkId(targetNodeId);
+                        const lid1 = `${sid}↔${tid}`;
+                        const lid2 = `${tid}↔${sid}`;
+                        const existingl = linkMap.get(lid1) || linkMap.get(lid2);
+                        return {
+                            id: existingl?.id ?? Math.floor(Math.random() * 1000000), source: sourceNodeId, target: targetNodeId,
+                            label: cn.edge_label || existingl?.label || "",
+                            evidence: rawEvidence
+                        };
                     });
+                    const bipartiteSafeCandidates = candidateLinks.filter(l => {
+                        const sid = getLinkId(l.source);
+                        const tid = getLinkId(l.target);
+
+                        // RELAXATION: If this is a direct link from the node we are currently expanding,
+                        // we trust the AI and permit it regardless of bipartite classification
+                        // to avoid "empty expansions" when classification is fuzzy.
+                        if (sid === String(node.id)) return true;
+
+                        const sourceNode = nodeMap.get(sid);
+                        const targetNode = nodeMap.get(tid);
+                        if (!sourceNode || !targetNode) return false; // Should not happen if nodes are in nodeMap
+                        const sAtomic = sourceNode.is_atomic ?? false;
+                        const tAtomic = targetNode.is_atomic ?? false;
+                        if (sAtomic === tAtomic) { console.warn(`⚠️ [Expansion] Rejected link (same atomicity): ${sourceNode.title} (${sAtomic}) ↔ ${targetNode.title} (${tAtomic})`); return false; }
+                        return true;
+                    });
+                    console.log(`✅ [Expansion] bipartite safe links for "${node.title}":`, bipartiteSafeCandidates.length, "/", candidateLinks.length);
                     const updatedExistingLinks = prev.links.map(l => {
                         const cand = bipartiteSafeCandidates.find(c => c.id === l.id);
                         return cand ? { ...l, label: l.label || cand.label, evidence: (!l.evidence || l.evidence.kind === 'none') ? cand.evidence : l.evidence } : l;
                     });
                     const combinedLinks = [...updatedExistingLinks, ...bipartiteSafeCandidates.filter(l => !prev.links.some(ex => ex.id === l.id))];
-                    const degree = new Map<number, number>();
+                    const degree = new Map<string, number>();
                     combinedLinks.forEach(l => {
-                        const s = Number(typeof l.source === 'number' ? l.source : (l.source as any).id);
-                        const t = Number(typeof l.target === 'number' ? l.target : (l.target as any).id);
-                        degree.set(s, (degree.get(s) || 0) + 1); degree.set(t, (degree.get(t) || 0) + 1);
+                        const s = getLinkId(l.source);
+                        const t = getLinkId(l.target);
+                        degree.set(s, (degree.get(s) || 0) + 1);
+                        degree.set(t, (degree.get(t) || 0) + 1);
                     });
-                    return dedupeGraph(Array.from(nodeMap.values()).filter(n => n.id === node.id || existingNodeIds.has(n.id) || (degree.get(n.id) || 0) > 0), combinedLinks);
+                    const finalNodes = Array.from(nodeMap.values()).filter(n => {
+                        const isOriginal = String(n.id) === String(node.id);
+                        const isExisting = existingNodeIds.has(String(n.id));
+                        const hasDegree = (degree.get(String(n.id)) || 0) > 0;
+                        const ok = isOriginal || isExisting || hasDegree;
+                        if (!ok) console.warn(`🗑️ [Expansion] Node "${n.title}" (${n.id}) pruned (no links)`);
+                        return ok;
+                    });
+                    console.log(`🎭 [Expansion] final node count for "${node.title}": ${finalNodes.length}, link count: ${combinedLinks.length}`);
+                    console.log(`📜 [Expansion] Final nodes titles:`, finalNodes.map(n => n.title));
+                    return dedupeGraph(finalNodes, combinedLinks);
                 });
 
                 maybeAutoExpandMore(processedNodes.length);
-                if (!skipExpandingHighlight) setNewChildNodeIds(new Set(newChildIds));
+                console.log(`🎯 [Expansion] Setting allConnectedNodeIds for highlighting:`, allConnectedNodeIds.map(id => String(id)));
+                // Highlight ALL connected nodes, not just new ones
+                if (!skipExpandingHighlight) setNewChildNodeIds(new Set(allConnectedNodeIds.map(id => String(id))));
                 processedNodes.forEach((cn, idx) => { if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) setTimeout(() => loadNodeImage(cn.id, cn.title), 300 * (idx + 1)); });
 
                 setTimeout(() => {
                     if (isStale()) return;
-                    setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false, ...nodeUpdates.get(node.id) } : n) }));
+                    setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => String(n.id) === String(node.id) ? { ...n, expanded: true, isLoading: false, ...nodeUpdates.get(node.id) } : n) }));
                     const updates = nodeUpdates.get(node.id);
                     if (updates) saveCacheNodeMeta(node.id, updates, node);
                     setTimeout(() => {
                         graphRef.current?.centerOnNode(node.id);
                         if (!skipExpandingHighlight) {
                             setExpandingNodeId(null);
-                            setNewChildNodeIds(new Set());
+                            // Keep newChildNodeIds so they remain highlighted
                         }
                     }, 200);
                 }, 500);
@@ -583,7 +680,7 @@ export function useExpansion(options: UseExpansionOptions) {
             console.error("Failed to expand node", error);
             if (!isStale()) {
                 setError(`Failed to fetch connections: ${(error as any)?.message || 'unknown error'}`);
-                setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: false } : n) }));
+                setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => String(n.id) === String(node.id) ? { ...n, isLoading: false } : n) }));
             }
             setSelectedNode(null); setSelectedLink(null); setExpandingNodeId(null); setNewChildNodeIds(new Set());
         } finally {

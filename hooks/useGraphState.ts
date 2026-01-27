@@ -52,13 +52,13 @@ export function useGraphState(options: UseGraphStateOptions) {
         selectedNodeRef.current = selectedNode;
     }, [selectedNode]);
 
-    const autoExpandMoreDoneRef = useRef<Set<number>>(new Set());
+    const autoExpandMoreDoneRef = useRef<Set<string | number>>(new Set());
 
-    const [deletePreview, setDeletePreview] = useState<{ keepIds: number[], dropIds: number[] } | null>(null);
-    const [pathNodeIds, setPathNodeIds] = useState<number[]>([]);
-    const [newlyExpandedNodeIds, setNewlyExpandedNodeIds] = useState<number[]>([]);
-    const [expandingNodeId, setExpandingNodeId] = useState<number | null>(null);
-    const [newChildNodeIds, setNewChildNodeIds] = useState<Set<number>>(new Set());
+    const [deletePreview, setDeletePreview] = useState<{ keepIds: (number | string)[], dropIds: (number | string)[] } | null>(null);
+    const [pathNodeIds, setPathNodeIds] = useState<(number | string)[]>([]);
+    const [newlyExpandedNodeIds, setNewlyExpandedNodeIds] = useState<(number | string)[]>([]);
+    const [expandingNodeId, setExpandingNodeId] = useState<number | string | null>(null);
+    const [newChildNodeIds, setNewChildNodeIds] = useState<Set<number | string>>(new Set());
     const [helpHover, setHelpHover] = useState<string | null>(null);
 
     const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
@@ -87,20 +87,20 @@ export function useGraphState(options: UseGraphStateOptions) {
     const graphRef = useRef<GraphHandle>(null);
 
     // Prevent image "flapping"
-    const imageReqTokenRef = useRef<Map<number, number>>(new Map());
+    const imageReqTokenRef = useRef<Map<string | number, number>>(new Map());
 
     const saveCacheNodeMeta = useCallback(async (
-        nodeId: number,
+        nodeId: number | string,
         meta: {
             imageUrl?: string | null,
             wikiSummary?: string | null,
             wikipedia_id?: string | null,
             mentioningPageTitles?: string[] | null
         },
-        fallbackNode?: Partial<GraphNode> & { id: number; type?: string; title: string }
+        fallbackNode?: Partial<GraphNode> & { id: number | string; type?: string; title: string }
     ) => {
         if (!cacheEnabled) return;
-        const node = nodesRef.current.find(n => n.id === nodeId) || fallbackNode;
+        const node = nodesRef.current.find(n => String(n.id) === String(nodeId)) || fallbackNode;
         if (!node || !node.type) return;
         try {
             const metaToSend: any = {};
@@ -131,40 +131,40 @@ export function useGraphState(options: UseGraphStateOptions) {
     }, [cacheEnabled, cacheBaseUrl]);
 
     const loadNodeImage = useCallback(async (
-        nodeId: number,
+        nodeId: number | string,
         title: string,
         context?: string,
-        fallbackNode?: Partial<GraphNode> & { id: number; type?: string; title: string },
+        fallbackNode?: Partial<GraphNode> & { id: number | string; type?: string; title: string },
         opts?: { force?: boolean }
     ) => {
         if (isTextOnly) return;
 
         const force = !!opts?.force;
-        const current = graphDataRef.current.nodes.find(n => n.id === nodeId);
+        const current = graphDataRef.current.nodes.find(n => String(n.id) === String(nodeId));
         if (!force) {
             if (current?.imageUrl) return;
             if (current?.fetchingImage) return;
             if (current?.imageChecked) return;
         }
 
-        const nextToken = (imageReqTokenRef.current.get(nodeId) || 0) + 1;
-        imageReqTokenRef.current.set(nodeId, nextToken);
+        const nextToken = (imageReqTokenRef.current.get(String(nodeId)) || 0) + 1;
+        imageReqTokenRef.current.set(String(nodeId), nextToken);
 
         setGraphData(prev => ({
             ...prev,
-            nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: true, imageChecked: true } : n)
+            nodes: prev.nodes.map(n => String(n.id) === String(nodeId) ? { ...n, fetchingImage: true, imageChecked: true } : n)
         }));
 
         const imageBaseUrl = cacheEnabled ? cacheBaseUrl : window.location.origin;
         const effectiveContext = context || current?.type || fallbackNode?.type;
         const imageResult = await fetchServerImage(title, effectiveContext, imageBaseUrl);
-        if ((imageReqTokenRef.current.get(nodeId) || 0) !== nextToken) return;
+        if ((imageReqTokenRef.current.get(String(nodeId)) || 0) !== nextToken) return;
 
         if (imageResult.url) {
             setGraphData(prev => ({
                 ...prev,
                 nodes: prev.nodes.map(n => {
-                    if (n.id !== nodeId) return n;
+                    if (String(n.id) !== String(nodeId)) return n;
                     if (!force && n.imageUrl) return { ...n, fetchingImage: false, imageChecked: true };
                     return {
                         ...n,
@@ -180,18 +180,18 @@ export function useGraphState(options: UseGraphStateOptions) {
         } else {
             setGraphData(prev => ({
                 ...prev,
-                nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: false, imageChecked: true } : n)
+                nodes: prev.nodes.map(n => String(n.id) === String(nodeId) ? { ...n, fetchingImage: false, imageChecked: true } : n)
             }));
         }
     }, [isTextOnly, cacheEnabled, cacheBaseUrl, saveCacheNodeMeta]);
 
-    const handleFindBetterImage = useCallback(async (nodeId: number) => {
-        const node = graphDataRef.current.nodes.find(n => n.id === nodeId);
+    const handleFindBetterImage = useCallback(async (nodeId: number | string) => {
+        const node = graphDataRef.current.nodes.find(n => String(n.id) === String(nodeId));
         if (!node) return;
 
         setGraphData(prev => ({
             ...prev,
-            nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: true } : n)
+            nodes: prev.nodes.map(n => String(n.id) === String(nodeId) ? { ...n, fetchingImage: true } : n)
         }));
 
         setNotification({ message: `AI is looking for ${node.title}'s correct photo...`, type: 'success' });
@@ -221,7 +221,7 @@ export function useGraphState(options: UseGraphStateOptions) {
                     if (imageResult.url) {
                         setGraphData(prev => ({
                             ...prev,
-                            nodes: prev.nodes.map(n => n.id === nodeId ? {
+                            nodes: prev.nodes.map(n => String(n.id) === String(nodeId) ? {
                                 ...n,
                                 imageUrl: imageResult.url,
                                 image_wikipedia_id: (imageResult as any).pageId?.toString(),
@@ -237,7 +237,7 @@ export function useGraphState(options: UseGraphStateOptions) {
                 }
 
                 await loadNodeImage(nodeId, betterTitle, node.type, undefined, { force: true });
-                const updated = graphDataRef.current.nodes.find(n => n.id === nodeId);
+                const updated = graphDataRef.current.nodes.find(n => String(n.id) === String(nodeId));
                 if (updated?.imageUrl) {
                     setNotification({ message: "Better photo found!", type: 'success' });
                     return;
@@ -245,7 +245,7 @@ export function useGraphState(options: UseGraphStateOptions) {
             }
 
             await loadNodeImage(nodeId, node.title, node.type, undefined, { force: true });
-            const updated = graphDataRef.current.nodes.find(n => n.id === nodeId);
+            const updated = graphDataRef.current.nodes.find(n => String(n.id) === String(nodeId));
             if (updated?.imageUrl) {
                 setNotification({ message: "Photo updated!", type: 'success' });
                 return;
@@ -256,7 +256,7 @@ export function useGraphState(options: UseGraphStateOptions) {
             if (serverResult.url) {
                 setGraphData(prev => ({
                     ...prev,
-                    nodes: prev.nodes.map(n => n.id === nodeId ? {
+                    nodes: prev.nodes.map(n => String(n.id) === String(nodeId) ? {
                         ...n,
                         imageUrl: serverResult.url,
                         fetchingImage: false,
@@ -275,7 +275,7 @@ export function useGraphState(options: UseGraphStateOptions) {
         } finally {
             setGraphData(prev => ({
                 ...prev,
-                nodes: prev.nodes.map(n => n.id === nodeId ? { ...n, fetchingImage: false } : n)
+                nodes: prev.nodes.map(n => String(n.id) === String(nodeId) ? { ...n, fetchingImage: false } : n)
             }));
         }
     }, [cacheEnabled, cacheBaseUrl, loadNodeImage, saveCacheNodeMeta, setNotification]);

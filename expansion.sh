@@ -3,8 +3,8 @@
 # Default values
 QUERY=${1:-"Perry Neubauer"}
 PORT=${2:-4000}
-#SERVER="http://localhost:$PORT"
-SERVER="https://constellations-beaf.onrender.com"
+SERVER="http://localhost:$PORT"
+# SERVER="https://constellations-beaf.onrender.com"
 
 echo "📡 Expanding: $QUERY user $SERVER ..."
 

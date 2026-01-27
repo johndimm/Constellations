@@ -261,7 +261,10 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     }
 
     const baseTitle = query.includes('(') ? query.split('(')[0].trim() : query;
-    const searchQuery = context ? `${baseTitle} ${context}` : baseTitle;
+    // CRITICAL FIX: If the query contains parenthetical disambiguation (e.g. "Republic (Plato)"), 
+    // we MUST include the full query in the search to avoid generic results ("Republic").
+    const queryToUse = query.includes('(') ? query : baseTitle;
+    const searchQuery = context ? `${queryToUse} ${context}` : queryToUse;
 
     // Attempt 1: Media-Aware Search + Direct Lookup
     console.log(`🔍 [ImageSearch] Attempt 1 (Media-Aware): "${searchQuery}"`);
@@ -627,7 +630,10 @@ export const fetchWikipediaSummary = async (
 
     // If it looks like a person's name, use a phrase search (quotes) to ensure both parts appear together.
     const searchTerms = looksLikePersonName ? `"${cleanQuery}"` : cleanQuery;
-    const searchQuery = context ? `${searchTerms} ${context}` : searchTerms;
+    // CRITICAL FIX: If the original query had parentheticals (e.g., "Republic (Plato)"), 
+    // include the full query in the search to honor the disambiguation.
+    const finalTerms = query.includes('(') ? query : searchTerms;
+    const searchQuery = context ? `${finalTerms} ${context}` : finalTerms;
 
     const avoidMedia = /\b(project|program|programme|operation|war|battle|campaign|treaty|scandal|scientist)\b/i.test(cleanQuery);
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;

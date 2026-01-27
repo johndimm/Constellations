@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { GraphNode, GraphLink } from '../types';
-import { classifyStartPair, fetchConnectionPath, LockedPair, classifyEntity } from '../services/geminiService';
+import { classifyStartPair, fetchConnectionPath, LockedPair, classifyEntity, fetchConnections } from '../services/geminiService';
 import { fetchWikipediaSummary } from '../services/wikipediaService';
 import { dedupeGraph } from '../services/graphUtils';
 import { clampToViewport } from '../utils/graphLogicUtils';
@@ -21,13 +21,13 @@ interface UseSearchHandlersOptions {
     dimensions: { width: number, height: number };
     cacheEnabled: boolean;
     cacheBaseUrl: string;
-    loadNodeImage: (nodeId: number, title: string) => Promise<void>;
+    loadNodeImage: (nodeId: number | string, title: string) => Promise<void>;
     fetchAndExpandNode: (node: GraphNode, isInitial?: boolean, forceMore?: boolean, nodesOverride?: GraphNode[], linksOverride?: GraphLink[]) => Promise<void>;
     setNotification: (notif: { message: string, type: 'success' | 'error' } | null) => void;
     setSelectedNode: (node: GraphNode | null) => void;
     setSelectedLink: (link: GraphLink | null) => void;
-    setPathNodeIds: (ids: number[]) => void;
-    setPendingAutoExpandId: (id: number | null) => void;
+    setPathNodeIds: (ids: (number | string)[]) => void;
+    setPendingAutoExpandId: (id: number | string | null) => void;
     showControlPanel: boolean;
     selectedKioskDomain: any;
     graphRef: React.RefObject<any>;
@@ -87,7 +87,11 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
             setLockedPair(chosenPair);
             let { type, description, isAtomic, reasoning } = startC;
 
-            const wikiContext = showControlPanel ? selectedKioskDomain?.label : undefined;
+            // CRITICAL FIX: Only use kiosk domain context if the user hasn't provided a specific disambiguated term.
+            // "Republic (Plato)" should NEVER get "Actors / Movies / TV" context.
+            const hasDisambiguation = term.includes('(') && term.includes(')');
+            const wikiContext = (showControlPanel && !hasDisambiguation) ? selectedKioskDomain?.label : undefined;
+
             const wiki = await fetchWikipediaSummary(term, wikiContext);
             const canonicalTitle = (wiki.title || term).trim();
             const lowerCanon = canonicalTitle.toLowerCase();
@@ -193,7 +197,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
             }
 
             const isDbPath = (pathData as any)._dbPath === true;
-            const pathNodeIdsList: number[] = [];
+            const pathNodeIdsList: (number | string)[] = [];
             let currentTailId = startNode.id;
 
             if (isDbPath) {
@@ -203,7 +207,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                     const updatedNodes = [...current.nodes];
                     const updatedLinks = [...current.links];
                     dbNodes.forEach((dbNode, i) => {
-                        let existingNode = updatedNodes.find(n => n.id === dbNode.id);
+                        let existingNode = updatedNodes.find(n => String(n.id) === String(dbNode.id));
                         if (!existingNode) {
                             const nodeX = i === 0 ? (startNode.x || dimensions.width / 4) : (updatedNodes[i - 1]?.x || dimensions.width / 2) + (Math.random() - 0.5) * 150;
                             const nodeY = i === 0 ? (startNode.y || dimensions.height / 2) : (updatedNodes[i - 1]?.y || dimensions.height / 2) + (Math.random() - 0.5) * 150;
@@ -216,7 +220,11 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                     for (let i = 0; i < dbNodes.length - 1; i++) {
                         const a = dbNodes[i].id;
                         const b = dbNodes[i + 1].id;
-                        if (!updatedLinks.some(l => (l.source === a && l.target === b) || (l.source === b && l.target === a))) {
+                        if (!updatedLinks.some(l => {
+                            const sid = String(typeof l.source === 'object' ? l.source.id : l.source);
+                            const tid = String(typeof l.target === 'object' ? l.target.id : l.target);
+                            return (sid === String(a) && tid === String(b)) || (sid === String(b) && tid === String(a));
+                        })) {
                             updatedLinks.push({ source: a, target: b, id: `${a}-${b}` });
                         }
                     }
@@ -229,13 +237,13 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                     setNotification({ message: `Stitching path... step ${i} of ${pathData.path.length - 1}: ${step.id}`, type: 'success' });
                     const stepWiki = await fetchWikipediaSummary(step.id);
                     const { id: resolvedId } = await upsertNodeLocal(step.id, step.type, step.description, stepWiki);
-                    if (!pathNodeIdsList.includes(resolvedId)) pathNodeIdsList.push(resolvedId);
+                    if (!pathNodeIdsList.some(id => String(id) === String(resolvedId))) pathNodeIdsList.push(resolvedId);
 
                     setGraphData(current => {
-                        const tailNode = current.nodes.find(n => n.id === currentTailId);
+                        const tailNode = current.nodes.find(n => String(n.id) === String(currentTailId));
                         const clamped = clampToViewport((tailNode?.x || 400) + (Math.random() - 0.5) * 150, (tailNode?.y || 400) + (Math.random() - 0.5) * 150, 80);
                         const newNode: GraphNode = { id: resolvedId, title: step.id, type: step.type, description: step.description, x: clamped.x, y: clamped.y, fx: clamped.x, fy: clamped.y, expanded: false, wikipedia_id: stepWiki.pageid?.toString() };
-                        const updatedNodes = current.nodes.some(n => n.id === resolvedId) ? current.nodes.map(n => n.id === resolvedId ? newNode : n) : [...current.nodes, newNode];
+                        const updatedNodes = current.nodes.some(n => String(n.id) === String(resolvedId)) ? current.nodes.map(n => String(n.id) === String(resolvedId) ? newNode : n) : [...current.nodes, newNode];
                         const updatedLinks = [...current.links, { source: currentTailId, target: resolvedId, id: `${currentTailId}-${resolvedId}` }];
                         loadNodeImage(resolvedId, newNode.title);
                         setTimeout(() => fetchAndExpandNode(newNode), 0);
@@ -243,12 +251,12 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                     });
                     currentTailId = resolvedId;
                 }
-                if (!pathNodeIdsList.includes(endNode.id)) pathNodeIdsList.push(endNode.id);
+                if (!pathNodeIdsList.some(id => String(id) === String(endNode.id))) pathNodeIdsList.push(endNode.id);
             }
 
             await new Promise(r => setTimeout(r, 300));
-            const nodeIdsInGraph = new Set(graphDataRef.current.nodes.map(n => n.id));
-            const finalPathIds = pathNodeIdsList.filter(id => nodeIdsInGraph.has(id));
+            const nodeIdsInGraph = new Set(graphDataRef.current.nodes.map(n => String(n.id)));
+            const finalPathIds = pathNodeIdsList.filter(id => nodeIdsInGraph.has(String(id)));
 
             setGraphData(current => ({
                 ...current,

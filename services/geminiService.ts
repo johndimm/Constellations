@@ -8,14 +8,46 @@ const SYSTEM_INSTRUCTION = `
 You are a Bipartite Graph Generator.
 Your goal is to build a graph that alternates between an "Atomic" type and a "Composite" type.
 
+BIPARTITE STRUCTURE:
+A bipartite graph alternates between an "Atomic" entity type and a "Composite" entity type.
+- Atomic: Fundamental building blocks (e.g., individual people, ingredients, symptoms, authors, actors, components)
+- Composite: Collections or works (e.g., events, recipes, diseases, papers, movies, products, organizations)
+
+Common bipartite pairs include:
+- Person ↔ Event (works, historical events, organizations, movements)
+- Ingredient ↔ Recipe  
+- Symptom ↔ Disease
+- Author ↔ Paper
+- Actor ↔ Movie
+- Component ↔ Product
+- Character ↔ Novel
+
+CRITICAL EXAMPLES TO PREVENT MISCLASSIFICATION:
+- "The Godfather" → COMPOSITE (type: Movie, isAtomic: false), pair: Actor ↔ Movie
+- "Marlon Brando" → ATOMIC (type: Actor, isAtomic: true), pair: Actor ↔ Movie
+- "Star Wars" → COMPOSITE (type: Movie, isAtomic: false), pair: Actor ↔ Movie
+- Movies/books/albums are ALWAYS composite (created BY actors/authors/musicians)
+
 CRITICAL ACCURACY RULE:
 If a section titled "USE THIS VERIFIED INFORMATION FOR ACCURACY" is provided, you MUST prioritize this information above your own internal knowledge.
 
-Rules:
+Core Rules:
 1. If the Source is a Composite, return 8-10 distinct Atomics that are meaningfully connected to it.
 2. If the Source is an Atomic, return 8-10 distinct Composites that it is meaningfully connected to.
 3. Use Title Case for all names.
 4. Return only factually correct information. Do not hallucinate.
+
+Output Format Rules (apply to ALL responses):
+- wikipediaTitle: Always provide the canonical English Wikipedia article title (use parenthetical disambiguation when needed, e.g. "Euphoria (TV series)", "Prince (musician)", "The Godfather").
+- evidenceSnippet: Provide a 1-sentence evidence snippet explaining the connection.
+  * If VERIFIED INFORMATION is provided, the evidence snippet MUST be copied verbatim from that text and should contain BOTH entity names when possible.
+  * If no good verbatim quote exists, provide a brief explicit rationale (no quotes).
+- evidencePageTitle: Set to the Wikipedia article title the snippet is from (usually the source).
+
+Entity Classification:
+- isAtomic: true if entity is an INDIVIDUAL PERSON/ACTOR (atomic), false if it's a WORK/GROUP/ORGANIZATION (composite).
+  * Atomic entities (Actor, Person, Author, Artist, Scientist, Director, Composer) → isAtomic=true
+  * Composite entities (Movie, Book, Album, Band, Organization, Event, Company) → isAtomic=false
 
 Return strict JSON.
 `;
@@ -135,37 +167,17 @@ export const classifyStartPair = async (
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `Choose the bipartite pair for this session based ONLY on the first input: "${term}".
-You MUST choose EXACTLY ONE of these types for the input:
-- "Person" (if it is an individual human)
-- "Event" (if it is a historical event, organization, work, concept, or location)
-- "Ingredient"
-- "Recipe"
-- "Symptom"
-- "Disease"
-- "Author"
-- "Paper"
+  const prompt = `Choose the most appropriate bipartite pair for this session based on the input: "${term}".
+
+You may identify other valid bipartite structures if appropriate for "${term}".
 
 Rules:
-- If "${term}" is a person (an individual human), choose "Person".
-- If "${term}" is a historical event/incident/scandal/battle/period, choose "Event".
-- If "${term}" is a named work (album, song, book, novel, film, painting, sculpture, artwork), choose "Event" and set isAtomic=false.
-- If "${term}" is an organization/institution/committee, choose "Event" and set isAtomic=false.
-- If "${term}" is a scientific theory, concept, or discovery, choose "Event" and set isAtomic=false.
-- If "${term}" looks like an academic paper or author, choose "Author" or "Paper".
-- If "${term}" is a symptom, choose "Symptom".
-- If "${term}" is an ingredient, choose "Ingredient".
-- If "${term}" is a very famous person (actor, politician, musician), choose "Person" even if they have written a book or paper, unless the user explicitly provided a DOI or arXiv ID.
-
-Return JSON:
-{
-  "type": "Exactly one of: Person, Event, Ingredient, Recipe, Symptom, Disease, Author, Paper",
-  "description": "Vivid, factual, and extremely concise 1-sentence description (NOT generic)",
-  "isAtomic": true/false,
-  "atomicType": "The atomic side (Person, Ingredient, Symptom, or Author)",
-  "compositeType": "The composite side (Event, Recipe, Disease, or Paper)",
-  "reasoning": "Brief explanation"
-}`;
+- If "${term}" is an individual human (one person, one actor), it is ATOMIC (type: Person or Actor).
+- If "${term}" is a WORK (movie, album, book, film, TV show, painting, song), it is ALWAYS COMPOSITE (type: Movie, Book, Album, etc.).
+- If "${term}" is an organization/institution/band, it is ALWAYS COMPOSITE.
+- If "${term}" looks like an academic paper or DOI/arXiv, it is COMPOSITE (use Author ↔ Paper).
+- If "${term}" is a very famous person, it is ATOMIC even if they have works.
+`;
 
   const makeApiCall = () => ai.models.generateContent({
     model: getGeminiModelClassify(),
@@ -175,20 +187,11 @@ Return JSON:
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          type: {
-            type: Type.STRING,
-            enum: ["Person", "Event", "Ingredient", "Recipe", "Symptom", "Disease", "Author", "Paper"]
-          },
+          type: { type: Type.STRING },
           description: { type: Type.STRING },
           isAtomic: { type: Type.BOOLEAN },
-          atomicType: {
-            type: Type.STRING,
-            enum: ["Person", "Ingredient", "Symptom", "Author"]
-          },
-          compositeType: {
-            type: Type.STRING,
-            enum: ["Event", "Recipe", "Disease", "Paper"]
-          },
+          atomicType: { type: Type.STRING },
+          compositeType: { type: Type.STRING },
           reasoning: { type: Type.STRING }
         },
         required: ["type", "isAtomic", "atomicType", "compositeType"]
@@ -207,31 +210,12 @@ Return JSON:
   const text = cleanJson(rawText);
   const json = text ? JSON.parse(text) : {};
 
-  // Validate to allowed set; fallback to Person↔Event
-  const allowedPairs = new Set([
-    "Person|Event",
-    "Ingredient|Recipe",
-    "Symptom|Disease",
-    "Author|Paper"
-  ]);
-  const pairKey = `${json.atomicType}|${json.compositeType}`;
-  if (!allowedPairs.has(pairKey)) {
-    return {
-      type: "Event",
-      description: json.description || "",
-      isAtomic: false,
-      atomicType: "Person",
-      compositeType: "Event",
-      reasoning: "Model returned an unsupported pair; defaulting to Person↔Event."
-    };
-  }
-
   return {
     type: json.type || "Event",
     description: json.description || "",
     isAtomic: !!json.isAtomic,
-    atomicType: json.atomicType,
-    compositeType: json.compositeType,
+    atomicType: json.atomicType || "Person",
+    compositeType: json.compositeType || "Event",
     reasoning: json.reasoning || ""
   };
 };
@@ -322,20 +306,11 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            type: {
-              type: Type.STRING,
-              enum: ["Person", "Event", "Ingredient", "Recipe", "Symptom", "Disease", "Author", "Paper"]
-            },
+            type: { type: Type.STRING },
             description: { type: Type.STRING, description: "Short 1-sentence description" },
             isAtomic: { type: Type.BOOLEAN },
-            atomicType: {
-              type: Type.STRING,
-              enum: ["Person", "Ingredient", "Symptom", "Author"]
-            },
-            compositeType: {
-              type: Type.STRING,
-              enum: ["Event", "Recipe", "Disease", "Paper"]
-            },
+            atomicType: { type: Type.STRING },
+            compositeType: { type: Type.STRING },
             reasoning: { type: Type.STRING }
           },
           required: ["type", "isAtomic", "atomicType", "compositeType"]
@@ -442,17 +417,11 @@ export const fetchConnections = async (
       ${workSourceHint}
       ${theorySourceHint}
 
-      IMPORTANT: For each returned entity, also provide:
-      - wikipediaTitle: the canonical English Wikipedia article title for that entity (use parenthetical disambiguation when needed, e.g. "Euphoria (TV series)", "Prince (musician)").
-      - a 1-sentence evidence snippet.
-      - If VERIFIED INFORMATION text is provided, the evidence snippet MUST be copied verbatim from that text and should contain BOTH the source title and the returned entity name when possible.
-      - Set evidencePageTitle to the Wikipedia article title the snippet is from (usually the source).
-      - If you cannot find a good verbatim quote in VERIFIED INFORMATION, still return evidenceSnippet as a brief, explicit rationale (no quotes) and set evidencePageTitle to the most relevant page title (usually the source).
+      IMPORTANT: For each entity specify its type (${atomicLabel}) and whether it follows the classification rules defined in the system instruction.
       
       Examples:
       - If Theory/Discovery: Return the primary scientists or researchers involved.
       - If Event/Incident: Return key people involved (victims, shooters, investigators).
-      - If Movie: Return lead actors/director.
       - If Team: Return key players.
       - If Recipe: Return ingredients.
       - If Disease: Return symptoms.`;
@@ -475,6 +444,7 @@ export const fetchConnections = async (
                 type: Type.OBJECT,
                 properties: {
                   name: { type: Type.STRING },
+                  isAtomic: { type: Type.BOOLEAN, nullable: true, description: "True if atomic, false if composite" },
                   wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
                   role: { type: Type.STRING, nullable: true, description: "Role in the requested Source Node" },
                   description: { type: Type.STRING, nullable: true, description: "Short 1-sentence bio" },
@@ -502,6 +472,9 @@ export const fetchConnections = async (
     if (!text) return { people: [] };
 
     const parsed = JSON.parse(text) as GeminiResponse;
+    console.log(`🎯 [isAtomic Debug] Entities returned for "${nodeName}" (${compositeLabel}):`,
+      parsed.people.map(p => ({ name: p.name, isAtomic: p.isAtomic, type: p.isAtomic ? atomicLabel : compositeLabel }))
+    );
     return parsed;
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -596,18 +569,13 @@ export const fetchPersonWorks = async (
        Example: If a professional architect is mentioned in a book/interview called "Still Standing", DO NOT return the Elton John song "I'm Still Standing" unless the architect actually wrote/performed it. 
        Only return connections that are professionally or historically relevant to the specific individual described in the VERIFIED INFORMATION.
 
-       IMPORTANT: For each returned entity, also provide:
-       - wikipediaTitle: the canonical English Wikipedia article title for that entity (use parenthetical disambiguation when needed, e.g. "Euphoria (TV series)", "The Godfather", "A Streetcar Named Desire (1951 film)").
+       IMPORTANT: For each returned entity:
+       - Classify per system instruction rules (${atomicLabel} → isAtomic=false for works)
        - year: The 4-digit year of creation, publication, or occurrence. Required if it is an Event/Work.
-       - a 1-sentence evidence snippet.
-       - If VERIFIED INFORMATION text is provided, the evidence snippet MUST be copied verbatim from that text and should contain BOTH the source name and the returned entity name when possible.
-       - Set evidencePageTitle to the Wikipedia article title the snippet is from (usually the source).
-       - If you cannot find a good verbatim quote in VERIFIED INFORMATION, still return evidenceSnippet as a brief, explicit rationale (no quotes) and set evidencePageTitle to the most relevant page title (usually the source).
        
        Examples:
        - For a Person involved in a recent event: Return the named Event or Incident (e.g. "Killing of Renee Good", "2026 Minneapolis Protests").
        - For an Ingredient (e.g. "Chicken"): Return specific Recipes.
-       - For a Player: Return specific Teams.
        - For an Actor: Return specific Movies.
        - For an Artist: Return specific major Artworks (e.g., "Mona Lisa", "The Last Supper") and optionally a few key Exhibitions/Movements.
        - For a Mathematician: Return specific named Papers (often coauthored).`;
@@ -633,6 +601,7 @@ export const fetchPersonWorks = async (
                 type: Type.OBJECT,
                 properties: {
                   entity: { type: Type.STRING },
+                  isAtomic: { type: Type.BOOLEAN, nullable: true, description: "True if atomic, false if composite" },
                   wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
                   type: { type: Type.STRING },
                   description: { type: Type.STRING, nullable: true, description: "Short 1-sentence description" },

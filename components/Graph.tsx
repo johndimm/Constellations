@@ -16,10 +16,10 @@ interface GraphProps {
     isTextOnly?: boolean;
     searchId?: number;
     selectedNode?: GraphNode | null;
-    expandingNodeId?: number | null;
-    newChildNodeIds?: Set<number>;
-    highlightKeepIds?: number[];
-    highlightDropIds?: number[];
+    expandingNodeId?: number | string | null;
+    newChildNodeIds?: Set<number | string>;
+    highlightKeepIds?: (number | string)[];
+    highlightDropIds?: (number | string)[];
     onNodeContextMenu?: (event: MouseEvent, node: GraphNode) => void;
 }
 
@@ -44,7 +44,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         searchId = 0,
         selectedNode = null,
         expandingNodeId = null,
-        newChildNodeIds = new Set<number>(),
+        newChildNodeIds = new Set<number | string>(),
         highlightKeepIds = [],
         highlightDropIds = [],
         onNodeContextMenu,
@@ -90,7 +90,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
 
     function getNodeColor(type: string, isPerson?: boolean) {
         if (type === 'Origin') return '#ef4444';
-        if (isPerson ?? type.toLowerCase() === 'person') return '#f59e0b';
+        if (isPerson ?? (type.toLowerCase() === 'person' || type.toLowerCase() === 'actor')) return '#f59e0b';
         return '#3b82f6';
     }
 
@@ -100,7 +100,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         return div.innerHTML;
     }
 
-    const isPersonNode = useCallback((node: GraphNode) => node.is_atomic === true || node.is_person === true || node.type?.toLowerCase() === 'person', []);
+    const isPersonNode = useCallback((node: GraphNode) => node.is_atomic === true || node.is_person === true || node.type?.toLowerCase() === 'person' || node.type?.toLowerCase() === 'actor', []);
 
     const timelineNodes = useMemo(() => {
         return nodes
@@ -251,21 +251,24 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         // Filter out and CLONE links to avoid D3 mutation issues and ensure fresh node lookups
         const validLinks = links
             .filter(link => {
-                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-                return nodes.some(n => n.id === sourceId) && nodes.some(n => n.id === targetId);
+                const sourceId = String(typeof link.source === 'object' ? (link.source as GraphNode).id : link.source);
+                const targetId = String(typeof link.target === 'object' ? (link.target as GraphNode).id : link.target);
+                const hasSource = nodes.some(n => String(n.id) === sourceId);
+                const hasTarget = nodes.some(n => String(n.id) === targetId);
+                return hasSource && hasTarget;
             })
             .map(link => ({
                 ...link,
-                source: typeof link.source === 'object' ? link.source.id : link.source,
-                target: typeof link.target === 'object' ? link.target.id : link.target
+                source: String(typeof link.source === 'object' ? (link.source as GraphNode).id : link.source),
+                target: String(typeof link.target === 'object' ? (link.target as GraphNode).id : link.target)
             }));
 
         const simulation = d3.forceSimulation<GraphNode, GraphLink>(nodes)
-            .force("link", d3.forceLink<GraphNode, GraphLink>(validLinks).id(d => d.id).distance(100))
+            .force("link", d3.forceLink<GraphNode, GraphLink>(validLinks).id(d => String(d.id)).distance(100))
             .force("charge", d3.forceManyBody().strength(-300))
             .force("center", d3.forceCenter(width / 2, height / 2))
-            .velocityDecay(0.85); // Higher decay to prevent spinning (increased from 0.75)
+            .velocityDecay(0.6) // Reduced from 0.85 for smoother, less jerky movement
+            .alphaDecay(0.02); // Slower alpha decay for more gradual settling
 
         simulationRef.current = simulation;
 
@@ -601,8 +604,23 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             });
         };
 
-        let frame = requestAnimationFrame(function loop() {
+        // Only use continuous animation in timeline mode when simulation might still be settling
+        // In normal mode, the simulation tick handler will update positions
+        if (!isTimelineMode) {
+            // Initial render only for non-timeline mode (tick handler will update)
             render();
+            return;
+        }
+
+        // In timeline mode with fixed positions, render periodically but not every frame
+        let lastRender = 0;
+        const renderInterval = 16; // ~60fps max
+        let frame = requestAnimationFrame(function loop() {
+            const now = performance.now();
+            if (now - lastRender >= renderInterval) {
+                render();
+                lastRender = now;
+            }
             frame = requestAnimationFrame(loop);
         });
 
@@ -652,14 +670,19 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         // Filter out and CLONE links to avoid D3 mutation issues and ensure fresh node lookups.
         const validLinks = links
             .filter(link => {
-                const sId = typeof link.source === 'object' ? (link.source as GraphNode).id : link.source;
-                const tId = typeof link.target === 'object' ? (link.target as GraphNode).id : link.target;
-                return nodes.some(n => n.id === sId) && nodes.some(n => n.id === tId);
+                const sId = String(typeof link.source === 'object' ? (link.source as GraphNode).id : link.source);
+                const tId = String(typeof link.target === 'object' ? (link.target as GraphNode).id : link.target);
+                const hasSource = nodes.some(n => String(n.id) === sId);
+                const hasTarget = nodes.some(n => String(n.id) === tId);
+                if (!hasSource || !hasTarget) {
+                    // console.warn(`🚫 [Graph] Link filtered out: ${sId} -> ${tId}. Source exists: ${hasSource}, Target exists: ${hasTarget}`);
+                }
+                return hasSource && hasTarget;
             })
             .map(link => ({
                 ...link,
-                source: typeof link.source === 'object' ? (link.source as GraphNode).id : link.source,
-                target: typeof link.target === 'object' ? (link.target as GraphNode).id : link.target
+                source: String(typeof link.source === 'object' ? (link.source as GraphNode).id : link.source),
+                target: String(typeof link.target === 'object' ? (link.target as GraphNode).id : link.target)
             }));
 
         // Wide invisible hit-area for easier clicking on links
@@ -896,7 +919,15 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             const linkPath = (d: GraphLink) => {
                 const source = d.source as GraphNode;
                 const target = d.target as GraphNode;
-                if (!source || !target || typeof source !== 'object' || typeof target !== 'object') return null;
+
+                if (!source || !target || typeof source !== 'object' || typeof target !== 'object') {
+                    // Diagnostic log for disconnected links
+                    if (prevNodesLen.current > 0) {
+                        console.warn(`🔗 [LinkPath] Disconnected link detected: ID=${d.id}, source=${typeof d.source}, target=${typeof d.target}`);
+                    }
+                    return null;
+                }
+
                 const fixedS = timelinePositionsRef.current.get(source.id);
                 const fixedT = timelinePositionsRef.current.get(target.id);
                 const sx = (fixedS?.x ?? source.fx ?? source.x) || 0;
@@ -1025,14 +1056,21 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 if (expandingNodeId !== null) {
                     // Expansion in progress: dim all except expanding node and new children
                     const isExpanding = expandingNodeId === d.id;
-                    const isNewChild = newChildNodeIds.has(d.id);
+                    const isNewChild = newChildNodeIds.has(String(d.id));
                     if (!isExpanding && !isNewChild) {
                         baseOpacity = 0.25;
                     }
+                    if (d.title === 'Plato' || d.title === 'Socrates') {
+                        console.log(`🎨 [Highlighting] "${d.title}" (id=${d.id}): expandingNodeId=${expandingNodeId}, isExpanding=${isExpanding}, isNewChild=${isNewChild}, newChildNodeIds=`, Array.from(newChildNodeIds), `baseOpacity=${baseOpacity}`);
+                    }
                 } else if (effectiveFocused) {
-                    // Selection: dim nodes not connected to selected node
-                    if (!isFocused && !neighborIds.has(d.id)) {
+                    // Selection: dim nodes not connected to selected node (but keep new children highlighted)
+                    const isNewChild = newChildNodeIds.has(String(d.id));
+                    if (!isFocused && !neighborIds.has(d.id) && !isNewChild) {
                         baseOpacity = 0.25;
+                    }
+                    if (d.title === 'Plato' || d.title === 'Socrates') {
+                        console.log(`🎨 [Highlighting] "${d.title}" (id=${d.id}): effectiveFocused=${effectiveFocused?.title}, isFocused=${isFocused}, isNewChild=${isNewChild}, inNeighbors=${neighborIds.has(d.id)}, newChildNodeIds=`, Array.from(newChildNodeIds), `baseOpacity=${baseOpacity}`);
                     }
                 }
             }
@@ -1209,7 +1247,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             requestAnimationFrame(() => {
                 let hasChanges = false;
                 allNodes.each(function (d) {
-                    const isPersonNode = d.is_person ?? d.type.toLowerCase() === 'person';
+                    const isPersonNode = d.is_person ?? (d.type.toLowerCase() === 'person' || d.type.toLowerCase() === 'actor');
                     if (isPersonNode) return; // Skip people nodes
                     const g = d3.select(this);
                     const cardContent = g.select(".card-content");

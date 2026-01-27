@@ -1,7 +1,7 @@
 import { SimulationNodeDatum, SimulationLinkDatum } from 'd3';
 
 export interface GraphNode extends SimulationNodeDatum {
-  id: number; // Sequential serial ID
+  id: number | string; // Sequential serial ID or Wikipedia/OpenAlex ID
   title: string; // The name of the event/project/thing/person
   type: string; // Original detailed type: 'Person', 'Movie', 'Battle', etc. (preserved)
   is_atomic?: boolean; // True for atomic nodes, false for composite nodes
@@ -31,8 +31,8 @@ export interface GraphNode extends SimulationNodeDatum {
 }
 
 export interface GraphLink extends SimulationLinkDatum<GraphNode> {
-  source: number | GraphNode;
-  target: number | GraphNode;
+  source: number | string | GraphNode;
+  target: number | string | GraphNode;
   id: string; // Unique link ID
   label?: string; // Role or connection description
   evidence?: {
@@ -58,6 +58,7 @@ export interface GeminiPerson {
   wikipediaTitle?: string; // Canonical Wikipedia page title (may include disambiguation parentheses)
   role: string; // Role in the source node
   description: string; // Brief bio
+  isAtomic?: boolean; // LLM-determined atomic vs composite classification
   evidenceSnippet?: string; // 1 sentence from provided verified text (preferred)
   evidencePageTitle?: string; // Which page the snippet came from (usually the source title)
 }
@@ -75,6 +76,7 @@ export interface PersonWork {
   role: string;
   year: number;
   imageUrl?: string | null;
+  isAtomic?: boolean; // LLM-determined atomic vs composite classification
   evidenceSnippet?: string; // 1 sentence from provided verified text (preferred)
   evidencePageTitle?: string; // Which page the snippet came from (usually the source title)
 }

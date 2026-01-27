@@ -163,8 +163,8 @@ async function ensureSchema() {
 ensureSchema();
 
 const app = express();
-app.use(cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
-app.options("*", cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
+app.use(cors({ origin: "*", methods: ["GET", "POST", "DELETE", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
+app.options("*", cors({ origin: "*", methods: ["GET", "POST", "DELETE", "OPTIONS"], allowedHeaders: ["Content-Type"] }));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
@@ -641,6 +641,39 @@ app.post("/init", async (_, res) => {
     client.release();
   }
 });
+
+// Clear all cached data (nodes and edges)
+app.delete("/cache/clear", async (_, res) => {
+  const client = await pool.connect();
+  try {
+    console.log("🗑️  Clearing all cached data...");
+    await client.query("BEGIN");
+
+    // Delete all edges first (to avoid foreign key constraints)
+    const edgesResult = await client.query("DELETE FROM edges");
+    const edgesDeleted = edgesResult.rowCount || 0;
+
+    // Delete all nodes
+    const nodesResult = await client.query("DELETE FROM nodes");
+    const nodesDeleted = nodesResult.rowCount || 0;
+
+    await client.query("COMMIT");
+
+    console.log(`✅ Cache cleared: ${nodesDeleted} nodes, ${edgesDeleted} edges deleted`);
+    res.json({
+      ok: true,
+      message: "Cache cleared successfully",
+      deleted: { nodes: nodesDeleted, edges: edgesDeleted }
+    });
+  } catch (e: any) {
+    await client.query("ROLLBACK");
+    console.error("❌ Failed to clear cache:", e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 
 // Find path between two nodes using database (BFS)
 app.get("/path", async (req, res) => {

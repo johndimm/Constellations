@@ -181,7 +181,7 @@ const App: React.FC<AppProps> = ({
     });
 
     const {
-        handleClear, handlePrune, handleSmartDelete, handleExpandLeaves,
+        handleClear, handleClearCache, handlePrune, handleSmartDelete, handleExpandLeaves,
         handleExpandMore, handleExpandAllLeafNodes, handleDeleteGraph,
         handleSaveGraph, handleLoadGraph, handleImport
     } = useGraphActions({
@@ -194,13 +194,12 @@ const App: React.FC<AppProps> = ({
 
     const onNodeClick = useNodeClickHandler({
         selectedNode, setSelectedNode, setContextMenu,
-        onNavigate: (node) => {
-            if (onNodeNavigate) {
-                onNodeNavigate(node);
-            } else {
-                window.open(buildWikiUrl(node.title, node.wikipedia_id), '_blank');
-            }
-        },
+        graphData,
+        setExpandingNodeId,
+        setNewChildNodeIds,
+        onNavigate: onNodeNavigate ? (node) => {
+            onNodeNavigate(node);
+        } : undefined,
         onExpand: isTimelineMode ? undefined : fetchAndExpandNode,
         onDeselect: () => {
             setPathNodeIds([]);
@@ -367,6 +366,7 @@ const App: React.FC<AppProps> = ({
                         onSelectKioskDomain={(id) => { setSelectedKioskDomainId(id); setPathStart(''); setPathEnd(''); }}
                         onUpdateKioskDomains={setKioskDomains}
                         onClear={handleClear}
+                        onClearCache={cacheEnabled ? handleClearCache : undefined}
                         onToggleHelp={() => setShowHelp(!showHelp)}
                         showHelp={showHelp}
                         onExpandAllLeafNodes={handleExpandAllLeafNodes}

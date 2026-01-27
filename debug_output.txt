@@ -1,0 +1,6 @@
+Checking link 12345 -> Plato: atomicSource=false, atomicTarget=true
+Checking link 12345 -> Socrates: atomicSource=false, atomicTarget=true
+Bipartite safe candidates count: 2
+Filtered nodes count: 3
+Result Nodes: [ 'Republic (Plato)', 'Plato', 'Socrates' ]
+Result Links: [ '12345-Plato', '12345-Socrates' ]
