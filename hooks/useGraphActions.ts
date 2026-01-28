@@ -292,7 +292,7 @@ export function useGraphActions(options: UseGraphActionsOptions) {
         }
         if (data) applyGraphData(data, name);
         else setNotification({ message: `Failed to load "${name}".`, type: 'error' });
-    }, [cacheEnabled, cacheBaseUrl, setNotification]);
+    }, [cacheEnabled, cacheBaseUrl, setNotification, serverGraphNames]);
 
     const handleImport = useCallback((e: React.ChangeEvent<HTMLInputElement>, applyGraphData: (data: any, label: string) => void) => {
         const file = e.target.files?.[0];
