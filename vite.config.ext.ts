@@ -29,6 +29,7 @@ export default defineConfig(({ mode }) => {
                 input: {
                     popup: resolve(__dirname, 'chrome-extension/popup.html'),
                     sidepanel: resolve(__dirname, 'chrome-extension/sidepanel.html'),
+                    welcome: resolve(__dirname, 'chrome-extension/welcome.html'),
                     background: resolve(__dirname, 'chrome-extension/background.ts'),
                     content: resolve(__dirname, 'chrome-extension/content.ts')
                 },

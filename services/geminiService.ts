@@ -81,7 +81,7 @@ async function callAiProxy(endpoint: string, body: any) {
     });
 
     if (resp.status === 404 && endpoint === "/api/ai/classify-start") {
-      console.warn(`⚠️ [Proxy] ${endpoint} not found, falling back to /api/ai/classify`);
+      // console.warn(`⚠️ [Proxy] ${endpoint} not found, falling back to /api/ai/classify`);
       return callAiProxy("/api/ai/classify", body);
     }
 
@@ -93,7 +93,7 @@ async function callAiProxy(endpoint: string, body: any) {
   } catch (e: any) {
     if (endpoint === "/api/ai/classify-start" && !e.message?.includes("AI Proxy Error")) {
       // Network error or fetch failure, try fallback anyway if it's the start pair
-      console.warn(`⚠️ [Proxy] ${endpoint} failed, trying fallback /api/ai/classify`, e);
+      // console.warn(`⚠️ [Proxy] ${endpoint} failed, trying fallback /api/ai/classify`, e);
       return callAiProxy("/api/ai/classify", body);
     }
     throw e;
@@ -207,7 +207,7 @@ Rules:
   );
 
   const rawText = getResponseText(response);
-  console.log(`🤖 [Gemini] Raw Classify-Start response for "${term}":`, rawText);
+  // console.log(`🤖 [Gemini] Raw Classify-Start response for "${term}":`, rawText);
   const text = cleanJson(rawText);
   const json = text ? JSON.parse(text) : {};
 
@@ -254,7 +254,7 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
     console.error("❌ [Gemini] classifyEntity: No API key found");
     return { type: 'Event', description: '', isAtomic: false };
   }
-  console.log(`🧪 [Gemini] classify start`, { term, timeoutMs: CLASSIFY_TIMEOUT_MS });
+  // console.log(`🧪 [Gemini] classify start`, { term, timeoutMs: CLASSIFY_TIMEOUT_MS });
   const ai = new GoogleGenAI({ apiKey });
 
   const wikiPrompt = wikiContext
@@ -286,7 +286,7 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
         "reasoning": "Brief explanation"
       }`;
 
-    console.log("🤖 [Gemini] Classify Prompt:", prompt);
+    // console.log("🤖 [Gemini] Classify Prompt:", prompt);
 
     const makeApiCall = () => ai.models.generateContent({
       model: getGeminiModelClassify(),
@@ -315,9 +315,9 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
     );
 
     const rawText = getResponseText(response);
-    console.log(`🤖 [Gemini] Raw Classify response for "${term}":`, rawText);
+    // console.log(`🤖 [Gemini] Raw Classify response for "${term}":`, rawText);
     const text = cleanJson(rawText);
-    console.log("Classify response text:", text);
+    // console.log("Classify response text:", text);
     if (!text) return { type: 'Event', description: '', isAtomic: false };
     const json = JSON.parse(text);
     return {
@@ -329,7 +329,7 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
       reasoning: json.reasoning
     };
   } catch (error) {
-    console.warn("Classification failed, defaulting to Event:", error);
+    // console.warn("Classification failed, defaulting to Event:", error);
     return { type: 'Event', description: '', isAtomic: false };
   }
 };
@@ -428,7 +428,7 @@ export const fetchConnections = async (
       - If Recipe: Return ingredients.
       - If Disease: Return symptoms.`;
 
-    console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
+    // console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
 
     const makeApiCall = () => ai.models.generateContent({
       model: getGeminiModel(),
@@ -469,7 +469,7 @@ export const fetchConnections = async (
     );
 
     const rawText = getResponseText(response);
-    console.log(`🤖 [Gemini] Raw response for "${nodeName}":`, rawText);
+    // console.log(`🤖 [Gemini] Raw response for "${nodeName}":`, rawText);
     const text = cleanJson(rawText);
     if (!text) return { people: [] };
 
@@ -603,7 +603,7 @@ export const fetchPersonWorks = async (
     const prompt = `${wikiPrompt}${mentionPrompt}${contextPrompt}
       Ensure each entry is a different entity. ${dateRequired ? 'Sort by year. STRICTLY avoid entities without a known year.' : 'Sort by year if applicable.'}`;
 
-    console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
+    // console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
 
     const makeApiCall = () => ai.models.generateContent({
       model: getGeminiModel(),
@@ -645,7 +645,7 @@ export const fetchPersonWorks = async (
     );
 
     const rawText = getResponseText(response);
-    console.log(`🤖 [Gemini] Raw response for "${nodeName}" (works):`, rawText);
+    // console.log(`🤖 [Gemini] Raw response for "${nodeName}" (works):`, rawText);
     const text = cleanJson(rawText);
     if (!text) return { works: [] };
     const parsed = JSON.parse(text) as PersonWorksResponse;
@@ -820,7 +820,7 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
       imageHint: json.imageHint
     };
   } catch (e) {
-    console.warn("AI title lookup failed", e);
+    // console.warn("AI title lookup failed", e);
     return null;
   }
 };
@@ -927,7 +927,7 @@ Rules:
       ...(uniqueSources.length ? ["Sources:", ...uniqueSources.map(s => `- ${s}`)] : [])
     ].join("\n");
   } catch (e) {
-    console.warn("Org key-people search failed:", name, e);
+    // console.warn("Org key-people search failed:", name, e);
     return null;
   }
 };

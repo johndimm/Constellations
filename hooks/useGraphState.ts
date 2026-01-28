@@ -126,7 +126,7 @@ export function useGraphState(options: UseGraphStateOptions) {
                 })
             });
         } catch (e) {
-            console.warn("Cache node save failed", e);
+            // console.warn("Cache node save failed", e);
         }
     }, [cacheEnabled, cacheBaseUrl]);
 
@@ -274,7 +274,7 @@ export function useGraphState(options: UseGraphStateOptions) {
 
             setNotification({ message: "No better photo found.", type: 'error' });
         } catch (e) {
-            console.error("Find better image failed", e);
+            // console.error("Find better image failed", e);
             setNotification({ message: "Failed to find better photo.", type: 'error' });
         } finally {
             setGraphData(prev => ({
@@ -323,7 +323,7 @@ export function useGraphState(options: UseGraphStateOptions) {
                         serverGraphs = data.map((g: any) => g.name);
                     }
                 } catch (e) {
-                    console.warn("Failed to fetch saved graphs from server", e);
+                    // console.warn("Failed to fetch saved graphs from server", e);
                 }
             }
 

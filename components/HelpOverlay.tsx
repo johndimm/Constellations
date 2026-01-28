@@ -41,6 +41,15 @@ const HelpOverlay: React.FC<HelpOverlayProps> = ({
                     </p>
                 </section>
 
+                {isExtension && (
+                    <section className="bg-indigo-900/40 rounded-xl p-4 border border-indigo-500/30">
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-2">How to use</h4>
+                        <p className="text-slate-300">
+                            Select any text on a web page, right-click, and choose <strong className="text-white">Graph '&lt;selection&gt;' on Constellations</strong>.
+                        </p>
+                    </section>
+                )}
+
                 <section className="bg-slate-800/40 rounded-xl p-4 border border-slate-700/50">
                     <h4 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">Controls</h4>
                     <div className="grid grid-cols-[100px_1fr] gap-x-3 gap-y-2 text-xs leading-tight">

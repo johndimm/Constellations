@@ -1,11 +1,15 @@
 /// <reference types="chrome" />
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
     chrome.contextMenus.create({
         id: "constellations-graph-selection",
         title: "Graph '%s' on Constellations",
         contexts: ["selection"]
     });
+
+    if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
+        chrome.tabs.create({ url: "chrome-extension/welcome.html" });
+    }
 
     // Allow clicking the extension icon to open the side panel directly
     // @ts-ignore

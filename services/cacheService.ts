@@ -16,7 +16,7 @@ export const fetchCacheExpansion = async (sourceId: number, baseUrl: string) => 
         if (!res.ok) return null;
         return res.json();
     } catch (e) {
-        console.warn("Cache fetch failed", e);
+        // console.warn("Cache fetch failed", e);
         return null;
     }
 };
@@ -47,7 +47,7 @@ export const saveCacheExpansion = async (sourceId: number, nodesToSave: any[], b
         }
         return await res.json();
     } catch (e) {
-        console.warn("Cache save failed", e);
+        // console.warn("Cache save failed", e);
         return { ok: false, error: String(e) };
     }
 };
@@ -70,7 +70,7 @@ export const upsertCacheNode = async (node: {
         if (!res.ok) return null;
         return await res.json();
     } catch (e) {
-        console.warn("Node upsert failed", e);
+        // console.warn("Node upsert failed", e);
         return null;
     }
 };

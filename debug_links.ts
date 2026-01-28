@@ -51,10 +51,10 @@ function simulateExpansion(node: GraphNode, expansionTargets: GraphNode[], prevD
     });
 
     const getLinkId = (thing: any) => String(typeof thing === 'object' ? thing?.id : thing);
-    const candidateLinks: GraphLink[] = expansionTargets.map(cn => ({ 
-        source: node.id, 
-        target: cn.id, 
-        id: `${node.id}-${cn.id}` 
+    const candidateLinks: GraphLink[] = expansionTargets.map(cn => ({
+        source: node.id,
+        target: cn.id,
+        id: `${node.id}-${cn.id}`
     }));
 
     const isAtomicForId = new Map<string, boolean>();
@@ -67,12 +67,12 @@ function simulateExpansion(node: GraphNode, expansionTargets: GraphNode[], prevD
         const tid = getLinkId(l.target);
         const sa = isAtomicForId.get(sid);
         const ta = isAtomicForId.get(tid);
-        console.log(`Checking link ${sid} -> ${tid}: atomicSource=${sa}, atomicTarget=${ta}`);
+        // console.log(`Checking link ${sid} -> ${tid}: atomicSource=${sa}, atomicTarget=${ta}`);
         if (sa === undefined || ta === undefined) return true;
         return sa !== ta;
     });
 
-    console.log(`Bipartite safe candidates count: ${bipartiteSafeCandidates.length}`);
+    // console.log(`Bipartite safe candidates count: ${bipartiteSafeCandidates.length}`);
 
     const degree = new Map<string, number>();
     bipartiteSafeCandidates.forEach(l => {
@@ -82,17 +82,17 @@ function simulateExpansion(node: GraphNode, expansionTargets: GraphNode[], prevD
         degree.set(t, (degree.get(t) || 0) + 1);
     });
 
-    const filteredNodes = Array.from(nodeMap.values()).filter(n => 
-        String(n.id) === String(node.id) || 
-        existingNodeIds.has(String(n.id)) || 
+    const filteredNodes = Array.from(nodeMap.values()).filter(n =>
+        String(n.id) === String(node.id) ||
+        existingNodeIds.has(String(n.id)) ||
         (degree.get(String(n.id)) || 0) > 0
     );
 
-    console.log(`Filtered nodes count: ${filteredNodes.length}`);
-    
+    // console.log(`Filtered nodes count: ${filteredNodes.length}`);
+
     return dedupeGraph(filteredNodes, bipartiteSafeCandidates);
 }
 
 const result = simulateExpansion(parent, processedNodes, prev);
-console.log('Result Nodes:', result.nodes.map(n => n.title));
-console.log('Result Links:', result.links.map(l => l.id));
+// console.log('Result Nodes:', result.nodes.map(n => n.title));
+// console.log('Result Links:', result.links.map(l => l.id));

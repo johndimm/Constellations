@@ -19,6 +19,7 @@
   "dependencies": {
     "@google/genai": "^1.33.0",
     "body-parser": "^2.2.1",
+    "chrome-extension": "^0.0.1",
     "cors": "^2.8.5",
     "d3": "^7.9.0",
     "dotenv": "^16.4.5",

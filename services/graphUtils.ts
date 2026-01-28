@@ -205,7 +205,7 @@ export const mergeExpansionGraph = (params: {
     const parentIsAtomic = !!(parent.is_atomic ?? parent.is_person ?? (parent.type || '').toLowerCase() === 'person');
     const expectedChildIsAtomic = !parentIsAtomic;
 
-    console.warn(`🔧 [mergeExpansionGraph] Parent "${parent.title}" isAtomic=${parentIsAtomic}, expected child isAtomic=${expectedChildIsAtomic}`);
+    // console.warn(`🔧 [mergeExpansionGraph] Parent "${parent.title}" isAtomic=${parentIsAtomic}, expected child isAtomic=${expectedChildIsAtomic}`);
 
     targets.forEach(t => {
         const meta = (t.meta || {}) as Record<string, any>;
@@ -219,7 +219,7 @@ export const mergeExpansionGraph = (params: {
             (existing?.is_atomic ?? (existing as any)?.is_person) ??
             expectedChildIsAtomic;
 
-        console.warn(`🔧 [mergeExpansionGraph] Target "${t.title}": t.is_atomic=${t.is_atomic}, t.type="${t.type}", computed isAtomic=${isAtomic}`);
+        // console.warn(`🔧 [mergeExpansionGraph] Target "${t.title}": t.is_atomic=${t.is_atomic}, t.type="${t.type}", computed isAtomic=${isAtomic}`);
 
         const initialX = (!existing && seedFromParent && parent.x != null)
             ? parent.x + (Math.random() - 0.5) * 100
@@ -268,7 +268,7 @@ export const mergeExpansionGraph = (params: {
         evidence: t.evidence || t.edge_meta?.evidence || { kind: 'none' }
     }));
 
-    console.warn(`🔧 [mergeExpansionGraph] Created ${candidateLinks.length} candidate links`);
+    // console.warn(`🔧 [mergeExpansionGraph] Created ${candidateLinks.length} candidate links`);
 
     const bipartiteSafeCandidates = candidateLinks.filter(l => {
         const s = String(typeof l.source === 'object' ? l.source.id : l.source);
@@ -277,12 +277,12 @@ export const mergeExpansionGraph = (params: {
         const ta = isAtomicForId.get(t);
         const pass = (sa === undefined || ta === undefined) || (sa !== ta);
         if (!pass) {
-            console.warn(`🔧 [mergeExpansionGraph] Link ${s}->${t} FILTERED: parent isAtomic=${sa}, child isAtomic=${ta}`);
+            // console.warn(`🔧 [mergeExpansionGraph] Link ${s}->${t} FILTERED: parent isAtomic=${sa}, child isAtomic=${ta}`);
         }
         return pass;
     });
 
-    console.warn(`🔧 [mergeExpansionGraph] After bipartite filter: ${bipartiteSafeCandidates.length} links`);
+    // console.warn(`🔧 [mergeExpansionGraph] After bipartite filter: ${bipartiteSafeCandidates.length} links`);
 
     const existingLinkIds = new Set(links.map(l => l.id));
     const updatedExistingLinks = links.map(l => {
@@ -296,7 +296,7 @@ export const mergeExpansionGraph = (params: {
     const newLinksToAdd = bipartiteSafeCandidates.filter(l => !existingLinkIds.has(l.id));
     const combinedLinks = [...updatedExistingLinks, ...newLinksToAdd];
 
-    console.warn(`🔧 [mergeExpansionGraph] Combined links: ${combinedLinks.length}`);
+    // console.warn(`🔧 [mergeExpansionGraph] Combined links: ${combinedLinks.length}`);
 
     const degree = new Map<string, number>();
     combinedLinks.forEach(l => {
@@ -311,12 +311,12 @@ export const mergeExpansionGraph = (params: {
         const deg = degree.get(String(n.id)) || 0;
         const keep = deg > 0;
         if (!keep && !existingNodeIds.has(String(n.id))) {
-            console.warn(`🔧 [mergeExpansionGraph] Node "${n.title}" (${n.id}) PRUNED: degree=${deg}`);
+            // console.warn(`🔧 [mergeExpansionGraph] Node "${n.title}" (${n.id}) PRUNED: degree=${deg}`);
         }
         return keep;
     });
 
-    console.warn(`🔧 [mergeExpansionGraph] After pruning: ${prunedNodes.length} nodes from ${updatedNodes.length}`);
+    // console.warn(`🔧 [mergeExpansionGraph] After pruning: ${prunedNodes.length} nodes from ${updatedNodes.length}`);
 
     return dedupeGraph(prunedNodes, combinedLinks);
 };

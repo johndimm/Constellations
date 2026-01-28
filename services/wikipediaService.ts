@@ -5,7 +5,7 @@ type WikiImageCacheEntry = { url: string | null; pageId?: number; pageTitle?: st
 export const fetchDuckDuckGoPoster = async (q: string): Promise<string | null> => {
   // Respect network sandbox: if running in a browser without CORS, skip.
   if (typeof window !== "undefined") {
-    console.warn("[ImageSearch][DDG] Skipping DuckDuckGo in browser (CORS will block).");
+    // console.warn("[ImageSearch][DDG] Skipping DuckDuckGo in browser (CORS will block).");
     return null;
   }
   return null;
@@ -245,7 +245,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
 
     // If the query looks like a specific Commons file, skip search and go straight to info
     if (query.toLowerCase().startsWith('file:') || query.toLowerCase().startsWith('image:')) {
-      console.log(`🔍 [ImageSearch] Direct file lookup: "${query}"`);
+      // console.log(`🔍 [ImageSearch] Direct file lookup: "${query}"`);
       const direct = await fetchImageInfo(query, controller.signal);
       if (direct) return { url: direct };
     }
@@ -257,7 +257,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     const searchQuery = context ? `${queryToUse} ${context}` : queryToUse;
 
     // Attempt 1: Media-Aware Search + Direct Lookup
-    console.log(`🔍 [ImageSearch] Attempt 1 (Media-Aware): "${searchQuery}"`);
+    // console.log(`🔍 [ImageSearch] Attempt 1 (Media-Aware): "${searchQuery}"`);
     const initialSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;
     const initialSearchRes = await fetch(initialSearchUrl, { signal: controller.signal });
     const initialSearchData = await initialSearchRes.json();
@@ -305,7 +305,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
 
       const scored = results.map((r: any) => ({ r, score: scoreResult(r) })).sort((a, b) => b.score - a.score);
       bestTitle = scored[0]?.r?.title || query;
-      console.log(`✅ [ImageSearch] Chosen result "${bestTitle}" with score ${scored[0]?.score ?? 'n/a'}`);
+      // console.log(`✅ [ImageSearch] Chosen result "${bestTitle}" with score ${scored[0]?.score ?? 'n/a'}`);
     }
 
     const directImg = await fetchPageImage(bestTitle, controller.signal);
@@ -314,7 +314,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     // IMPROVED: For Person nodes, try Wikimedia Commons earlier (was Attempt 3)
     const isPerson = context?.toLowerCase() === 'person';
     if (isPerson) {
-      console.log(`🔍 [ImageSearch] Attempt 2 (Commons for Person): "${baseTitle}"`);
+      // console.log(`🔍 [ImageSearch] Attempt 2 (Commons for Person): "${baseTitle}"`);
       const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(baseTitle)}&srnamespace=6&srlimit=10&origin=*`;
       const commonsRes = await fetch(commonsUrl, { signal: controller.signal });
       const commonsData = await commonsRes.json();
@@ -357,14 +357,14 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       const titleToTry = baseTitle + suffix;
       if (titleToTry === query) continue;
 
-      console.log(`🔍 [ImageSearch] Attempt 3 (Suffix): "${titleToTry}"`);
+      // console.log(`🔍 [ImageSearch] Attempt 3 (Suffix): "${titleToTry}"`);
       const img = await fetchPageImage(titleToTry, controller.signal);
       if (img) return img;
     }
 
     // Attempt 4: Wikimedia Commons Search (Global) - for non-Person or as fallback
     if (!isPerson) {
-      console.log(`🔍 [ImageSearch] Attempt 4 (Commons): "${baseTitle}"`);
+      // console.log(`🔍 [ImageSearch] Attempt 4 (Commons): "${baseTitle}"`);
       const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(baseTitle)}&srnamespace=6&srlimit=10&origin=*`;
       const commonsRes = await fetch(commonsUrl, { signal: controller.signal });
       const commonsData = await commonsRes.json();
@@ -404,7 +404,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     }
 
     // Attempt 5: General Wikipedia Search
-    console.log(`🔍 [ImageSearch] Attempt 5 (Search): "${baseTitle}"`);
+    // console.log(`🔍 [ImageSearch] Attempt 5 (Search): "${baseTitle}"`);
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(baseTitle)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl, { signal: controller.signal });
     const searchData = await searchRes.json();
@@ -473,7 +473,7 @@ export const fetchWikipediaSummary = async (
   }
   visited.add(normKey);
   try {
-    console.log(`📡 [Wiki] Fetching summary for "${query}"${context ? ` with context "${context}"` : ''}`);
+    // console.log(`📡 [Wiki] Fetching summary for "${query}"${context ? ` with context "${context}"` : ''}`);
 
     const tryDirectLookup = async (titleToFetch: string) => {
       try {
@@ -534,7 +534,7 @@ export const fetchWikipediaSummary = async (
     if (trimmedQuery.includes("(") && trimmedQuery.includes(")")) {
       const direct = await tryDirectLookup(trimmedQuery);
       if (direct?.extract) {
-        console.log(`🎯 [Wiki] Explicit parenthetical match found for "${trimmedQuery}". Using disambiguated page.`);
+        // console.log(`🎯 [Wiki] Explicit parenthetical match found for "${trimmedQuery}". Using disambiguated page.`);
         return direct;
       }
     }
@@ -548,13 +548,13 @@ export const fetchWikipediaSummary = async (
         const titleParts = String(directExact.title || "").toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
         // If it's a redirect, we are MUCH more lenient. Napoleon Bonaparte -> Napoleon is a classic case.
         if (!titleParts.includes(queryLastName) && !directExact.redirected) {
-          console.log(`⚠️ [Wiki] Ignoring direct match "${directExact.title}" for "${cleanQuery}" (missing last-name match and no redirect).`);
+          // console.log(`⚠️ [Wiki] Ignoring direct match "${directExact.title}" for "${cleanQuery}" (missing last-name match and no redirect).`);
         } else {
-          console.log(`🎯 [Wiki] Exact title match found for "${cleanQuery}". Using primary page (redirected: ${directExact.redirected}).`);
+          // console.log(`🎯 [Wiki] Exact title match found for "${cleanQuery}". Using primary page (redirected: ${directExact.redirected}).`);
           return directExact;
         }
       } else {
-        console.log(`🎯 [Wiki] Exact title match found for "${cleanQuery}". Using primary page.`);
+        // console.log(`🎯 [Wiki] Exact title match found for "${cleanQuery}". Using primary page.`);
         return directExact;
       }
     }
@@ -760,11 +760,11 @@ export const fetchWikipediaSummary = async (
             const isShortFamousName = candidateParts.length === 1 && queryNameMatchesTitle;
 
             if (!allMatch && !(isFirstMatch && isShortFamousName)) {
-              console.log(`⚠️ [Wiki] Skipping title "${titleToTry}" for query "${cleanQuery}" (not all name parts match).`);
+              // console.log(`⚠️ [Wiki] Skipping title "${titleToTry}" for query "${cleanQuery}" (not all name parts match).`);
               continue;
             }
           } else if (queryLastName && !candidateParts.includes(queryLastName)) {
-            console.log(`⚠️ [Wiki] Skipping title "${titleToTry}" for query "${cleanQuery}" (missing last-name match).`);
+            // console.log(`⚠️ [Wiki] Skipping title "${titleToTry}" for query "${cleanQuery}" (missing last-name match).`);
             continue;
           }
         }
@@ -781,7 +781,7 @@ export const fetchWikipediaSummary = async (
             // Guard: if a title that looks like an org/venue redirects to a person page, ignore it.
             if (looksLikeOrgTitle(cleanQuery) && String(page.title || "").toLowerCase() !== cleanQuery.toLowerCase()) {
               if (looksLikePersonExtract(fullExtract)) {
-                console.log(`⚠️ [Wiki] Ignoring redirect mismatch for org-ish query "${cleanQuery}" -> "${page.title}"`);
+                // console.log(`⚠️ [Wiki] Ignoring redirect mismatch for org-ish query "${cleanQuery}" -> "${page.title}"`);
                 continue; // Try next search result
               }
             }
@@ -807,7 +807,7 @@ export const fetchWikipediaSummary = async (
 
             const finalExtract = firstParagraph || null;
             if (!finalExtract || finalExtract.length < 50) {
-              console.log(`⚠️ [Wiki] Extract for "${page.title}" too short (${finalExtract?.length || 0} chars). Skipping.`);
+              // console.log(`⚠️ [Wiki] Extract for "${page.title}" too short (${finalExtract?.length || 0} chars). Skipping.`);
               continue; // Try next search result
             }
 
@@ -815,22 +815,22 @@ export const fetchWikipediaSummary = async (
               const pageParts = String(page.title || "").toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
               const allMatch = queryNameParts.every(q => pageParts.includes(q));
               if (!allMatch) {
-                console.log(`⚠️ [Wiki] Skipping resolved title "${page.title}" for "${cleanQuery}" (not all name parts match).`);
+                // console.log(`⚠️ [Wiki] Skipping resolved title "${page.title}" for "${cleanQuery}" (not all name parts match).`);
                 continue;
               }
             } else if (queryLastName) {
               const pageParts = String(page.title || "").toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
               if (!pageParts.includes(queryLastName)) {
-                console.log(`⚠️ [Wiki] Skipping resolved title "${page.title}" for "${cleanQuery}" (missing last-name match).`);
+                // console.log(`⚠️ [Wiki] Skipping resolved title "${page.title}" for "${cleanQuery}" (missing last-name match).`);
                 continue;
               }
             }
 
-            console.log(`✅ [Wiki] Found summary for "${page.title}": "${finalExtract?.substring(0, 100)}..." (${finalExtract?.length || 0} chars)`);
+            // console.log(`✅ [Wiki] Found summary for "${page.title}": "${finalExtract?.substring(0, 100)}..." (${finalExtract?.length || 0} chars)`);
 
             if (avoidMedia && isMediaTitle(page.title)) {
               const retryQuery = `${cleanQuery} ${context || 'person'}`;
-              console.log(`⚠️ [Wiki] Media page returned for "${cleanQuery}". Retrying with "${retryQuery}".`);
+              // console.log(`⚠️ [Wiki] Media page returned for "${cleanQuery}". Retrying with "${retryQuery}".`);
               const retry = await fetchWikipediaSummary(retryQuery, context, visited, depth + 1);
               if (retry.extract) return retry;
             }
@@ -868,7 +868,7 @@ export const fetchWikipediaSummary = async (
         .slice(0, 3);
 
       if (searchContext.length > 50) {
-        console.log(`ℹ️ [Wiki] No direct article match, using search snippets from ${mentioningPageTitles.join(', ')} as context for "${cleanQuery}".`);
+        // console.log(`ℹ️ [Wiki] No direct article match, using search snippets from ${mentioningPageTitles.join(', ')} as context for "${cleanQuery}".`);
         return {
           extract: searchContext,
           pageid: null,
@@ -878,7 +878,7 @@ export const fetchWikipediaSummary = async (
         };
       }
 
-      console.log(`❌ [Wiki] No summary found for "${bestTitle}" via search. Attempting direct lookup for "${cleanQuery}".`);
+      // console.log(`❌ [Wiki] No summary found for "${bestTitle}" via search. Attempting direct lookup for "${cleanQuery}".`);
 
       // Direct lookup fallback (reuse helper)
 
@@ -888,19 +888,19 @@ export const fetchWikipediaSummary = async (
       };
       const titleCased = toTitleCase(cleanQuery);
       if (titleCased !== cleanQuery) {
-        console.log(`⚠️ [Wiki] Direct lookup failed given casing. Retrying with Title Case: "${titleCased}"`);
+        // console.log(`⚠️ [Wiki] Direct lookup failed given casing. Retrying with Title Case: "${titleCased}"`);
         const titleMatch = await tryDirectLookup(titleCased);
         if (titleMatch) return titleMatch;
       }
 
-      console.log(`❌ [Wiki] No summary found for "${bestTitle}" matches.`);
+      // console.log(`❌ [Wiki] No summary found for "${bestTitle}" matches.`);
     }
   } catch (e) {
     console.error(`❌ [Wiki] Error fetching summary for "${query}":`, e);
   }
   // Final fallback: if context was provided and failed, retry once with no context
   if (context && !triedNoContext) {
-    console.log(`⚠️ [Wiki] Retrying "${query}" without context (previous attempt returned empty).`);
+    // console.log(`⚠️ [Wiki] Retrying "${query}" without context (previous attempt returned empty).`);
     return await fetchWikipediaSummary(query, undefined, visited, depth + 1, true);
   }
   return { extract: null, pageid: null, title: null };
@@ -928,7 +928,7 @@ export const fetchWikipediaExtract = async (
       return { extract: page.extract || null, pageid: page.pageid || null, title: page.title || null };
     }
   } catch (e) {
-    console.warn("fetchWikipediaExtract failed:", title, e);
+    // console.warn("fetchWikipediaExtract failed:", title, e);
   }
   return { extract: null, pageid: null, title: null };
 };

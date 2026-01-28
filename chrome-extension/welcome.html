@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to Constellations</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0f172a;
+            /* slate-900 */
+            color: #e2e8f0;
+            /* slate-200 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 600px;
+            padding: 2rem;
+            background-color: #1e293b;
+            /* slate-800 */
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            border: 1px solid #334155;
+            /* slate-700 */
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #818cf8, #a78bfa, #22d3ee);
+            /* indigo-400, purple-400, cyan-400 */
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p {
+            line-height: 1.6;
+            margin-bottom: 2rem;
+            color: #94a3b8;
+            /* slate-400 */
+        }
+
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            background-color: #0f172a;
+            /* slate-900 */
+            border-radius: 0.75rem;
+            border: 1px solid #334155;
+        }
+
+        .step-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .step-title {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            color: #f8fafc;
+            /* slate-50 */
+        }
+
+        .step-desc {
+            font-size: 0.95rem;
+            color: #cbd5e1;
+            /* slate-300 */
+        }
+
+        .highlight {
+            color: #818cf8;
+            /* indigo-400 */
+            font-weight: bold;
+        }
+
+        .btn {
+            display: inline-block;
+            background-color: #4f46e5;
+            /* indigo-600 */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #4338ca;
+            /* indigo-700 */
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Welcome to Constellations</h1>
+        <p>Thank you for installing the Constellations extension. Use the power of AI to explore connections between
+            people, events, and concepts.</p>
+
+        <div class="step">
+            <div class="step-icon">🖱️</div>
+            <div class="step-title">How to use Constellations</div>
+            <div class="step-desc">
+                Select any text on any web page, <span class="highlight">Right-Click</span>, and choose <br>
+                <strong>"Graph '&lt;selection&gt;' on Constellations"</strong>.
+            </div>
+            <div
+                style="display: flex; gap: 2rem; justify-content: center; align-items: flex-start; margin-top: 1.5rem; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 250px;">
+                    <p style="margin-bottom: 0.5rem; font-size: 0.9rem; color: #a5b4fc;">1. Right-Click</p>
+                    <img src="/context-menu.png" alt="Right-click menu"
+                        style="border-radius: 0.5rem; border: 1px solid #334155; width: 100%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                </div>
+                <div style="display: flex; align-items: center; justify-content: center; padding-top: 20%;">
+                    <span style="font-size: 2rem;">➡️</span>
+                </div>
+                <div style="flex: 1.5; min-width: 300px;">
+                    <p style="margin-bottom: 0.5rem; font-size: 0.9rem; color: #a5b4fc;">2. Explore Graph</p>
+                    <img src="/side-panel.png" alt="Side panel graph"
+                        style="border-radius: 0.5rem; border: 1px solid #334155; width: 100%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                </div>
+            </div>
+        </div>
+
+        <p style="font-size: 0.85rem; opacity: 0.7;">
+            You can close this tab now.
+        </p>
+    </div>
+</body>
+
+</html>
