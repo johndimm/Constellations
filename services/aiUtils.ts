@@ -173,17 +173,35 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string
   });
 }
 
-// Retry logic
-export async function withRetry<T>(fn: () => Promise<T>, attempts = 2, backoffMs = 300): Promise<T> {
-  let lastError: unknown;
+// Improved retry logic with exponential backoff and jitter
+export async function withRetry<T>(fn: () => Promise<T>, attempts = 3, backoffMs = 1000): Promise<T> {
+  let lastError: any;
   for (let i = 0; i < attempts; i++) {
     try {
       return await fn();
-    } catch (error) {
+    } catch (error: any) {
       lastError = error;
-      if (i < attempts - 1) {
-        const delay = backoffMs * (i + 1);
+      const errorStr = String(error?.message || error || '').toLowerCase();
+      // Only retry if it looks like a transient error (rate limit, timeout, or network)
+      const isRetryable =
+        errorStr.includes('429') ||
+        errorStr.includes('resource_exhausted') ||
+        errorStr.includes('rate limit') ||
+        errorStr.includes('timeout') ||
+        errorStr.includes('fetch') ||
+        errorStr.includes('network');
+
+      if (i < attempts - 1 && isRetryable) {
+        // Exponential backoff: 1s, 2s, 4s...
+        const baseDelay = backoffMs * Math.pow(2, i);
+        // Add jitter: +/- 20% to avoid "thundering herd"
+        const jitter = baseDelay * 0.2 * (Math.random() * 2 - 1);
+        const delay = Math.max(0, baseDelay + jitter);
+
+        console.warn(`[Retry] Attempt ${i + 1} failed. Retrying in ${Math.round(delay)}ms...`, errorStr);
         await new Promise(res => setTimeout(res, delay));
+      } else {
+        throw error;
       }
     }
   }

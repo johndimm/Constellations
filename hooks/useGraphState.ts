@@ -176,7 +176,9 @@ export function useGraphState(options: UseGraphStateOptions) {
                     };
                 })
             }));
-            saveCacheNodeMeta(nodeId, { imageUrl: imageResult.url }, fallbackNode);
+            // Persist the new image to the cache
+            const wikiId = (imageResult as any).pageId?.toString();
+            saveCacheNodeMeta(nodeId, { imageUrl: imageResult.url, wikipedia_id: wikiId }, fallbackNode);
         } else {
             setGraphData(prev => ({
                 ...prev,
@@ -230,7 +232,9 @@ export function useGraphState(options: UseGraphStateOptions) {
                                 imageChecked: true
                             } : n)
                         }));
-                        saveCacheNodeMeta(nodeId, { imageUrl: imageResult.url });
+                        // Persist the new image to the cache
+                        const wikiId = (imageResult as any).pageId?.toString();
+                        saveCacheNodeMeta(nodeId, { imageUrl: imageResult.url, wikipedia_id: wikiId });
                         setNotification({ message: "Better photo found via AI hint!", type: 'success' });
                         return;
                     }

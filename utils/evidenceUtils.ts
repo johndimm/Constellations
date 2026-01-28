@@ -9,8 +9,23 @@ export const normalizeForEvidence = (s: unknown) =>
 export const splitIntoSentences = (text: string): string[] => {
     const t = String(text || '').replace(/\s+/g, ' ').trim();
     if (!t) return [];
-    // Naive sentence split
-    return t.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+    // Improved sentence split that ignores common abbreviations
+    const commonAbbreviations = ['Bros', 'Mr', 'Mrs', 'Ms', 'Dr', 'Sr', 'Jr', 'St', 'Prof', 'Capt', 'Col', 'Gen', 'Inc', 'Ltd', 'Co'];
+    const abbrRegex = commonAbbreviations.join('|');
+    const regex = new RegExp(`(?<!\\b(?:${abbrRegex}))[.!?](?=\\s+[A-Z]|$)`, 'g');
+
+    const sentences: string[] = [];
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(t)) !== null) {
+        sentences.push(t.substring(lastIndex, match.index + 1).trim());
+        lastIndex = match.index + 1;
+    }
+    if (lastIndex < t.length) {
+        const remaining = t.substring(lastIndex).trim();
+        if (remaining) sentences.push(remaining);
+    }
+    return sentences.filter(Boolean);
 };
 
 export const roleLooksLikeJobTitle = (s: unknown) =>

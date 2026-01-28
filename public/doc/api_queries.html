@@ -81,7 +81,8 @@
     <div class="container">
         <h1>API Queries Documentation</h1>
         <p>This document outlines the external API calls used by the <strong>Constellations</strong> application. These
-            include Google Gemini for entity processing and Wikipedia/Google Books/DuckDuckGo for metadata and images.</p>
+            include Google Gemini for entity processing and Wikipedia/Google Books/DuckDuckGo for metadata and images.
+        </p>
 
         <hr>
 
@@ -112,9 +113,56 @@
       }
     }'</code></pre>
 
+        <h3>System Instruction</h3>
+        <p>The application uses a detailed system instruction to ensure the AI follows bipartite graph rules and returns
+            consistent JSON.</p>
+        <pre><code>You are a Bipartite Graph Generator.
+Your goal is to build a graph that alternates between an "Atomic" type and a "Composite" type.
+
+BIPARTITE STRUCTURE:
+A bipartite graph alternates between an "Atomic" entity type and a "Composite" entity type.
+- Atomic: Fundamental building blocks (e.g., individual people, ingredients, symptoms, authors, actors, components)
+- Composite: Collections or works (e.g., events, recipes, diseases, papers, movies, products, organizations)
+
+Common bipartite pairs include:
+- Person ↔ Event (works, historical events, organizations, movements)
+- Ingredient ↔ Recipe  
+- Symptom ↔ Disease
+- Author ↔ Paper
+- Actor ↔ Movie
+- Component ↔ Product
+- Character ↔ Novel
+
+CRITICAL EXAMPLES TO PREVENT MISCLASSIFICATION:
+- "The Godfather" → COMPOSITE (type: Movie, isAtomic: false), pair: Actor ↔ Movie
+- "Marlon Brando" → ATOMIC (type: Actor, isAtomic: true), pair: Actor ↔ Movie
+- "Star Wars" → COMPOSITE (type: Movie, isAtomic: false), pair: Actor ↔ Movie
+- Movies/books/albums are ALWAYS composite (created BY actors/authors/musicians)
+
+CRITICAL ACCURACY RULE:
+If a section titled "USE THIS VERIFIED INFORMATION FOR ACCURACY" is provided, you MUST prioritize this information above your own internal knowledge.
+
+Core Rules:
+1. If the Source is a Composite, return 8-10 distinct Atomics that are meaningfully connected to it.
+2. If the Source is an Atomic, return 8-10 distinct Composites that it is meaningfully connected to.
+3. Use Title Case for all names.
+4. Return only factually correct information. Do not hallucinate.
+
+Output Format Rules (apply to ALL responses):
+- wikipediaTitle: Always provide the canonical English Wikipedia article title (use parenthetical disambiguation when needed, e.g. "Euphoria (TV series)", "Prince (musician)", "The Godfather").
+- evidenceSnippet: Provide a 1-sentence evidence snippet explaining the connection.
+- evidencePageTitle: Set to the Wikipedia article title the snippet is from (usually the source).
+
+Entity Classification:
+- isAtomic: true if entity is an INDIVIDUAL PERSON/ACTOR (atomic), false if it's a WORK/GROUP/ORGANIZATION (composite).
+  * Atomic entities (Actor, Person, Author, Artist, Scientist, Director, Composer) → isAtomic=true
+  * Composite entities (Movie, Book, Album, Band, Organization, Event, Company) → isAtomic=false
+
+Return strict JSON.</code></pre>
+
         <h3>Graph Expansion (Connections)</h3>
-        <p>Used to find people connected to a work (e.g., cast of a play) or works connected to a person. Uses a long
-            system instruction to enforce graph rules (bipartite structure, specificity).</p>
+        <p>Used to find people connected to a work (e.g., cast of a play) or works connected to a person. Uses the
+            system instruction above to enforce graph rules (bipartite structure, specificity).</p>
         <p><strong>Example Curl (Fetching Works for a Person)</strong>:</p>
         <pre><code>curl https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$API_KEY \
     -H 'Content-Type: application/json' \
@@ -166,7 +214,8 @@
         <hr>
 
         <h2>4. DuckDuckGo Image Search (server-side)</h2>
-        <p>Used as a fallback when Wikimedia does not provide a suitable image. The server first fetches a <code>vqd</code>
+        <p>Used as a fallback when Wikimedia does not provide a suitable image. The server first fetches a
+            <code>vqd</code>
             token from the HTML response, then requests image results from the JSON endpoint.</p>
 
         <h3>Step 1: Fetch the vqd token</h3>

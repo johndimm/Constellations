@@ -45,9 +45,9 @@ Output Format Rules (apply to ALL responses):
 - evidencePageTitle: Set to the Wikipedia article title the snippet is from (usually the source).
 
 Entity Classification:
-- isAtomic: true if entity is an INDIVIDUAL PERSON/ACTOR (atomic), false if it's a WORK/GROUP/ORGANIZATION (composite).
-  * Atomic entities (Actor, Person, Author, Artist, Scientist, Director, Composer) → isAtomic=true
-  * Composite entities (Movie, Book, Album, Band, Organization, Event, Company) → isAtomic=false
+- isAtomic: true for INDIVIDUAL PEOPLE/CHARACTERS (atomic), false for WORKS/GROUPS/ORGANIZATIONS (composite).
+  * Atomic entities (Actor, Person, Author, Artist, Character, Scientist, Director, Composer) → isAtomic=true
+  * Composite entities (Movie, Book, Novel, Play, Album, Band, Organization, Event, Company) → isAtomic=false
 
 Return strict JSON.
 `;
@@ -202,8 +202,8 @@ Rules:
 
   const response = await withRetry(
     () => withTimeout(makeApiCall(), CLASSIFY_TIMEOUT_MS, "Start-pair classification timed out"),
-    2,
-    400
+    3,
+    1000
   );
 
   const rawText = getResponseText(response);
@@ -310,8 +310,8 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
 
     const response = await withRetry(
       () => withTimeout(makeApiCall(), CLASSIFY_TIMEOUT_MS, "Classification timed out"),
-      2,
-      400
+      3,
+      1000
     );
 
     const rawText = getResponseText(response);
@@ -400,18 +400,30 @@ export const fetchConnections = async (
     const prompt = `${contextualPrompt}${wikiPrompt}${mentionPrompt}${excludePrompt}
       Source Node: ${nodeName} (Type: ${compositeLabel})
       
-      Return 8-10 key ${atomicLabel} entities (participants, creators, major figures, stars, ingredients, etc.) that are fundamental components of this ${compositeLabel}.
+      Return ${excludeNodes.length > 0 ? '12-15 NEW' : '10-12 key'} ${atomicLabel} entities (participants, creators, major figures, stars, ingredients, its most famous writers/editors for magazines, etc.) that are fundamental components of this ${compositeLabel}.
       
       Straying Guardrails:
       ${personOnlyRule}
       ${workSourceHint}
       ${theorySourceHint}
+      ${(compositeType || "").match(/^(Movie|Film|Book|Novel|Play|Opera)$/i) ? '\nSPECIAL CASE (Fiction): For works of fiction, prioritize returning CHARACTERS as the atomic entities.' : ''}
+      ${(compositeType || "").match(/^(Magazine|Newspaper|Journal|Periodical|Publication)$/i) ? '\nSPECIAL CASE (Magazine): For periodicals/magazines, prioritize returning its most FAMOUS AND LONG-TIME WRITERS, columnists, and editors-in-chief.' : ''}
+      
+      CRITICAL BIPARTITE RULE:
+      - The Source Node is a COMPOSITE entity.
+      - Therefore, ALL returned entities MUST be ATOMIC entities (${atomicLabel}).
+      - DO NOT return other ${compositeLabel} entities.
+      - If you find connections to other ${compositeLabel} entities, you MUST find the ${atomicLabel} entities (people, characters, etc.) that link them.
+
+      ${excludeNodes.length > 0 ? `\nEXPAND MORE: Since you have already provided some connections, please dig deeper into the "next tier" of significant entities. Avoid the obvious names already in the graph: ${JSON.stringify(excludeNodes)}.` : ''}
 
       IMPORTANT: For each entity specify its type (${atomicLabel}) and whether it follows the classification rules defined in the system instruction.
       
       Examples:
+      - If Fiction (Book, Novel, Movie, Play): Return its most famous CHARACTERS.
+      - If Magazine/Newspaper: Return its most legendary WRITERS and EDITORS.
       - If Theory/Discovery: Return the primary scientists or researchers involved.
-      - If Event/Incident: Return key people involved (victims, shooters, investigators).
+      - If Event/Incident: Return key people involved.
       - If Team: Return key players.
       - If Recipe: Return ingredients.
       - If Disease: Return symptoms.`;
@@ -452,8 +464,8 @@ export const fetchConnections = async (
 
     const response = await withRetry(
       () => withTimeout(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
-      2,
-      600
+      4,
+      1000
     );
 
     const rawText = getResponseText(response);
@@ -462,10 +474,11 @@ export const fetchConnections = async (
     if (!text) return { people: [] };
 
     const parsed = JSON.parse(text) as GeminiResponse;
-    console.log(`🎯 [isAtomic Debug] Entities returned for "${nodeName}" (${compositeLabel}):`,
-      parsed.people.map(p => ({ name: p.name, isAtomic: p.isAtomic, type: p.isAtomic ? atomicLabel : compositeLabel }))
-    );
-
+    // Force correct bipartite type regardless of LLM slip-ups
+    parsed.people = parsed.people.map(p => ({
+      ...p,
+      isAtomic: true // In fetchConnections, the source is COMPOSITE, so all results MUST be ATOMIC (true)
+    }));
 
     return parsed;
   } catch (error) {
@@ -517,18 +530,20 @@ export const fetchPersonWorks = async (
     : "";
 
   const contextPrompt = excludeNodes.length > 0
-    ? `The user graph already contains these nodes connected to ${nodeName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}. 
-       Return 8-10 NEW significant ${compositeLabel} entities.`
-    : `List 8-10 DISTINCT, significant ${compositeLabel} entities that this ${atomicLabel} "${nodeName}"${wikiIdStr} belongs to or is part of.
+    ? `The user graph already contains these nodes connected to ${nodeName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}.
+       Return 12-15 NEW significant ${compositeLabel} entities.`
+    : `List 10-12 DISTINCT, significant ${compositeLabel} entities that this ${atomicLabel} "${nodeName}"${wikiIdStr} belongs to or is part of.
        
-       CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, location, or specific historical event/incident. 
-       DO NOT return descriptive phrases, facts, or achievements. 
+       CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, location, or specific historical event/incident.
+       DO NOT return descriptive phrases, facts, or achievements.
        In the Person↔Event pair, treat locations (like "Saint-Paul-de-Mausole") as ${compositeLabel} entities.
        ${dateRequirementPrompt}
        
        BIDIRECTIONAL RULE:
        - If "${nodeName}" is an author, you MUST include their most famous books/novels/works.
+       - If "${nodeName}" is a book, novel, movie, or play, you MUST include its most famous CHARACTERS.
        - If "${nodeName}" is an artist, you MUST include their most famous paintings/sculptures/artworks.
+       - If "${nodeName}" is a writer famous for writing in a specific MAGAZINE (e.g., The New Yorker), you MUST include that Magazine.
        - Ensure that if a user expands a creator, they find their works, and vice-versa.
        
        BUSINESSPERSON GUARDRAIL:
@@ -576,7 +591,13 @@ export const fetchPersonWorks = async (
        - For an Ingredient (e.g. "Chicken"): Return specific Recipes.
        - For an Actor: Return specific Movies.
        - For an Artist: Return specific major Artworks (e.g., "Mona Lisa", "The Last Supper") and optionally a few key Exhibitions/Movements.
-       - For a Mathematician: Return specific named Papers (often coauthored).`;
+       - For a Mathematician: Return specific named Papers (often coauthored).
+        
+        CRITICAL BIPARTITE RULE:
+        - The Source Node "${nodeName}" is an ATOMIC entity.
+        - Therefore, ALL returned entities MUST be COMPOSITE entities (${compositeLabel}).
+        - DO NOT return other ${atomicLabel} entities (other people, actors, or characters).
+        - If "Bugs Bunny" has a rivalry with "Daffy Duck", DO NOT return "Daffy Duck". Instead, return the specific MOVIES or SERIES they appear in together.`;
 
   try {
     const prompt = `${wikiPrompt}${mentionPrompt}${contextPrompt}
@@ -619,8 +640,8 @@ export const fetchPersonWorks = async (
 
     const response = await withRetry(
       () => withTimeout(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
-      2,
-      600
+      4,
+      1000
     );
 
     const rawText = getResponseText(response);
@@ -628,9 +649,15 @@ export const fetchPersonWorks = async (
     const text = cleanJson(rawText);
     if (!text) return { works: [] };
     const parsed = JSON.parse(text) as PersonWorksResponse;
-    // Strong filter: remove any work that somehow came back without a year, BUT only if date is required for this type
-    if (parsed.works && dateRequired) {
-      parsed.works = parsed.works.filter(w => w.year !== null && w.year !== undefined && !isNaN(Number(w.year)));
+    // Force correct bipartite type regardless of LLM slip-ups
+    if (parsed.works) {
+      if (dateRequired) {
+        parsed.works = parsed.works.filter(w => w.year !== null && w.year !== undefined && !isNaN(Number(w.year)));
+      }
+      parsed.works = parsed.works.map(w => ({
+        ...w,
+        isAtomic: false // In fetchPersonWorks, the source is ATOMIC, so all results MUST be COMPOSITE (false)
+      }));
     }
     return parsed;
   } catch (error) {
@@ -843,8 +870,8 @@ Rules:
           20000,
           "Org key-people search timed out"
         ),
-      2,
-      600
+      4,
+      1000
     );
 
     const text = cleanJson(getResponseText(response));

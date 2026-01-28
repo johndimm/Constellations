@@ -1342,25 +1342,38 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
                     if (dropHighlight.has(sId) || dropHighlight.has(tId)) return 0.12;
                     // Priority 1: Path highlighting - only highlight links that are actually in the path sequence
-                    if (hasHighlight && pathLinkIds.has(d.id)) return 0.9;
+                    if (hasHighlight && pathLinkIds.has(d.id)) return 0.95;
                     // Priority 2: Other links when path highlighting is active - only dim if BOTH endpoints are not highlighted
                     if (hasHighlight && !keepHighlight.has(sId) && !keepHighlight.has(tId)) return 0.25;
+
                     // Priority 3: Expansion/Selection highlighting
+                    const isNewSource = newChildNodeIds.has(String(sId)) || newChildNodeIds.has(sId);
+                    const isNewTarget = newChildNodeIds.has(String(tId)) || newChildNodeIds.has(tId);
+                    const isExpanding = expandingNodeId !== null && (sId === expandingNodeId || tId === expandingNodeId);
+
                     if (expandingNodeId !== null) {
-                        const sourceNode = nodes.find(n => n.id === sId);
-                        const targetNode = nodes.find(n => n.id === tId);
-                        const sourceBright = sourceNode && (sourceNode.id === expandingNodeId || newChildNodeIds.has(sourceNode.id));
-                        const targetBright = targetNode && (targetNode.id === expandingNodeId || newChildNodeIds.has(targetNode.id));
-                        // Only dim the link if BOTH endpoints are dimmed (neither is bright)
-                        if (!sourceBright && !targetBright) return 0.25;
+                        const sourceBright = sId === expandingNodeId || isNewSource;
+                        const targetBright = tId === expandingNodeId || isNewTarget;
+                        // High visibility if BOTH are bright, medium if one is bright
+                        if (sourceBright && targetBright) return 0.95;
+                        if (sourceBright || targetBright) return 0.5;
+                        return 0.25;
                     } else if (effectiveFocused) {
-                        const isConnected = neighborIds.has(sId) || neighborIds.has(tId);
-                        if (!isConnected) return 0.25;
-                        return (sId === effectiveFocused.id || tId === effectiveFocused.id) ? 0.9 : 0.4;
+                        const sourceBright = sId === effectiveFocused.id || neighborIds.has(sId);
+                        const targetBright = tId === effectiveFocused.id || neighborIds.has(tId);
+                        // High visibility if BOTH are bright, medium if one is bright
+                        if (sourceBright && targetBright) return 0.95;
+                        if (sourceBright || targetBright) return 0.5;
+                        return 0.25;
                     }
+
+                    // Priority 4: If new connections were just added, keep links to them bright
+                    if (isNewSource && isNewTarget) return 0.95;
+                    if (isNewSource || isNewTarget) return 0.6;
+
                     // Hover highlight for links
                     if (hoveredLinkId && d.id === hoveredLinkId) return 1;
-                    return 0.7;
+                    return 0.85;
                 })
                 .style("stroke", d => {
                     const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
@@ -1374,6 +1387,12 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     if (hoveredLinkId && d.id === hoveredLinkId) return "#fbbf24";
                     // Priority 3: Focused node highlighting
                     if (effectiveFocused && (sId === effectiveFocused.id || tId === effectiveFocused.id)) return "#f97316";
+
+                    // Priority 4: New connections highlighting
+                    const isNewSource = newChildNodeIds.has(String(sId)) || newChildNodeIds.has(sId);
+                    const isNewTarget = newChildNodeIds.has(String(tId)) || newChildNodeIds.has(tId);
+                    if (isNewSource || isNewTarget) return "#ef4444"; // brighter red for new connections
+
                     return "#dc2626";
                 })
                 .style("stroke-width", d => {
@@ -1385,7 +1404,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 });
         }
 
-    }, [nodes, links, isTimelineMode, hoveredNode, hoveredLinkId, effectiveFocused, highlightKeepIds, highlightDropIds, isTextOnly, onNodeClick]);
+    }, [nodes, links, isTimelineMode, hoveredNode, hoveredLinkId, effectiveFocused, highlightKeepIds, highlightDropIds, isTextOnly, onNodeClick, expandingNodeId, newChildNodeIds]);
 
     return (
         <svg

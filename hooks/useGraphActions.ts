@@ -25,6 +25,8 @@ interface UseGraphActionsOptions {
     isCompact: boolean;
     isTimelineMode: boolean;
     isTextOnly: boolean;
+    setExpandingNodeId: (id: number | string | null) => void;
+    setNewChildNodeIds: (ids: Set<string | number>) => void;
 }
 
 export function useGraphActions(options: UseGraphActionsOptions) {
@@ -33,7 +35,8 @@ export function useGraphActions(options: UseGraphActionsOptions) {
         setContextMenu, setNotification, setConfirmDialog, setDeletePreview,
         setPathNodeIds, fetchAndExpandNode, setIsProcessing, searchIdRef,
         cacheEnabled, cacheBaseUrl, setSavedGraphs, searchMode, exploreTerm,
-        pathStart, pathEnd, isCompact, isTimelineMode, isTextOnly
+        pathStart, pathEnd, isCompact, isTimelineMode, isTextOnly,
+        setExpandingNodeId, setNewChildNodeIds
     } = options;
 
     const handleClear = useCallback(() => {
@@ -159,7 +162,12 @@ export function useGraphActions(options: UseGraphActionsOptions) {
             if (n) await fetchAndExpandNode(n, false, false);
         }
         setNotification({ message: `Completed expansion of ${unexpandedLeafIds.length} connections.`, type: 'success' });
-    }, [nodes, links, fetchAndExpandNode, setNotification]);
+
+        // Return graph to full brightness by clearing selection and highlighting
+        setSelectedNode(null);
+        setExpandingNodeId(null);
+        setNewChildNodeIds(new Set());
+    }, [nodes, links, fetchAndExpandNode, setNotification, setSelectedNode, setExpandingNodeId, setNewChildNodeIds]);
 
     const handleExpandMore = useCallback((node: GraphNode) => {
         fetchAndExpandNode(node, false, true);
@@ -182,7 +190,12 @@ export function useGraphActions(options: UseGraphActionsOptions) {
             await fetchAndExpandNode(n, false, false);
         }
         setNotification({ message: `Completed batch expansion of ${count} nodes.`, type: 'success' });
-    }, [nodes, links, fetchAndExpandNode, setNotification]);
+
+        // Return graph to full brightness by clearing selection and highlighting
+        setSelectedNode(null);
+        setExpandingNodeId(null);
+        setNewChildNodeIds(new Set());
+    }, [nodes, links, fetchAndExpandNode, setNotification, setSelectedNode, setExpandingNodeId, setNewChildNodeIds]);
 
     const handleDeleteGraph = useCallback((name: string) => {
         setConfirmDialog({

@@ -107,7 +107,9 @@ const ExtensionControls: React.FC<{
                     <div className="h-6 w-[1px] bg-slate-700/50" />
                     <button
                         onClick={() => {
-                            const url = new URL(window.location.origin);
+                            const isExtension = window.location.protocol === 'chrome-extension:';
+                            const baseOrigin = isExtension ? 'https://constellations-beaf.onrender.com' : window.location.origin;
+                            const url = new URL(baseOrigin);
                             if (exploreTerm) url.searchParams.set('q', exploreTerm);
                             window.open(url.toString(), '_blank');
                         }}
@@ -189,7 +191,8 @@ const App: React.FC<AppProps> = ({
         setContextMenu, setNotification, setConfirmDialog, setDeletePreview,
         setPathNodeIds, fetchAndExpandNode, setIsProcessing, searchIdRef,
         cacheEnabled, cacheBaseUrl, setSavedGraphs, searchMode, exploreTerm,
-        pathStart, pathEnd, isCompact, isTimelineMode, isTextOnly
+        pathStart, pathEnd, isCompact, isTimelineMode, isTextOnly,
+        setExpandingNodeId, setNewChildNodeIds
     });
 
     const onNodeClick = useNodeClickHandler({

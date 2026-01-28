@@ -75,30 +75,22 @@ export function useExpansion(options: UseExpansionOptions) {
         }
     }, [cacheEnabled, cacheBaseUrl]);
 
-    const saveCacheExpansion = useCallback(async (sourceId: number, nodesToSave: any[]) => {
-        if (!cacheEnabled) return;
+    const saveCacheExpansion = useCallback(async (sourceId: number | string, nodes: any[]) => {
+        if (!cacheEnabled) return null;
         try {
-            await fetch(new URL("/expansion", cacheBaseUrl).toString(), {
+            const res = await fetch(new URL("/expansion", cacheBaseUrl).toString(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    sourceId,
-                    nodes: nodesToSave.map(n => ({
-                        title: n.title || n.id,
-                        type: n.type,
-                        description: n.description || "",
-                        year: n.year || null,
-                        meta: n.meta || {},
-                        wikipedia_id: n.wikipedia_id,
-                        is_atomic: n.is_atomic,
-                        edge_label: n.edge_label || null,
-                        edge_meta: n.edge_meta || null
-                    }))
-                })
+                body: JSON.stringify({ sourceId, nodes })
             });
+            if (res.ok) {
+                const data = await res.json();
+                return data.idMap as Record<string, number> | undefined;
+            }
         } catch (e) {
             console.warn("Cache save failed", e);
         }
+        return null;
     }, [cacheEnabled, cacheBaseUrl]);
 
     const fetchAndExpandNode = useCallback(async (
@@ -222,21 +214,31 @@ export function useExpansion(options: UseExpansionOptions) {
 
                         console.warn(`⚠️ [DEBUG] Cache hit with ${validCached.length} nodes for "${node.title}", returning early`);
                         setIsProcessing(false);
+                        setGraphData(prev => ({
+                            ...prev,
+                            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false } : n)
+                        }));
                         return;
                     }
                 }
             }
 
             console.warn(`⚠️ [DEBUG] Cache miss or insufficient cache for "${node.title}", proceeding with full fetch`);
+            const getLinkId = (thing: any) => {
+                if (typeof thing === 'object' && thing !== null) return String(thing.id);
+                return String(thing);
+            };
+
             const neighborLinks = currentLinks.filter(l =>
-                (typeof l.source === 'number' ? String(l.source) === String(node.id) : String((l.source as GraphNode).id) === String(node.id)) ||
-                (typeof l.target === 'number' ? String(l.target) === String(node.id) : String((l.target as GraphNode).id) === String(node.id))
+                getLinkId(l.source) === String(node.id) ||
+                getLinkId(l.target) === String(node.id)
             );
+
             const neighborNames = neighborLinks.map(l => {
-                const s = typeof l.source === 'number' ? l.source : (l.source as GraphNode).id;
-                const t = typeof l.target === 'number' ? l.target : (l.target as GraphNode).id;
-                const nid = String(s) === String(node.id) ? t : s;
-                return currentNodes.find(n => String(n.id) === String(nid))?.title || '';
+                const sid = getLinkId(l.source);
+                const tid = getLinkId(l.target);
+                const neighborId = sid === String(node.id) ? tid : sid;
+                return currentNodes.find(n => String(n.id) === String(neighborId))?.title || '';
             }).filter(Boolean);
 
             console.log(`🔷 [Expansion] Step 1: Getting wiki data for "${node.title}"`);
@@ -532,6 +534,7 @@ export function useExpansion(options: UseExpansionOptions) {
                 let nodesToUse = resultsWithWiki;
                 if (!exploreTerm.toLowerCase().startsWith('list of ')) nodesToUse = nodesToUse.filter((n: any) => !isBadListPage(n.title));
 
+                let finalIDMap: Record<string, number> | undefined;
                 if (cacheEnabled) {
                     let combinedNodes = [...resultsWithWiki];
                     const existingCache = await fetchCacheExpansion(node.id);
@@ -547,7 +550,7 @@ export function useExpansion(options: UseExpansionOptions) {
                         });
                         combinedNodes = Array.from(byTitle.values());
                     }
-                    await saveCacheExpansion(node.id, combinedNodes);
+                    finalIDMap = await saveCacheExpansion(node.id, combinedNodes);
                     const cacheHit = await fetchCacheExpansion(node.id);
                     if (cacheHit && cacheHit.nodes) nodesToUse = cacheHit.nodes;
                 }
@@ -569,7 +572,17 @@ export function useExpansion(options: UseExpansionOptions) {
                 const processedNodes = nodesToUse.map(cn => {
                     const norm = baseDedupeKey(cn as any);
                     const existing = existingByNorm.get(norm);
-                    const idToUse = existing ? existing.id : (cn.id ?? Math.floor(Math.random() * 1000000));
+                    let idToUse = existing ? existing.id : (cn.id ?? Math.floor(Math.random() * 1000000));
+
+                    // SYNC WITH DATABASE ID IF AVAILABLE
+                    if (finalIDMap) {
+                        const wikiId = (cn.wikipedia_id || cn.wikipediaId || "").toString().trim();
+                        const key = `${cn.title}|${cn.type}|${wikiId || ''}`;
+                        if (finalIDMap[key]) {
+                            idToUse = finalIDMap[key];
+                        }
+                    }
+
                     if (!existing) existingByNorm.set(norm, { id: idToUse, title: cn.title, type: cn.type } as GraphNode);
                     return { ...cn, id: idToUse };
                 });
