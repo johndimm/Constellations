@@ -343,7 +343,14 @@ export function useExpansion(options: UseExpansionOptions) {
                         if (!meta.openAlexAuthorId && author.id) nodeUpdates.set(node.id, { meta: { ...meta, openAlexAuthorId: author.id, openAlexUrl: author.id, source: 'openalex' } });
                     }
                 } else {
-                    const work = parentWorkId ? await getOpenAlexWork(parentWorkId) : await searchOpenAlexWork(node.title);
+                    // Check if this is "Work (Author)" pattern - if so, skip OpenAlex (it returns modern editions/translators)
+                    // E.g., "Republic (Plato)" should use LLM, not OpenAlex database
+                    const hasAuthorInParens = /^[^(]+\([A-Z][a-z]+(\s+[A-Z][a-z]+)*\)$/.test(node.title.trim());
+
+                    const work = (!hasAuthorInParens && parentWorkId)
+                        ? await getOpenAlexWork(parentWorkId)
+                        : (!hasAuthorInParens ? await searchOpenAlexWork(node.title) : null);
+
                     if (work?.id) {
                         const authors = (work.authorships || []).map(a => a.author).filter(Boolean).map(a => ({ id: String(a!.id), display_name: String(a!.display_name) })).filter(a => a.id && a.display_name);
                         results = authors.slice(0, 12).map(a => ({

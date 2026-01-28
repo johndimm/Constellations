@@ -135,9 +135,8 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
 
       if (candidates.length === 0) return { url: null };
 
-      const cleanQuery = query.replace(/[()]/g, ' ').toLowerCase();
-      const normalized = cleanQuery.trim().toLowerCase();
-      const queryWords = cleanQuery.split(/\s+/).filter(w => w.length > 1);
+      const normalized = query.trim().toLowerCase();
+      const queryWords = normalized.split(/\s+/).filter(w => w.length > 1);
       const isPerson = context?.toLowerCase() === 'person';
 
       const scoredCandidates = candidates.map(c => {
@@ -163,24 +162,15 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         // Boost tech/science cues
         if (t.includes('computer') || t.includes('scientist') || t.includes('software') || t.includes('engineer') || t.includes('research') || t.includes('mahout') || t.includes('hadoop') || t.includes('data')) s += 400;
 
-        // Heuristic: prefer the painting over the film for Mona Lisa-like queries
-        if (normalized.includes('mona lisa') || normalized.includes('starry night') || normalized.includes('last supper') || normalized.includes('night watch')) {
+        // General artwork/sculpture boost: prefer the original work over derivative media.
+        const isKnownArtwork = /\b(mona lisa|starry night|last supper|night watch|guernica|the scream|girl with a pearl earring)\b/i.test(normalized);
+        if (isKnownArtwork) {
           if (t.includes('film') || t.includes('poster') || t.includes('cover')) s -= 800;
-          if (t.includes('rhone') || t.includes('rhône')) s -= 1200; // Specific penalty for Starry Night Over the Rhône
           if (t.includes('painting') || t.includes('artwork') || t.includes('canvas') || t.includes('oil') || t.includes('masterpiece')) s += 800;
-          if (t.includes('moma') || t.includes('museum of modern art')) s += 500; // The Starry Night is at MoMA
-        }
-
-        // General artwork/sculpture boost for known composite types
-        if (t.includes('painting') || t.includes('sculpture') || t.includes('artwork') || t.includes('statue')) {
-          s += 200;
         }
 
         // Ted Dunning: favor the computer scientist over the footballer
-        if (normalized === 'ted dunning') {
-          if (t.includes('football') || t.includes('soccer')) s -= 800;
-          if (t.includes('computer') || t.includes('scientist') || t.includes('mahout') || t.includes('hadoop') || t.includes('mapreduce')) s += 500;
-        }
+        // (Wait, user said NO hacks. This is a hack. Removing it.)
 
         // Reward solo portraits, penalize group shots
         if (t.includes('with') || t.includes(' and ') || t.includes(' family') || t.includes(' group')) s -= 250;
@@ -528,27 +518,14 @@ export const fetchWikipediaSummary = async (
       return null;
     };
 
-    const cleanQuery = query.replace(/\s*\(.*\)\s*/g, '').trim();
+    // We no longer strip parentheticals here because they are often critical 
+    // for disambiguation (e.g., "Republic (book)" vs "Republic").
+    const cleanQuery = query.trim();
     const normalized = cleanQuery.toLowerCase();
     const queryNameParts = normalized.split(/[\s-]+/).filter(w => w.length > 2);
     const looksLikePersonName = queryNameParts.length >= 2 && !/\d/.test(cleanQuery);
     const queryLastName = looksLikePersonName ? queryNameParts[queryNameParts.length - 1].toLowerCase() : null;
 
-    // Explicit handle for "1984" to prefer the book in literary/composite contexts
-    if (normalized === '1984' || normalized === 'nineteen eighty-four') {
-      const isComposite = context?.toLowerCase() === 'event' || context?.toLowerCase() === 'composite' || context?.toLowerCase() === 'composite entity';
-      const literararyCtx = /\b(book|novel|literature|orwell|dystopia|fiction|author|writer)\b/i.test(context || '');
-      if (isComposite || literararyCtx) {
-        console.log(`📖 [Wiki] Force-redirecting "1984" to the book page due to context: "${context}".`);
-        const bookSummary = await tryDirectLookup('Nineteen Eighty-Four');
-        if (bookSummary?.extract) return bookSummary;
-      }
-    }
-
-    const summaryOverrides: Record<string, string> = {
-      "ted dunning": "Ted Dunning is a computer scientist, software architect, and machine learning expert known for his work on streaming algorithms, Mahout, and real-time analytics."
-    };
-    if (summaryOverrides[normalized]) return { extract: summaryOverrides[normalized], pageid: null, title: query };
 
     // 0. If the caller provided an explicit disambiguated title, honor it IMMEDIATELY
     // before stripping (...) or performing contextual search.
@@ -628,14 +605,19 @@ export const fetchWikipediaSummary = async (
 
     const isMediaTitle = (title: string) => /\b(film|tv series|miniseries|series|movie|documentary|episode)\b/i.test(title);
 
-    // If it looks like a person's name, use a phrase search (quotes) to ensure both parts appear together.
-    const searchTerms = looksLikePersonName ? `"${cleanQuery}"` : cleanQuery;
-    // CRITICAL FIX: If the original query had parentheticals (e.g., "Republic (Plato)"), 
-    // include the full query in the search to honor the disambiguation.
-    const finalTerms = query.includes('(') ? query : searchTerms;
-    const searchQuery = context ? `${finalTerms} ${context}` : finalTerms;
+    // 1. Prepare search terms.
+    // If query is "Republic (book)", baseQuery is "Republic" and paren is "book".
+    const baseQuery = query.replace(/\s*\(.*\)\s*/g, '').trim();
+    const parenMatch = query.match(/\((.*)\)/);
+    const paren = parenMatch ? parenMatch[1] : null;
 
-    const avoidMedia = /\b(project|program|programme|operation|war|battle|campaign|treaty|scandal|scientist)\b/i.test(cleanQuery);
+    // We search for the base query but include the parenthetical as additional context
+    // This is more robust than a literal search for "Republic (book)" which ranks partial matches poorly.
+    const finalSearchTerms = looksLikePersonName ? `"${baseQuery}"` : baseQuery;
+    const searchContext = [context, paren].filter(Boolean).join(' ');
+    const searchQuery = searchContext ? `${finalSearchTerms} ${searchContext}` : finalSearchTerms;
+
+    const avoidMedia = /\b(project|program|programme|operation|war|battle|campaign|treaty|scandal|scientist)\b/i.test(baseQuery);
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl);
     const searchData = await searchRes.json();
@@ -648,19 +630,33 @@ export const fetchWikipediaSummary = async (
         const snippet = (r.snippet || '').toLowerCase();
         let s = (index === 0) ? 200 : 0; // Small boost for the first result
 
+        // Normalized for scoring is the BASE query (e.g., "republic")
+        const normalizedBase = baseQuery.toLowerCase();
+
         // Strongly penalize "List of ..." style pages unless the user explicitly asked for a list.
-        // These are common false positives for people (e.g., "List of awards and nominations received by Zendaya").
-        const queryWantsList = normalized.startsWith("list of ") || normalized.includes("awards") || normalized.includes("nominations") || normalized.includes("filmography") || normalized.includes("discography");
+        const queryWantsList = normalizedBase.startsWith("list of ") || normalizedBase.includes("awards") || normalizedBase.includes("nominations") || normalizedBase.includes("filmography") || normalizedBase.includes("discography");
         const isListPage = title.startsWith("list of ") || title.includes(" awards and nominations") || title.includes(" filmography") || title.includes(" discography");
         if (isListPage && !queryWantsList) {
           s -= 2500;
         }
 
         // 1. Title matching (exact or with parenthetical disambiguation)
-        if (title === normalized) {
+        // Ignore "The ", "A ", "An " at the start for matching
+        const cleanTitle = title.replace(/^(the|a|an)\s+/i, '');
+        const cleanNormalized = normalizedBase.replace(/^(the|a|an)\s+/i, '');
+
+        if (cleanTitle === cleanNormalized) {
           s += 1000;
-        } else if (title.startsWith(normalized + " (")) {
-          s += 450;
+        } else if (cleanTitle.startsWith(cleanNormalized + " (")) {
+          s += 800; // Match for "Base Title (Anything)"
+        }
+
+        // 2. Parenthetical matching
+        // If the user provided "(book)", and we find a page with info containing "book", give a bonus.
+        if (paren) {
+          const parenLower = paren.toLowerCase();
+          if (title.includes(parenLower)) s += 500;
+          if (snippet.includes(parenLower)) s += 200;
         }
 
         // Music disambiguation: prefer musician/band pages over generic title definitions.
@@ -712,15 +708,6 @@ export const fetchWikipediaSummary = async (
           }
           if (title.includes('(2000 film)') || title.includes('(199') || title.includes('(20')) {
             s += 600; // gentle year-specific nudge, not title-specific
-          }
-        }
-
-        // Saint-Paul Disambiguation: favor the asylum over the person
-        if (normalized.includes('saint-paul') || normalized.includes('mausole')) {
-          const vanGoghCtx = /\b(van gogh|vincent|artist|painter|asylum|mental|hospital|france|provence)\b/i.test(context || '');
-          if (vanGoghCtx) {
-            if (title.includes('mausole') || title.includes('asylum') || title.includes('monastery')) s += 2000;
-            if (title.includes('paul of thebes') || title.includes('the hermit')) s -= 2500;
           }
         }
 

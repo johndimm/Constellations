@@ -94,11 +94,10 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
 
             const wiki = await fetchWikipediaSummary(term, wikiContext);
             const canonicalTitle = (wiki.title || term).trim();
-            const lowerCanon = canonicalTitle.toLowerCase();
-            const safeExploreTerm = (lowerCanon.startsWith('list of ') || lowerCanon.includes('awards and nominations') || lowerCanon.includes('filmography') || lowerCanon.includes('discography'))
-                ? term
-                : canonicalTitle;
-            setExploreTerm(safeExploreTerm);
+
+            // We no longer rewrite the user's query to the Wikipedia title.
+            // This ensures "Republic (book)" stays as "Republic (book)" in the UI.
+            setExploreTerm(term);
 
             const { id: nodeId } = await upsertNodeLocal(canonicalTitle, type, description || '', wiki);
 

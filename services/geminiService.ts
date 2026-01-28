@@ -154,6 +154,7 @@ export const classifyStartPair = async (
     };
   }
 
+
   if (!apiKey) {
     return {
       type: "Event",
@@ -248,17 +249,6 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
     };
   }
 
-  // Heuristic override: keep a high-signal default for an ambiguous title
-  if (normalized === 'the manhattan project' || normalized === 'manhattan project') {
-    return {
-      type: 'Event',
-      description: 'World War II research and development program that produced the first nuclear weapons.',
-      isAtomic: false,
-      atomicType: 'Person',
-      compositeType: 'Event',
-      reasoning: 'Not a person → treat as Event (Composite) in the Person↔Event graph.'
-    };
-  }
 
   if (!apiKey) {
     console.error("❌ [Gemini] classifyEntity: No API key found");
@@ -397,7 +387,6 @@ export const fetchConnections = async (
   const workSourceHint =
     (compositeType || "").trim().toLowerCase() === "event"
       ? `\nIf the Source is a named work (e.g., artwork/painting/sculpture/album/book/novel/film), you MUST return the primary creator(s) (author, artist, director, etc.) as the first few results. DO NOT omit the creator even if they are already widely known. Return people directly connected to the work (creator, depicted subject/model if distinct, commissioners/patrons, notable collectors/owners, curators/restorers/biographers explicitly associated). 
-- DO NOT return "Paul of Thebes" or "St. Paul the Hermit" for works by Van Gogh or related to "Saint-Paul-de-Mausole"; that is a mis-disambiguation of the place name.
 - Do NOT invent names; if only the creator is reliably connected, return only that person.`
       : "";
   const theorySourceHint =
@@ -405,6 +394,7 @@ export const fetchConnections = async (
       /\b(theory|physics|mathematics|discovery|principle|mechanics|evolution|relativity)\b/i.test(nodeName)
       ? `\nSPECIAL CASE (theory/concept/discovery): If the Source is a scientific theory, concept, or discovery, return the primary scientists, authors, or discoverers who established or significantly developed it.`
       : "";
+
 
   try {
     const prompt = `${contextualPrompt}${wikiPrompt}${mentionPrompt}${excludePrompt}
@@ -475,6 +465,8 @@ export const fetchConnections = async (
     console.log(`🎯 [isAtomic Debug] Entities returned for "${nodeName}" (${compositeLabel}):`,
       parsed.people.map(p => ({ name: p.name, isAtomic: p.isAtomic, type: p.isAtomic ? atomicLabel : compositeLabel }))
     );
+
+
     return parsed;
   } catch (error) {
     console.error("Gemini API Error:", error);
