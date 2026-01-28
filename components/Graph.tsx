@@ -29,6 +29,9 @@ export interface GraphHandle {
 
 const DEFAULT_CARD_SIZE = 220;
 
+// Helper to sanitize IDs for DOM selectors
+const safeId = (id: string | number) => String(id).replace(/[^a-zA-Z0-9-_]/g, '_');
+
 const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
     const {
         nodes,
@@ -789,15 +792,15 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
 
         const defs = nodeEnter.append("defs");
         defs.append("clipPath")
-            .attr("id", d => `clip-circle-${String(d.id)}`)
+            .attr("id", d => `clip-circle-${safeId(d.id)}`)
             .append("circle").attr("cx", 0).attr("cy", 0);
 
         defs.append("clipPath")
-            .attr("id", d => `clip-rect-${String(d.id)}`)
+            .attr("id", d => `clip-rect-${safeId(d.id)}`)
             .append("rect").attr("x", 0).attr("y", 0);
 
         defs.append("clipPath")
-            .attr("id", d => `clip-desc-${String(d.id)}`)
+            .attr("id", d => `clip-desc-${safeId(d.id)}`)
             .append("rect").attr("x", 0).attr("y", 0);
 
         nodeEnter.append("image").style("pointer-events", "none");
@@ -1105,8 +1108,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     .attr("width", r * 2)
                     .attr("height", r * 2)
                     .attr("preserveAspectRatio", "xMidYMid slice")
-                    .attr("clip-path", `url(#clip-circle-${String(d.id)})`);
-                g.select(`#clip-circle-${String(d.id)}`).select("circle").attr("r", r);
+                    .attr("clip-path", `url(#clip-circle-${safeId(d.id)})`);
+                g.select(`#clip-circle-${safeId(d.id)}`).select("circle").attr("r", r);
 
                 const labelText = g.select(".node-label").style("display", "block").text(null).attr("y", r + 15);
                 wrapText(d.title, 90).forEach((line, i) => labelText.append("tspan").attr("x", 0).attr("dy", i === 0 ? 0 : "1.2em").style("font-size", "10px").text(line));
@@ -1127,8 +1130,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                         .attr("width", w)
                         .attr("height", h)
                         .attr("preserveAspectRatio", "xMidYMid meet")
-                        .attr("clip-path", `url(#clip-rect-${String(d.id)})`);
-                    g.select(`#clip-rect-${String(d.id)}`).select("rect").attr("x", -w / 2).attr("y", -h / 2).attr("width", w).attr("height", h);
+                        .attr("clip-path", `url(#clip-rect-${safeId(d.id)})`);
+                    g.select(`#clip-rect-${safeId(d.id)}`).select("rect").attr("x", -w / 2).attr("y", -h / 2).attr("width", w).attr("height", h);
                 } else {
                     g.select("image").style("display", "none");
                 }
