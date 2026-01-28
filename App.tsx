@@ -158,6 +158,7 @@ const App: React.FC<AppProps> = ({
         contextMenu, setContextMenu, panelCollapsed, setPanelCollapsed,
         sidebarCollapsed, setSidebarCollapsed, sidebarToggleSignal, setSidebarToggleSignal,
         peopleBrowserOpen, setPeopleBrowserOpen, savedGraphs, setSavedGraphs,
+        serverGraphNames, setServerGraphNames,
         searchMode, setSearchMode, loadNodeImage, handleFindBetterImage, saveCacheNodeMeta
     } = state;
 
@@ -192,7 +193,8 @@ const App: React.FC<AppProps> = ({
         setPathNodeIds, fetchAndExpandNode, setIsProcessing, searchIdRef,
         cacheEnabled, cacheBaseUrl, setSavedGraphs, searchMode, exploreTerm,
         pathStart, pathEnd, isCompact, isTimelineMode, isTextOnly,
-        setExpandingNodeId, setNewChildNodeIds
+        setExpandingNodeId, setNewChildNodeIds,
+        serverGraphNames, setServerGraphNames
     });
 
     const onNodeClick = useNodeClickHandler({

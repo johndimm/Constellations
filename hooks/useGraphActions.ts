@@ -27,6 +27,8 @@ interface UseGraphActionsOptions {
     isTextOnly: boolean;
     setExpandingNodeId: (id: number | string | null) => void;
     setNewChildNodeIds: (ids: Set<string | number>) => void;
+    serverGraphNames: Set<string>;
+    setServerGraphNames: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
 export function useGraphActions(options: UseGraphActionsOptions) {
@@ -36,7 +38,8 @@ export function useGraphActions(options: UseGraphActionsOptions) {
         setPathNodeIds, fetchAndExpandNode, setIsProcessing, searchIdRef,
         cacheEnabled, cacheBaseUrl, setSavedGraphs, searchMode, exploreTerm,
         pathStart, pathEnd, isCompact, isTimelineMode, isTextOnly,
-        setExpandingNodeId, setNewChildNodeIds
+        setExpandingNodeId, setNewChildNodeIds,
+        serverGraphNames, setServerGraphNames
     } = options;
 
     const handleClear = useCallback(() => {
@@ -208,6 +211,11 @@ export function useGraphActions(options: UseGraphActionsOptions) {
                             method: "DELETE"
                         });
                         if (!res.ok) throw new Error("Database delete failed");
+                        setServerGraphNames(prev => {
+                            const next = new Set(prev);
+                            next.delete(name);
+                            return next;
+                        });
                     } catch (e) {
                         console.warn("Database delete failed, removing from local storage only", e);
                     }
@@ -257,6 +265,7 @@ export function useGraphActions(options: UseGraphActionsOptions) {
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ name, data })
                 });
+                setServerGraphNames(prev => new Set(prev).add(name));
             } catch (e) {
                 console.warn("Database save failed, saving to local storage only", e);
             }
@@ -268,7 +277,7 @@ export function useGraphActions(options: UseGraphActionsOptions) {
 
     const handleLoadGraph = useCallback(async (name: string, applyGraphData: (data: any, label: string) => void) => {
         let data: any = null;
-        if (cacheEnabled) {
+        if (cacheEnabled && serverGraphNames.has(name)) {
             try {
                 const res = await fetch(new URL(`/graphs/${encodeURIComponent(name)}`, cacheBaseUrl).toString());
                 if (res.ok) {

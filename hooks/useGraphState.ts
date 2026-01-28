@@ -76,6 +76,7 @@ export function useGraphState(options: UseGraphStateOptions) {
     const [sidebarToggleSignal, setSidebarToggleSignal] = useState(0);
     const [peopleBrowserOpen, setPeopleBrowserOpen] = useState(false);
     const [savedGraphs, setSavedGraphs] = useState<string[]>([]);
+    const [serverGraphNames, setServerGraphNames] = useState<Set<string>>(new Set());
 
     const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
     useEffect(() => {
@@ -321,6 +322,7 @@ export function useGraphState(options: UseGraphStateOptions) {
                         const data = await res.json();
                         // Endpoint returns array of { name, updated_at }
                         serverGraphs = data.map((g: any) => g.name);
+                        setServerGraphNames(new Set(serverGraphs));
                     }
                 } catch (e) {
                     // console.warn("Failed to fetch saved graphs from server", e);
@@ -396,6 +398,8 @@ export function useGraphState(options: UseGraphStateOptions) {
         graphRef,
         savedGraphs,
         setSavedGraphs,
+        serverGraphNames,
+        setServerGraphNames,
         searchMode,
         setSearchMode
     };
