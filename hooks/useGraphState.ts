@@ -306,6 +306,32 @@ export function useGraphState(options: UseGraphStateOptions) {
         }
     }, [nodes, links]);
 
+    // Load saved graphs on init
+    useEffect(() => {
+        const loadSavedGraphs = async () => {
+            const localGraphs = Object.keys(localStorage)
+                .filter(k => k.startsWith('constellations_graph_'))
+                .map(k => k.replace('constellations_graph_', ''));
+
+            let serverGraphs: string[] = [];
+            if (cacheEnabled && cacheBaseUrl) {
+                try {
+                    const res = await fetch(new URL("/graphs", cacheBaseUrl).toString());
+                    if (res.ok) {
+                        const data = await res.json();
+                        // Endpoint returns array of { name, updated_at }
+                        serverGraphs = data.map((g: any) => g.name);
+                    }
+                } catch (e) {
+                    console.warn("Failed to fetch saved graphs from server", e);
+                }
+            }
+
+            setSavedGraphs(Array.from(new Set([...localGraphs, ...serverGraphs])).sort());
+        };
+        loadSavedGraphs();
+    }, [cacheEnabled, cacheBaseUrl]);
+
     return {
         graphData,
         setGraphData,

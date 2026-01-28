@@ -253,7 +253,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       setShowSave(!showSave);
                       setShowLoad(false);
                       setShowShare(false);
-                      onToggleHelp();
+                      if (showHelp) onToggleHelp();
                       onHelpHoverChange(null);
                     }}
                     className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
@@ -266,7 +266,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       setShowLoad(!showLoad);
                       setShowSave(false);
                       setShowShare(false);
-                      onToggleHelp();
+                      if (showHelp) onToggleHelp();
                     }}
                     className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
                     title="Load Graph"
@@ -278,7 +278,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       setShowShare(!showShare);
                       setShowSave(false);
                       setShowLoad(false);
-                      onToggleHelp();
+                      if (showHelp) onToggleHelp();
                       onHelpHoverChange(null);
                     }}
                     className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}

@@ -113,7 +113,7 @@ const HelpOverlay: React.FC<HelpOverlayProps> = ({
 
                     {isExtension ? (
                         <a
-                            href="https://constellations-beaf.onrender.com"
+                            href="https://constellations-delta.vercel.app"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 transition-colors"

@@ -108,7 +108,7 @@ const ExtensionControls: React.FC<{
                     <button
                         onClick={() => {
                             const isExtension = window.location.protocol === 'chrome-extension:';
-                            const baseOrigin = isExtension ? 'https://constellations-beaf.onrender.com' : window.location.origin;
+                            const baseOrigin = isExtension ? 'https://constellations-delta.vercel.app' : window.location.origin;
                             const url = new URL(baseOrigin);
                             if (exploreTerm) url.searchParams.set('q', exploreTerm);
                             window.open(url.toString(), '_blank');
