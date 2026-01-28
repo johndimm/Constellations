@@ -273,7 +273,7 @@ export function useGraphActions(options: UseGraphActionsOptions) {
                 const res = await fetch(new URL(`/graphs/${encodeURIComponent(name)}`, cacheBaseUrl).toString());
                 if (res.ok) {
                     const json = await res.json();
-                    data = json.data;
+                    data = json;
                 }
             } catch (e) { console.warn("Database load failed, checking local storage", e); }
         }
