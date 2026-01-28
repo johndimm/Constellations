@@ -1343,8 +1343,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     if (dropHighlight.has(sId) || dropHighlight.has(tId)) return 0.12;
                     // Priority 1: Path highlighting - only highlight links that are actually in the path sequence
                     if (hasHighlight && pathLinkIds.has(d.id)) return 0.9;
-                    // Priority 2: Other links when path highlighting is active
-                    if (hasHighlight && (!keepHighlight.has(sId) || !keepHighlight.has(tId))) return 0.25;
+                    // Priority 2: Other links when path highlighting is active - only dim if BOTH endpoints are not highlighted
+                    if (hasHighlight && !keepHighlight.has(sId) && !keepHighlight.has(tId)) return 0.25;
                     // Priority 3: Expansion/Selection highlighting
                     if (expandingNodeId !== null) {
                         const sourceNode = nodes.find(n => n.id === sId);

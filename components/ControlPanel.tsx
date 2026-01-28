@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, Download, Upload, Share2, Copy, Users } from 'lucide-react';
+import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, ChevronDown, Download, Upload, Share2, Copy, Users } from 'lucide-react';
 import { DEFAULT_KIOSK_DOMAINS, KIOSK_DOMAINS_STORAGE_KEY, KIOSK_SELECTED_DOMAIN_STORAGE_KEY, saveKioskDomains, saveSelectedKioskDomainId } from '../kioskDomains';
 import type { KioskDomain } from '../kioskDomains';
 
@@ -97,6 +97,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const [newDomainLabel, setNewDomainLabel] = useState('');
   const [newTerm, setNewTerm] = useState('');
   const [bulkTerms, setBulkTerms] = useState('');
+
+  // Collapsible sections state - combined toggle for examples section
+  const [showExamples, setShowExamples] = useState(false);
 
   // Save/Load/Share State
   const [showSave, setShowSave] = useState(false);
@@ -549,41 +552,53 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   </div>
                 )}
 
-                {/* Domain selector (below text input) */}
-                {kioskDomains.length > 0 && (
+                {/* Group: Kiosk Domain Selector */}
+                {kioskDomains.length > 0 && onSelectKioskDomain && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <div className="text-[11px] text-slate-400 uppercase tracking-wider">Domain</div>
-                      {isAdminMode && onUpdateKioskDomains && (
+                      <button
+                        type="button"
+                        onClick={() => setShowExamples(!showExamples)}
+                        className="text-[11px] text-slate-300 hover:text-white uppercase tracking-wider flex items-center gap-1.5"
+                      >
+                        {showExamples ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                        Examples {!showExamples && `(Domains • Start Here)`}
+                      </button>
+                      {isAdminMode && onUpdateKioskDomains && showExamples && (
                         <button
                           type="button"
                           className="text-[11px] text-slate-300 hover:text-white underline"
                           onClick={() => setShowEditDomains(true)}
                         >
-                          Edit domains
+                          Edit
                         </button>
                       )}
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {kioskDomains.map(d => (
-                        <button
-                          key={d.id}
-                          type="button"
-                          onClick={() => onSelectKioskDomain?.(d.id)}
-                          className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${(selectedKioskDomainId || kioskDomains[0].id) === d.id
-                            ? 'bg-amber-500 text-slate-900 border-amber-400'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                            }`}
-                          disabled={isProcessing}
-                        >
-                          {d.label}
-                        </button>
-                      ))}
-                    </div>
-                    {selectedDomain?.description && (
-                      <div className="text-[11px] text-slate-400 leading-snug">
-                        <div>{selectedDomain.description}</div>
-                      </div>
+
+                    {showExamples && (
+                      <>
+                        <div className="flex flex-wrap gap-1.5">
+                          {kioskDomains.map(d => (
+                            <button
+                              key={d.id}
+                              type="button"
+                              onClick={() => onSelectKioskDomain?.(d.id)}
+                              className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${(selectedKioskDomainId || kioskDomains[0].id) === d.id
+                                ? 'bg-amber-500 text-slate-900 border-amber-400'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                                }`}
+                              disabled={isProcessing}
+                            >
+                              {d.label}
+                            </button>
+                          ))}
+                        </div>
+                        {selectedDomain?.description && (
+                          <div className="text-[11px] text-slate-400 leading-snug">
+                            <div>{selectedDomain.description}</div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -593,27 +608,27 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
 
             <div className="space-y-2 flex-1 min-h-0 flex flex-col">
-              <div className="text-[11px] text-slate-400 uppercase tracking-wider">Start here</div>
-              {/* Seed list (domain terms, falling back to examples) */}
-              <div className="flex flex-wrap gap-1.5 overflow-y-auto overflow-x-hidden pr-1 flex-1 min-h-0">
-                {(kioskSeedTerms.length ? kioskSeedTerms : EXAMPLES).map(term => (
-                  <button
-                    key={term}
-                    type="button"
-                    onClick={() => {
-                      setSearchMode('explore');
-                      setExploreTerm(term);
-                      onSearch(term);
-                      setHasStarted(true);
-                      if (window.innerWidth < 768) onSetCollapsed(true);
-                    }}
-                    className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-full border border-slate-700 transition-colors"
-                    disabled={isProcessing}
-                  >
-                    {term}
-                  </button>
-                ))}
-              </div>
+              {showExamples && (
+                <div className="flex flex-wrap gap-1.5 overflow-y-auto overflow-x-hidden pr-1 flex-1 min-h-0">
+                  {(kioskSeedTerms.length ? kioskSeedTerms : EXAMPLES).map(term => (
+                    <button
+                      key={term}
+                      type="button"
+                      onClick={() => {
+                        setSearchMode('explore');
+                        setExploreTerm(term);
+                        onSearch(term);
+                        setHasStarted(true);
+                        if (window.innerWidth < 768) onSetCollapsed(true);
+                      }}
+                      className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-full border border-slate-700 transition-colors"
+                      disabled={isProcessing}
+                    >
+                      {term}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

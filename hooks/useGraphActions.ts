@@ -206,8 +206,29 @@ export function useGraphActions(options: UseGraphActionsOptions) {
         });
     }, [cacheEnabled, cacheBaseUrl, setConfirmDialog, setSavedGraphs, setNotification]);
 
-    const handleSaveGraph = useCallback(async () => {
-        const name = prompt("Enter a name for this graph:");
+    const handleSaveGraph = useCallback(async (nameOrSpecial?: string) => {
+        // Special case: Copy Link - just generate URL with current starting term
+        if (nameOrSpecial === '__COPY_LINK__') {
+            const baseUrl = window.location.origin + window.location.pathname;
+            const shareUrl = `${baseUrl}?q=${encodeURIComponent(exploreTerm || 'Einstein')}`;
+
+            try {
+                await navigator.clipboard.writeText(shareUrl);
+                setNotification({ message: `Link copied to clipboard!`, type: 'success' });
+            } catch (e) {
+                // Fallback for older browsers
+                const textarea = document.createElement('textarea');
+                textarea.value = shareUrl;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                setNotification({ message: `Link copied to clipboard!`, type: 'success' });
+            }
+            return;
+        }
+
+        const name = nameOrSpecial || prompt("Enter a name for this graph:");
         if (!name) return;
 
         const data = {

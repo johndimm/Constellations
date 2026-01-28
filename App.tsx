@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { buildWikiUrl } from './utils/wikiUtils';
 import { Key, Search, HelpCircle, Minimize2, Maximize2, ExternalLink } from 'lucide-react';
 import Graph from './components/Graph';
@@ -244,6 +244,19 @@ const App: React.FC<AppProps> = ({
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
     }, [setPeopleBrowserOpen]);
+
+    // Auto-start search if ?q= parameter is present in URL
+    const urlQueryProcessedRef = useRef(false);
+    useEffect(() => {
+        if (urlQueryProcessedRef.current) return;
+
+        const params = new URLSearchParams(window.location.search);
+        const queryParam = params.get('q');
+        if (queryParam && isKeyReady && nodes.length === 0) {
+            urlQueryProcessedRef.current = true;
+            handleStartSearch(queryParam);
+        }
+    }, [isKeyReady, nodes.length, handleStartSearch]);
 
     const applyGraphData = useCallback((data: any, sourceLabel: string) => {
         try {
