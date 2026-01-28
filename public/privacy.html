@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - Constellations</title>
+    <meta name="description" content="Privacy policy for Constellations Chrome extension and web application.">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 50px 40px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.95;
+        }
+
+        .content {
+            padding: 50px 40px;
+        }
+
+        h2 {
+            color: #667eea;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        h2:first-child {
+            margin-top: 0;
+        }
+
+        h3 {
+            color: #764ba2;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        p {
+            margin-bottom: 15px;
+            color: #4a4a4a;
+            font-size: 1.05rem;
+        }
+
+        ul {
+            margin-left: 25px;
+            margin-bottom: 20px;
+            color: #4a4a4a;
+        }
+
+        li {
+            margin-bottom: 10px;
+        }
+
+        .highlight-box {
+            background: #f0f4ff;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            margin: 20px 0;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 30px;
+            background: #f9f9f9;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        .last-updated {
+            font-style: italic;
+            color: #888;
+            margin-bottom: 30px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔒 Privacy Policy</h1>
+            <p class="subtitle">Constellations Chrome Extension & Web Application</p>
+        </div>
+
+        <div class="content">
+            <p class="last-updated">Last Updated: January 27, 2026</p>
+
+            <h2>Our Commitment to Privacy</h2>
+            <p>
+                Constellations is designed with privacy in mind. We do not collect, store, or share any personal
+                information about our users. This privacy policy explains what data the extension accesses and how
+                it is used.
+            </p>
+
+            <h2>Information We Do NOT Collect</h2>
+            <div class="highlight-box">
+                <p><strong>We do not collect:</strong></p>
+                <ul>
+                    <li>Personal identification information (name, email, address, etc.)</li>
+                    <li>Browsing history or activity</li>
+                    <li>Demographic information</li>
+                    <li>Cookies for tracking purposes</li>
+                    <li>Any personally identifiable information (PII)</li>
+                </ul>
+            </div>
+
+            <h2>Data the Extension Accesses</h2>
+            <p>To provide its core functionality, the Constellations extension accesses:</p>
+
+            <h3>Wikipedia Content</h3>
+            <p>
+                The extension reads public Wikipedia article content to extract entity names and generate knowledge
+                graphs. This is done in real-time and no personal data is involved.
+            </p>
+
+            <h3>Active Tab Permission</h3>
+            <p>
+                Used to read the current Wikipedia page title when you use the right-click context menu to explore
+                connections. This allows you to start exploring from any article without manual input.
+            </p>
+
+            <h2>Data Storage</h2>
+
+            <h3>Local Storage (On Your Device)</h3>
+            <p>
+                The extension stores the following data locally on your device using Chrome's storage API:
+            </p>
+            <ul>
+                <li><strong>User Preferences:</strong> Your graph layout settings, theme preferences, and display
+                    options</li>
+                <li><strong>Saved Graphs:</strong> Graphs you explicitly choose to save for later viewing</li>
+            </ul>
+            <p>
+                This data never leaves your device and is stored solely for your convenience. You can clear
+                this data at any time through Chrome's extension settings or by using the extension's clear/reset
+                functions.
+            </p>
+
+            <h3>Server-Side Caching</h3>
+            <p>
+                To improve performance and reduce API costs, our backend server caches:
+            </p>
+            <ul>
+                <li><strong>Graph Responses:</strong> AI-generated graph data for common queries</li>
+                <li><strong>Image URLs:</strong> Links to Wikipedia/Wikimedia images</li>
+                <li><strong>Entity Information:</strong> Public data about people, events, and concepts from Wikipedia
+                </li>
+            </ul>
+            <p>
+                This cached data is anonymous and contains no personally identifiable information. It is derived
+                entirely from public sources (Wikipedia, Wikidata, academic databases).
+            </p>
+
+            <h2>Network Communications</h2>
+            <p>The extension communicates with:</p>
+            <ul>
+                <li><strong>Wikipedia/Wikimedia:</strong> To read article content and retrieve images</li>
+                <li><strong>Constellations Backend API:</strong> To generate knowledge graphs using AI</li>
+                <li><strong>Google AI (Gemini):</strong> For entity classification and graph generation (via our
+                    backend)</li>
+            </ul>
+            <p>
+                All communications are for functional purposes only - generating graphs and retrieving public
+                information. No user tracking or analytics are performed.
+            </p>
+
+            <h2>Third-Party Services</h2>
+            <p>The extension uses the following third-party services:</p>
+            <ul>
+                <li><strong>Google Gemini AI:</strong> For natural language processing and graph generation</li>
+                <li><strong>Wikipedia API:</strong> For article content and metadata</li>
+                <li><strong>Wikimedia Commons:</strong> For images</li>
+            </ul>
+            <p>
+                These services are used strictly for providing the core functionality of Constellations.
+                We do not share any personal data with these services.
+            </p>
+
+            <h2>Permissions Explained</h2>
+            <p>The extension requests the following permissions:</p>
+            <ul>
+                <li><strong>activeTab:</strong> To read the current Wikipedia page title for quick exploration</li>
+                <li><strong>contextMenus:</strong> To add a right-click option on Wikipedia pages</li>
+                <li><strong>sidePanel:</strong> To display the graph in Chrome's side panel</li>
+                <li><strong>storage:</strong> To save your preferences and graphs locally</li>
+                <li><strong>Host permissions (wikipedia.org, wikimedia.org, backend):</strong> To access public content
+                    and generate graphs</li>
+            </ul>
+
+            <h2>Data Security</h2>
+            <p>
+                All network communications use HTTPS encryption. Data stored locally is protected by Chrome's
+                security mechanisms. Server-side cached data contains only public information with no user identifiers.
+            </p>
+
+            <h2>Children's Privacy</h2>
+            <p>
+                Constellations does not knowingly collect any information from children under 13. The extension
+                is designed for general educational and research use.
+            </p>
+
+            <h2>Changes to This Policy</h2>
+            <p>
+                We may update this privacy policy from time to time. Changes will be posted on this page with
+                an updated "Last Updated" date. Continued use of the extension after changes constitutes
+                acceptance of the updated policy.
+            </p>
+
+            <h2>Contact Us</h2>
+            <p>
+                If you have questions about this privacy policy, please contact us:
+            </p>
+            <ul>
+                <li>GitHub: <a href="https://github.com/johndimm/Constellations/issues"
+                        target="_blank">github.com/johndimm/Constellations/issues</a></li>
+                <li>Email: support@constellations.app</li>
+            </ul>
+
+            <h2>Your Rights</h2>
+            <p>
+                Since we do not collect personal data, there is no personal data to access, modify, or delete.
+                You can:
+            </p>
+            <ul>
+                <li>Clear locally stored preferences and graphs at any time through Chrome settings</li>
+                <li>Uninstall the extension to remove all local data</li>
+                <li>Contact us with any privacy concerns</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>
+                <a href="homepage.html">Home</a> ·
+                <a href="support.html">Support</a> ·
+                <a href="https://constellations-delta.vercel.app/">Live Demo</a> ·
+                <a href="https://github.com/johndimm/Constellations">GitHub</a>
+            </p>
+        </div>
+    </div>
+</body>
+
+</html>
