@@ -76,7 +76,6 @@ export function useGraphState(options: UseGraphStateOptions) {
     const [sidebarToggleSignal, setSidebarToggleSignal] = useState(0);
     const [peopleBrowserOpen, setPeopleBrowserOpen] = useState(false);
     const [savedGraphs, setSavedGraphs] = useState<string[]>([]);
-    const [serverGraphNames, setServerGraphNames] = useState<Set<string>>(new Set());
 
     const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
     useEffect(() => {
@@ -310,26 +309,19 @@ export function useGraphState(options: UseGraphStateOptions) {
     // Load saved graphs on init
     useEffect(() => {
         const loadSavedGraphs = async () => {
-            const localGraphs = Object.keys(localStorage)
-                .filter(k => k.startsWith('constellations_graph_'))
-                .map(k => k.replace('constellations_graph_', ''));
-
-            let serverGraphs: string[] = [];
             if (cacheEnabled && cacheBaseUrl) {
                 try {
                     const res = await fetch(new URL("/graphs", cacheBaseUrl).toString());
                     if (res.ok) {
                         const data = await res.json();
                         // Endpoint returns array of { name, updated_at }
-                        serverGraphs = data.map((g: any) => g.name);
-                        setServerGraphNames(new Set(serverGraphs));
+                        const serverGraphs = data.map((g: any) => g.name);
+                        setSavedGraphs(serverGraphs.sort());
                     }
                 } catch (e) {
                     // console.warn("Failed to fetch saved graphs from server", e);
                 }
             }
-
-            setSavedGraphs(Array.from(new Set([...localGraphs, ...serverGraphs])).sort());
         };
         loadSavedGraphs();
     }, [cacheEnabled, cacheBaseUrl]);
@@ -398,8 +390,6 @@ export function useGraphState(options: UseGraphStateOptions) {
         graphRef,
         savedGraphs,
         setSavedGraphs,
-        serverGraphNames,
-        setServerGraphNames,
         searchMode,
         setSearchMode
     };

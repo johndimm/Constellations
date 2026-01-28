@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, ChevronDown, Download, Upload, Share2, Copy, Users } from 'lucide-react';
-import { DEFAULT_KIOSK_DOMAINS, KIOSK_DOMAINS_STORAGE_KEY, KIOSK_SELECTED_DOMAIN_STORAGE_KEY, saveKioskDomains, saveSelectedKioskDomainId } from '../kioskDomains';
+import { DEFAULT_KIOSK_DOMAINS, saveKioskDomains, saveSelectedKioskDomainId } from '../kioskDomains';
 import type { KioskDomain } from '../kioskDomains';
 
 interface ControlPanelProps {
@@ -192,14 +192,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     }
   }, [editDomainId, kioskDomains, selectedKioskDomainId]);
 
-  // In admin mode, opening the editor initializes the localStorage copy (so edits are local-only).
+  // In admin mode, opening the editor initializes state. Persistence is disabled.
   useEffect(() => {
     if (!showEditDomains || !isAdminMode) return;
     try {
-      if (!localStorage.getItem(KIOSK_DOMAINS_STORAGE_KEY)) {
-        saveKioskDomains(kioskDomains);
-      }
-      if (selectedKioskDomainId && !localStorage.getItem(KIOSK_SELECTED_DOMAIN_STORAGE_KEY)) {
+      saveKioskDomains(kioskDomains);
+      if (selectedKioskDomainId) {
         saveSelectedKioskDomainId(selectedKioskDomainId);
       }
     } catch { }
@@ -878,18 +876,16 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     type="button"
                     className="text-[11px] px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-red-200 border border-red-900/50"
                     onClick={() => {
-                      const ok = window.confirm("Reset domains to the shipped defaults? This overwrites your local edits.");
+                      const ok = window.confirm("Reset domains to the shipped defaults? This overwrites your current session changes.");
                       if (!ok) return;
-                      try {
-                        localStorage.setItem(KIOSK_DOMAINS_STORAGE_KEY, JSON.stringify(DEFAULT_KIOSK_DOMAINS));
-                        // Also reset selection to the first default domain.
-                        const nextId = DEFAULT_KIOSK_DOMAINS[0]?.id;
-                        if (nextId) {
-                          saveSelectedKioskDomainId(nextId);
-                          onSelectKioskDomain?.(nextId);
-                        }
-                      } catch { }
+                      // Just reset state. Since persistence is disabled, no localStorage work needed.
                       onUpdateKioskDomains([...DEFAULT_KIOSK_DOMAINS]);
+
+                      const nextId = DEFAULT_KIOSK_DOMAINS[0]?.id;
+                      if (nextId) {
+                        saveSelectedKioskDomainId(nextId);
+                        onSelectKioskDomain?.(nextId);
+                      }
                       setEditDomainId(DEFAULT_KIOSK_DOMAINS[0]?.id || null);
                     }}
                     title="Reset local domains to defaults"

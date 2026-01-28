@@ -27,8 +27,6 @@ interface UseGraphActionsOptions {
     isTextOnly: boolean;
     setExpandingNodeId: (id: number | string | null) => void;
     setNewChildNodeIds: (ids: Set<string | number>) => void;
-    serverGraphNames: Set<string>;
-    setServerGraphNames: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
 export function useGraphActions(options: UseGraphActionsOptions) {
@@ -38,8 +36,7 @@ export function useGraphActions(options: UseGraphActionsOptions) {
         setPathNodeIds, fetchAndExpandNode, setIsProcessing, searchIdRef,
         cacheEnabled, cacheBaseUrl, setSavedGraphs, searchMode, exploreTerm,
         pathStart, pathEnd, isCompact, isTimelineMode, isTextOnly,
-        setExpandingNodeId, setNewChildNodeIds,
-        serverGraphNames, setServerGraphNames
+        setExpandingNodeId, setNewChildNodeIds
     } = options;
 
     const handleClear = useCallback(() => {
@@ -211,18 +208,13 @@ export function useGraphActions(options: UseGraphActionsOptions) {
                             method: "DELETE"
                         });
                         if (!res.ok) throw new Error("Database delete failed");
-                        setServerGraphNames(prev => {
-                            const next = new Set(prev);
-                            next.delete(name);
-                            return next;
-                        });
+                        setSavedGraphs(prev => prev.filter(n => n !== name));
+                        setNotification({ message: `Graph "${name}" deleted.`, type: 'success' });
                     } catch (e) {
-                        console.warn("Database delete failed, removing from local storage only", e);
+                        console.error("Database delete failed", e);
+                        setNotification({ message: "Failed to delete graph.", type: 'error' });
                     }
                 }
-                localStorage.removeItem(`constellations_graph_${name}`);
-                setSavedGraphs(prev => prev.filter(n => n !== name));
-                setNotification({ message: `Graph "${name}" deleted.`, type: 'success' });
             }
         });
     }, [cacheEnabled, cacheBaseUrl, setConfirmDialog, setSavedGraphs, setNotification]);
@@ -265,34 +257,31 @@ export function useGraphActions(options: UseGraphActionsOptions) {
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ name, data })
                 });
-                setServerGraphNames(prev => new Set(prev).add(name));
+                setSavedGraphs(prev => Array.from(new Set([...prev, name])));
+                setNotification({ message: `Graph "${name}" saved!`, type: 'success' });
             } catch (e) {
-                console.warn("Database save failed, saving to local storage only", e);
+                console.error("Database save failed", e);
+                setNotification({ message: "Failed to save graph.", type: 'error' });
             }
         }
-        localStorage.setItem(`constellations_graph_${name}`, JSON.stringify(data));
-        setSavedGraphs(prev => Array.from(new Set([...prev, name])));
-        setNotification({ message: `Graph "${name}" saved!`, type: 'success' });
     }, [nodes, links, searchMode, exploreTerm, pathStart, pathEnd, isCompact, isTimelineMode, isTextOnly, cacheEnabled, cacheBaseUrl, setSavedGraphs, setNotification]);
 
     const handleLoadGraph = useCallback(async (name: string, applyGraphData: (data: any, label: string) => void) => {
-        let data: any = null;
-        if (cacheEnabled && serverGraphNames.has(name)) {
+        if (cacheEnabled) {
             try {
                 const res = await fetch(new URL(`/graphs/${encodeURIComponent(name)}`, cacheBaseUrl).toString());
                 if (res.ok) {
                     const json = await res.json();
-                    data = json;
+                    applyGraphData(json, name);
+                } else {
+                    throw new Error("Graph not found");
                 }
-            } catch (e) { console.warn("Database load failed, checking local storage", e); }
+            } catch (e) {
+                console.warn("Database load failed", e);
+                setNotification({ message: `Failed to load "${name}".`, type: 'error' });
+            }
         }
-        if (!data) {
-            const local = localStorage.getItem(`constellations_graph_${name}`);
-            if (local) data = JSON.parse(local);
-        }
-        if (data) applyGraphData(data, name);
-        else setNotification({ message: `Failed to load "${name}".`, type: 'error' });
-    }, [cacheEnabled, cacheBaseUrl, setNotification, serverGraphNames]);
+    }, [cacheEnabled, cacheBaseUrl, setNotification]);
 
     const handleImport = useCallback((e: React.ChangeEvent<HTMLInputElement>, applyGraphData: (data: any, label: string) => void) => {
         const file = e.target.files?.[0];

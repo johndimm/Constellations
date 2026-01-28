@@ -25,12 +25,11 @@ export function useKioskMode() {
     );
 
     useEffect(() => {
-        // Admin workflow: domains become editable once copied to localStorage.
-        // Outside admin, we only persist if a local copy already exists (i.e., user previously customized).
-        const persistEnabled = isAdminMode || hasLocalKioskDomains();
-        if (!persistEnabled) return;
-        try { saveKioskDomains(kioskDomains); } catch { }
-        try { saveSelectedKioskDomainId(selectedKioskDomainId); } catch { }
+        // Persistence is currently disabled.
+        // const persistEnabled = isAdminMode || hasLocalKioskDomains();
+        // if (!persistEnabled) return;
+        // try { saveKioskDomains(kioskDomains); } catch { }
+        // try { saveSelectedKioskDomainId(selectedKioskDomainId); } catch { }
     }, [kioskDomains, selectedKioskDomainId, isAdminMode]);
 
     const selectedKioskDomain = kioskDomains.find(d => d.id === selectedKioskDomainId) || kioskDomains[0];

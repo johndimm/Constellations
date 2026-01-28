@@ -284,113 +284,26 @@ export const KIOSK_DOMAINS_STORAGE_KEY = "constellations_kiosk_domains_v1";
 export const KIOSK_SELECTED_DOMAIN_STORAGE_KEY = "constellations_kiosk_selected_domain_v1";
 
 export function hasLocalKioskDomains(): boolean {
-  try {
-    return !!localStorage.getItem(KIOSK_DOMAINS_STORAGE_KEY);
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 export function clearLocalKioskDomains() {
-  try {
-    localStorage.removeItem(KIOSK_DOMAINS_STORAGE_KEY);
-  } catch { }
 }
 
 export function clearLocalSelectedKioskDomainId() {
-  try {
-    localStorage.removeItem(KIOSK_SELECTED_DOMAIN_STORAGE_KEY);
-  } catch { }
 }
 
 export function loadKioskDomains(): KioskDomain[] {
-  try {
-    const raw = localStorage.getItem(KIOSK_DOMAINS_STORAGE_KEY);
-    if (!raw) return DEFAULT_KIOSK_DOMAINS;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return DEFAULT_KIOSK_DOMAINS;
-    const cleaned: KioskDomain[] = parsed
-      .filter((d: any) => d && typeof d.id === "string" && typeof d.label === "string" && Array.isArray(d.terms))
-      .map((d: any) => ({
-        id: String(d.id),
-        label: String(d.label),
-        description: typeof d.description === "string" ? d.description : undefined,
-        lockPair: (d.lockPair && typeof d.lockPair === "object" && typeof d.lockPair.atomicType === "string" && typeof d.lockPair.compositeType === "string")
-          ? { atomicType: String(d.lockPair.atomicType), compositeType: String(d.lockPair.compositeType) }
-          : undefined,
-        terms: d.terms.map((t: any) => String(t)).filter((t: string) => t.trim().length > 0)
-      }))
-      .filter((d: KioskDomain) => d.id.trim().length > 0 && d.label.trim().length > 0);
-
-    // Migration: remove the retired "Universal (unlocked)" domain if present in local storage.
-    const cleanedWithoutUniversal = cleaned.filter(d => d.id !== "universal");
-
-    // Migration: keep History focused on "people & events" (remove science/AI figures that accidentally landed there).
-    const HISTORY_REMOVE = new Set([
-      "john von neumann",
-      "john von neuman",
-      "john von neumann ",
-      "geoffrey hinton",
-      "wright brothers",
-      "first flight (wright brothers)"
-    ]);
-    const cleanedWithHistoryFix = cleanedWithoutUniversal.map(d => {
-      if (d.id !== "history") return d;
-      const terms = d.terms.filter(t => !HISTORY_REMOVE.has(t.trim().toLowerCase()));
-      return terms.length === d.terms.length ? d : { ...d, terms };
-    });
-
-    // Merge in any NEW default domains/terms without clobbering curated edits.
-    // - If a default domain is missing entirely, add it.
-    // - If it exists, keep the user's label/lockPair/description, but append any missing default terms.
-    const byId = new Map<string, KioskDomain>(cleanedWithHistoryFix.map(d => [d.id, d]));
-    DEFAULT_KIOSK_DOMAINS.forEach(def => {
-      const existing = byId.get(def.id);
-      if (!existing) {
-        byId.set(def.id, def);
-        return;
-      }
-
-      // Targeted label/description migrations for older shipped defaults (do not clobber curated edits).
-      if (def.id === "mathematicians" && existing.label === "Mathematicians") {
-        existing.label = def.label; // "Mathematics"
-        if (!existing.description || existing.description === "Famous mathematicians and foundational ideas (good for Person ↔ Event-style exploration).") {
-          existing.description = def.description;
-        }
-      }
-
-      const termSet = new Set(existing.terms.map(t => t.toLowerCase()));
-      const mergedTerms = [...existing.terms];
-      def.terms.forEach(t => {
-        const key = t.toLowerCase();
-        if (!termSet.has(key)) {
-          termSet.add(key);
-          mergedTerms.push(t);
-        }
-      });
-      byId.set(def.id, { ...existing, terms: mergedTerms });
-    });
-
-    const merged = Array.from(byId.values()).filter(d => d.id !== "universal");
-    return merged.length ? merged : DEFAULT_KIOSK_DOMAINS;
-  } catch {
-    return DEFAULT_KIOSK_DOMAINS;
-  }
+  return DEFAULT_KIOSK_DOMAINS;
 }
 
 export function saveKioskDomains(domains: KioskDomain[]) {
-  localStorage.setItem(KIOSK_DOMAINS_STORAGE_KEY, JSON.stringify(domains));
 }
 
 export function loadSelectedKioskDomainId(domains: KioskDomain[]): string {
-  try {
-    const raw = localStorage.getItem(KIOSK_SELECTED_DOMAIN_STORAGE_KEY);
-    if (raw && raw !== "universal" && domains.some(d => d.id === raw)) return raw;
-  } catch { }
   return domains[0]?.id || "history";
 }
 
 export function saveSelectedKioskDomainId(domainId: string) {
-  localStorage.setItem(KIOSK_SELECTED_DOMAIN_STORAGE_KEY, domainId);
 }
 
