@@ -103,11 +103,11 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         return div.innerHTML;
     }
 
-    const isPersonNode = useCallback((node: GraphNode) => node.is_atomic === true || node.is_person === true || node.type?.toLowerCase() === 'person' || node.type?.toLowerCase() === 'actor', []);
+    const isAtomicNode = useCallback((node: GraphNode) => node.is_atomic === true || node.is_person === true, []);
 
     const timelineNodes = useMemo(() => {
         return nodes
-            .filter(n => !isPersonNode(n))
+            .filter(n => !isAtomicNode(n))
             .sort((a, b) => {
                 const hasA = a.year !== undefined && a.year !== null && a.year !== 0;
                 const hasB = b.year !== undefined && b.year !== null && b.year !== 0;
@@ -124,7 +124,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
 
                 return a.id - b.id;
             });
-    }, [nodes, isPersonNode]);
+    }, [nodes, isAtomicNode]);
 
     const centerOnNode = useCallback((nodeId: number, scale?: number) => {
         const node = nodes.find(n => n.id === nodeId);
@@ -158,7 +158,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
 
     // Calculate dynamic dimensions for nodes
     const getNodeDimensions = (node: GraphNode, isTimeline: boolean, textOnly: boolean): { w: number, h: number, r: number, type: string } => {
-        if (isPersonNode(node)) {
+        if (isAtomicNode(node)) {
             if (isTimeline) {
                 // Larger size in timeline mode (2x)
                 return { w: 96, h: 96, r: 110, type: 'circle' }; // r is collision radius
@@ -473,7 +473,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             });
 
             // tier 1: Position people (Top)
-            const peopleNodes = nodes.filter(isPersonNode);
+            const peopleNodes = nodes.filter(isAtomicNode);
             const availableWidth = Math.min(Math.max(totalWidth, width), width * 2);
 
             // Compute desired X for people based on connections to placed events
@@ -488,7 +488,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                         const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
                         const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
                         const eventId = sId === person.id ? tId : sId;
-                        return nodes.find(n => n.id === eventId && n.year !== undefined && !isPersonNode(n));
+                        return nodes.find(n => n.id === eventId && n.year !== undefined && !isAtomicNode(n));
                     })
                     .filter((e): e is GraphNode => e !== undefined);
 
@@ -550,6 +550,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             nodes.forEach(node => {
                 node.fx = null;
                 node.fy = null;
+
+                // Initialize new nodes to center to prevent flying in from top-left (0,0)
+                // We check for undefined or NaN. We strictly check x AND y to act on fresh nodes.
+                if ((node.x === undefined || isNaN(node.x)) && width > 0 && height > 0) {
+                    node.x = width / 2 + (Math.random() - 0.5) * 10; // Tiny jitter to prevent stacking overlap
+                    node.y = height / 2 + (Math.random() - 0.5) * 10;
+                }
             });
 
             if (centerForce) centerForce.x(width / 2).y(height / 2).strength(1.0);
@@ -754,7 +761,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         const dragBehavior = d3.drag<SVGGElement, GraphNode>()
             .on("start", (event, d) => {
                 if (isTimelineMode) {
-                    if (isPersonNode(d)) {
+                    if (isAtomicNode(d)) {
                         event.sourceEvent.stopPropagation();
                         return; // Don't allow dragging people in timeline mode
                     }
@@ -763,15 +770,15 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             })
             .on("drag", (event, d) => {
                 if (isTimelineMode) {
-                    if (isPersonNode(d)) return; // Don't allow dragging people in timeline mode
+                    if (isAtomicNode(d)) return; // Don't allow dragging people in timeline mode
                 }
                 dragged(event, d);
             })
             .on("end", (event, d) => {
                 if (isTimelineMode) {
-                    if (isPersonNode(d)) return; // Don't allow dragging people in timeline mode
+                    if (isAtomicNode(d)) return; // Don't allow dragging people in timeline mode
                 }
-                dragended(event, d);
+                dragged(event, d);
             });
 
         // Apply drag to all nodes (both new and existing)
@@ -1014,22 +1021,30 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
                 const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
 
-                const sourceNode = nodes.find(n => n.id === sId);
-                const targetNode = nodes.find(n => n.id === tId);
+                // Use loose comparison or string normalization for IDs
+                const sourceNode = nodes.find(n => String(n.id) === String(sId));
+                const targetNode = nodes.find(n => String(n.id) === String(tId));
 
-                // If one is an event (has year) and one is a person (no year), add person to event
+                // console.log(`[Timeline Scan Debug] Link ${sId} -> ${tId}. Found Source? ${!!sourceNode} (${sourceNode?.title}), Found Target? ${!!targetNode} (${targetNode?.title})`);
+
                 if (sourceNode && targetNode) {
-                    if (sourceNode.year !== undefined && targetNode.year === undefined) {
-                        const people = eventToPeople.get(sourceNode.id) || [];
-                        if (!people.includes(targetNode.title)) {
-                            people.push(targetNode.title);
-                            eventToPeople.set(sourceNode.id, people);
+                    const isSourceAtomic = isAtomicNode(sourceNode);
+                    const isTargetAtomic = isAtomicNode(targetNode);
+
+
+
+                    if (isSourceAtomic && !isTargetAtomic) {
+                        const atomics = eventToPeople.get(targetNode.id) || [];
+                        if (!atomics.includes(sourceNode.title)) {
+                            atomics.push(sourceNode.title);
+                            eventToPeople.set(targetNode.id, atomics);
                         }
-                    } else if (targetNode.year !== undefined && sourceNode.year === undefined) {
-                        const people = eventToPeople.get(targetNode.id) || [];
-                        if (!people.includes(sourceNode.title)) {
-                            people.push(sourceNode.title);
-                            eventToPeople.set(targetNode.id, people);
+                    }
+                    else if (isTargetAtomic && !isSourceAtomic) {
+                        const atomics = eventToPeople.get(sourceNode.id) || [];
+                        if (!atomics.includes(targetNode.title)) {
+                            atomics.push(targetNode.title);
+                            eventToPeople.set(sourceNode.id, atomics);
                         }
                     }
                 }
@@ -1146,6 +1161,9 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     // Check if we need space for people names in timeline mode
                     const connectedPeople = isTimelineMode ? (eventToPeople.get(d.id) || []) : [];
                     const hasPeople = connectedPeople.length > 0;
+
+
+
                     const peopleText = hasPeople ? connectedPeople.join(", ") : "";
                     const contentWidth = cardWidth - padding * 2;
 
@@ -1250,8 +1268,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             requestAnimationFrame(() => {
                 let hasChanges = false;
                 allNodes.each(function (d) {
-                    const isPersonNode = d.is_person ?? (d.type.toLowerCase() === 'person' || d.type.toLowerCase() === 'actor');
-                    if (isPersonNode) return; // Skip people nodes
+                    if (isAtomicNode(d)) return; // Skip people nodes
                     const g = d3.select(this);
                     const cardContent = g.select(".card-content");
                     if (cardContent.empty()) return;
