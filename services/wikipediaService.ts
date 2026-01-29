@@ -72,6 +72,23 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     return null;
   };
 
+  // Fetch P18 image from Wikidata given a QID (e.g. Q42)
+  const fetchWikidataImageForQid = async (qid: string, signal: AbortSignal): Promise<string | null> => {
+    try {
+      const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${qid}&origin=*`;
+      const wdRes = await fetch(wdUrl, { signal });
+      const wdData = await wdRes.json();
+      const claims = wdData?.entities?.[qid]?.claims;
+      const p18 = claims?.P18?.[0]?.mainsnak?.datavalue?.value as string | undefined;
+      if (!p18) return null;
+
+      const imgTitle = p18.startsWith('File:') ? p18 : `File:${p18}`;
+      return await fetchImageInfo(imgTitle, signal);
+    } catch {
+      return null;
+    }
+  };
+
   // Fetch P18 image from Wikidata given a Wikipedia title (client-side CORS friendly).
   const fetchWikidataImageForTitle = async (title: string, signal: AbortSignal): Promise<string | null> => {
     try {
@@ -83,15 +100,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       const qid = page?.pageprops?.wikibase_item;
       if (!qid || !/^Q\d+$/.test(qid)) return null;
 
-      const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${qid}&origin=*`;
-      const wdRes = await fetch(wdUrl, { signal });
-      const wdData = await wdRes.json();
-      const claims = wdData?.entities?.[qid]?.claims;
-      const p18 = claims?.P18?.[0]?.mainsnak?.datavalue?.value as string | undefined;
-      if (!p18) return null;
-
-      const imgTitle = p18.startsWith('File:') ? p18 : `File:${p18}`;
-      return await fetchImageInfo(imgTitle, signal);
+      return await fetchWikidataImageForQid(qid, signal);
     } catch {
       return null;
     }
@@ -196,6 +205,15 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
 
       const best = scoredCandidates[0];
       if (!best || best.score < -100) {
+        // IMPROVED: Fallback to Wikidata P18 if page images are missing or poor quality
+        if (page.pageprops?.wikibase_item) {
+          const wdImg = await fetchWikidataImageForQid(page.pageprops.wikibase_item, signal);
+          if (wdImg) {
+            const result = { url: wdImg, pageId: page.pageid, pageTitle: page.title };
+            setCache(result);
+            return result;
+          }
+        }
         markMiss();
         return { url: null };
       }
@@ -309,7 +327,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     }
 
     const directImg = await fetchPageImage(bestTitle, controller.signal);
-    if (directImg) return directImg;
+    if (directImg?.url) return directImg;
 
     // IMPROVED: For Person nodes, try Wikimedia Commons earlier (was Attempt 3)
     const isPerson = context?.toLowerCase() === 'person';
@@ -359,7 +377,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
 
       // console.log(`🔍 [ImageSearch] Attempt 3 (Suffix): "${titleToTry}"`);
       const img = await fetchPageImage(titleToTry, controller.signal);
-      if (img) return img;
+      if (img?.url) return img;
     }
 
     // Attempt 4: Wikimedia Commons Search (Global) - for non-Person or as fallback

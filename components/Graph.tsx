@@ -248,33 +248,11 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
     }, [searchId]);
 
     // Initialize simulation
+    // Initialize Zoom (Simulation is managed in the main update effect)
     useEffect(() => {
         if (!svgRef.current) return;
 
-        // Filter out and CLONE links to avoid D3 mutation issues and ensure fresh node lookups
-        const validLinks = links
-            .filter(link => {
-                const sourceId = String(typeof link.source === 'object' ? (link.source as GraphNode).id : link.source);
-                const targetId = String(typeof link.target === 'object' ? (link.target as GraphNode).id : link.target);
-                const hasSource = nodes.some(n => String(n.id) === sourceId);
-                const hasTarget = nodes.some(n => String(n.id) === targetId);
-                return hasSource && hasTarget;
-            })
-            .map(link => ({
-                ...link,
-                source: String(typeof link.source === 'object' ? (link.source as GraphNode).id : link.source),
-                target: String(typeof link.target === 'object' ? (link.target as GraphNode).id : link.target)
-            }));
-
-        const simulation = d3.forceSimulation<GraphNode, GraphLink>(nodes)
-            .force("link", d3.forceLink<GraphNode, GraphLink>(validLinks).id(d => String(d.id)).distance(100))
-            .force("charge", d3.forceManyBody().strength(-300))
-            .force("center", d3.forceCenter(width / 2, height / 2))
-            .velocityDecay(0.6) // Reduced from 0.85 for smoother, less jerky movement
-            .alphaDecay(0.02); // Slower alpha decay for more gradual settling
-
-        simulationRef.current = simulation;
-
+        // Initialize Zoom Behavior
         const zoom = d3.zoom<SVGSVGElement, unknown>()
             .scaleExtent([0.1, 4])
             .on("zoom", (event) => {
@@ -300,15 +278,17 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 }
             });
 
+        d3.select(svgRef.current).call(zoom);
         zoomBehaviorRef.current = zoom;
-        d3.select(svgRef.current).call(zoom).on("dblclick.zoom", null);
 
+        // Cleanup simulation on unmount
         return () => {
-            simulation.stop();
-            d3.select(svgRef.current).on(".zoom", null);
+            if (simulationRef.current) {
+                simulationRef.current.stop();
+            }
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [width, height]);
+    }, [width, height]); // Only re-run if dimensions change (or on mount)
+
 
     // Keyboard navigation with arrow keys
     useEffect(() => {
@@ -673,20 +653,15 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
     // 4. Structural Effect: Only runs when overall graph structure (nodes/links) changes.
     // This handles D3 enter/exit/merge and restarts the simulation.
     useEffect(() => {
-        if (!simulationRef.current || !zoomGroupRef.current) return;
-        const simulation = simulationRef.current;
-        const container = d3.select(zoomGroupRef.current);
+        if (!zoomGroupRef.current) return;
 
-        // Filter out and CLONE links to avoid D3 mutation issues and ensure fresh node lookups.
+        // 1. Calculate valid links first
         const validLinks = links
             .filter(link => {
                 const sId = String(typeof link.source === 'object' ? (link.source as GraphNode).id : link.source);
                 const tId = String(typeof link.target === 'object' ? (link.target as GraphNode).id : link.target);
                 const hasSource = nodes.some(n => String(n.id) === sId);
                 const hasTarget = nodes.some(n => String(n.id) === tId);
-                if (!hasSource || !hasTarget) {
-                    // console.warn(`🚫 [Graph] Link filtered out: ${sId} -> ${tId}. Source exists: ${hasSource}, Target exists: ${hasTarget}`);
-                }
                 return hasSource && hasTarget;
             })
             .map(link => ({
@@ -694,6 +669,23 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 source: String(typeof link.source === 'object' ? (link.source as GraphNode).id : link.source),
                 target: String(typeof link.target === 'object' ? (link.target as GraphNode).id : link.target)
             }));
+
+        // 2. Lazily create simulation if it doesn't exist
+        if (!simulationRef.current) {
+            simulationRef.current = d3.forceSimulation<GraphNode, GraphLink>(nodes)
+                .force("link", d3.forceLink<GraphNode, GraphLink>(validLinks).id(d => String(d.id)).distance(100))
+                .force("charge", d3.forceManyBody().strength(-300))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .velocityDecay(0.6)
+                .alphaDecay(0.02);
+        }
+
+        const simulation = simulationRef.current;
+        const container = d3.select(zoomGroupRef.current);
+
+        // Update center force in case dimensions changed
+        simulation.force("center", d3.forceCenter(width / 2, height / 2));
+
 
         // Wide invisible hit-area for easier clicking on links
         const linkHitSel = container.selectAll<SVGPathElement, GraphLink>(".link-hit").data(validLinks, d => d.id);
@@ -778,7 +770,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 if (isTimelineMode) {
                     if (isAtomicNode(d)) return; // Don't allow dragging people in timeline mode
                 }
-                dragged(event, d);
+                dragended(event, d);
             });
 
         // Apply drag to all nodes (both new and existing)
@@ -891,6 +883,20 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             .attr("repeatCount", "indefinite");
 
         nodeSel.exit().remove();
+
+        // STABILIZATION: Copy positions from old simulation nodes to new data to prevent "jumping"
+        const oldNodes = simulation.nodes();
+        const oldNodeMap = new Map(oldNodes.map(n => [n.id, n]));
+        nodes.forEach(n => {
+            const old = oldNodeMap.get(n.id);
+            if (old) {
+                // Preserve physics state
+                if (n.x === undefined || isNaN(n.x)) n.x = old.x;
+                if (n.y === undefined || isNaN(n.y)) n.y = old.y;
+                if (n.vx === undefined || isNaN(n.vx)) n.vx = old.vx;
+                if (n.vy === undefined || isNaN(n.vy)) n.vy = old.vy;
+            }
+        });
 
         // Always update simulation data to ensure D3 resolves string IDs into object references
         simulation.nodes(nodes);
@@ -1059,48 +1065,16 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
 
             const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
             const isHovered = d.id === hoveredNode?.id;
-            const isFocused = d.id === effectiveFocused?.id;
+            // NOTE: Dynamic opacity/stroke logic moved to Stylistic Effect (Effect 5) to handle interaction updates correctly.
+            // Effect 4 only sets default structural attributes.
             let color = getNodeColor(d.type, d.is_person);
-            const isDrop = dropHighlight.has(d.id);
-            const isKeep = keepHighlight.has(d.id);
 
-            let baseOpacity = 1;
-            if (isDrop) {
-                baseOpacity = 0.18;
-            } else if (hasHighlight) {
-                baseOpacity = isKeep ? 1 : 0.3;
-            } else {
-                // Simple selection/expansion highlighting
-                if (expandingNodeId !== null) {
-                    // Expansion in progress: dim all except expanding node and new children
-                    const isExpanding = expandingNodeId === d.id;
-                    const isNewChild = newChildNodeIds.has(String(d.id));
-                    if (!isExpanding && !isNewChild) {
-                        baseOpacity = 0.25;
-                    }
-                    if (d.title === 'Plato' || d.title === 'Socrates') {
-                        console.log(`🎨 [Highlighting] "${d.title}" (id=${d.id}): expandingNodeId=${expandingNodeId}, isExpanding=${isExpanding}, isNewChild=${isNewChild}, newChildNodeIds=`, Array.from(newChildNodeIds), `baseOpacity=${baseOpacity}`);
-                    }
-                } else if (effectiveFocused) {
-                    // Selection: dim nodes not connected to selected node (but keep new children highlighted)
-                    const isNewChild = newChildNodeIds.has(String(d.id));
-                    if (!isFocused && !neighborIds.has(d.id) && !isNewChild) {
-                        baseOpacity = 0.25;
-                    }
-                    if (d.title === 'Plato' || d.title === 'Socrates') {
-                        console.log(`🎨 [Highlighting] "${d.title}" (id=${d.id}): effectiveFocused=${effectiveFocused?.title}, isFocused=${isFocused}, isNewChild=${isNewChild}, inNeighbors=${neighborIds.has(d.id)}, newChildNodeIds=`, Array.from(newChildNodeIds), `baseOpacity=${baseOpacity}`);
-                    }
-                }
-            }
+            // Default initial styles (will be overridden by Effect 5 immediately)
+            const baseOpacity = 1;
             g.style("opacity", d.isLoading ? 1 : baseOpacity);
 
-            const isPathHighlight = hasHighlight && dropHighlight.size === 0;
-            const strokeColor = isDrop
-                ? "#f87171"
-                : (isKeep && hasHighlight
-                    ? (isPathHighlight ? "#f59e0b" : "#22c55e")
-                    : (isHovered || isFocused ? "#f59e0b" : "#fff"));
-            const strokeWidth = isDrop ? 3.5 : (isKeep && hasHighlight ? (isPathHighlight ? 3.5 : 2.5) : (isFocused ? 3 : 2));
+            const strokeColor = "#fff";
+            const strokeWidth = 2;
 
             if (d.imageChecked && !d.imageUrl) color = '#64748b';
 
@@ -1330,6 +1304,88 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 }
             });
         }
+
+        // Explicit return void to avoid implicit return of simulation object if that was happening
+        return;
+    }, [nodes, links, isTimelineMode, width, height]);
+
+    // 5. Stylistic Effect: Visual updates (colors, opacity, stroke) based on hover/interaction
+    useEffect(() => {
+        if (!zoomGroupRef.current) return;
+
+        const keepHighlight = new Set(highlightKeepIds || []);
+        const dropHighlight = new Set(highlightDropIds || []);
+        const hasHighlight = keepHighlight.size > 0 || dropHighlight.size > 0;
+
+        // Build set of path links
+        const pathLinkIds = new Set<string>();
+        if (hasHighlight && highlightKeepIds && highlightKeepIds.length > 1) {
+            for (let i = 0; i < highlightKeepIds.length - 1; i++) {
+                const nodeId1 = highlightKeepIds[i];
+                const nodeId2 = highlightKeepIds[i + 1];
+                const link = links.find(l => {
+                    const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
+                    const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
+                    return (sId === nodeId1 && tId === nodeId2) || (sId === nodeId2 && tId === nodeId1);
+                });
+                if (link) pathLinkIds.add(link.id);
+            }
+        }
+
+        const neighborIds = new Set<string | number>();
+        if (effectiveFocused) {
+            links.forEach(l => {
+                const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
+                const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
+                if (sId === effectiveFocused.id) neighborIds.add(tId);
+                else if (tId === effectiveFocused.id) neighborIds.add(sId);
+            });
+        }
+        const container = d3.select(zoomGroupRef.current);
+        const allLinks = container.selectAll<SVGPathElement, GraphLink>(".link");
+        const allNodes = container.selectAll<SVGGElement, GraphNode>(".node");
+
+        allNodes.each(function (d) {
+            const g = d3.select(this);
+            const isHovered = d.id === hoveredNode?.id;
+            const isFocused = d.id === effectiveFocused?.id;
+            const isDrop = dropHighlight.has(d.id);
+            const isKeep = keepHighlight.has(d.id);
+
+            let baseOpacity = 1;
+            if (isDrop) {
+                baseOpacity = 0.18;
+            } else if (hasHighlight) {
+                baseOpacity = isKeep ? 1 : 0.3;
+            } else {
+                if (expandingNodeId !== null) {
+                    const isExpanding = expandingNodeId === d.id;
+                    const isNewChild = newChildNodeIds.has(String(d.id));
+                    if (!isExpanding && !isNewChild) baseOpacity = 0.25;
+                } else if (effectiveFocused) {
+                    const isNewChild = newChildNodeIds.has(String(d.id));
+                    if (!isFocused && !neighborIds.has(d.id) && !isNewChild) baseOpacity = 0.25;
+                }
+            }
+            g.style("opacity", d.isLoading ? 1 : baseOpacity);
+
+            const isPathHighlight = hasHighlight && dropHighlight.size === 0;
+            const strokeColor = isDrop
+                ? "#f87171"
+                : (isKeep && hasHighlight
+                    ? (isPathHighlight ? "#f59e0b" : "#22c55e")
+                    : (isHovered || isFocused ? "#f59e0b" : "#fff"));
+            const strokeWidth = isDrop ? 3.5 : (isKeep && hasHighlight ? (isPathHighlight ? 3.5 : 2.5) : (isFocused ? 3 : 2));
+
+            g.select(".node-circle").style("stroke", strokeColor).style("stroke-width", strokeWidth);
+            g.select(".node-rect").style("stroke", strokeColor).style("stroke-width", strokeWidth);
+
+            // Ensure correct year label visibility on hover
+            const isPerson = d.is_atomic === true || d.is_person === true || d.type?.toLowerCase() === 'person';
+            const isEventWithYear = !isPerson && d.year;
+            const showYear = (isTimelineMode || isHovered || isEventWithYear) && !!d.year;
+            g.select(".year-label").style("display", showYear ? "block" : "none");
+        });
 
         // Background click to deselect
         d3.select(svgRef.current).on("click", (event) => {
