@@ -1145,7 +1145,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     let displayDescription = "";
                     if (d.description) {
                         // Find first sentence ending (period, exclamation, question mark followed by space or end)
-                        const sentenceMatch = d.description.match(/^[^.!?]*[.!?](?:\s|$)/);
+                        // Uses negative lookbehind to avoid splitting on initials or common abbreviations
+                        const sentenceMatch = d.description.match(/^.*?(?<!\b(?:Mr|Ms|Mrs|Dr|Prof|St|v|vs|etc|[A-Z]))[.!?](?:\s+|$)/);
                         if (sentenceMatch) {
                             displayDescription = sentenceMatch[0].trim();
                         } else {
