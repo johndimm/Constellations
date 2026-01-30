@@ -1380,6 +1380,15 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             g.select(".node-circle").style("stroke", strokeColor).style("stroke-width", strokeWidth);
             g.select(".node-rect").style("stroke", strokeColor).style("stroke-width", strokeWidth);
 
+            // Update image visibility based on isTextOnly prop
+            const dims = getNodeDimensions(d, isTimelineMode, isTextOnly);
+            if (dims.type === 'circle') {
+                g.select("image").style("display", (d.imageUrl && !isTextOnly) ? "block" : "none");
+            } else if (dims.type === 'box') {
+                g.select("image").style("display", (d.imageUrl && !isTextOnly) ? "block" : "none");
+            }
+
+
             // Ensure correct year label visibility on hover
             const isPerson = d.is_atomic === true || d.is_person === true || d.type?.toLowerCase() === 'person';
             const isEventWithYear = !isPerson && d.year;

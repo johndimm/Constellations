@@ -83,7 +83,7 @@ const ExtensionControls: React.FC<{
                         value={exploreTerm}
                         onChange={(e) => setExploreTerm(e.target.value)}
                         placeholder="Search..."
-                        className="bg-slate-800/80 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 w-32 transition-all"
+                        className="bg-slate-800/80 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 w-80 transition-all"
                     />
                 </form>
 
