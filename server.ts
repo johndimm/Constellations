@@ -352,10 +352,11 @@ async function getNodeAtomicCol(client: pg.PoolClient): Promise<'is_atomic' | 'i
 }
 
 // Upsert nodes batch and return mapping of (title, type, wikipedia_id) -> id
-async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<string, number>> {
+// Upsert nodes batch and return mapping of (title, type, wikipedia_id) -> full node object
+async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<string, any>> {
   if (!nodes.length) return new Map();
 
-  const idMap = new Map<string, number>();
+  const nodeMap = new Map<string, any>();
   const atomicCol = await getNodeAtomicCol(client);
 
   for (const n of nodes) {
@@ -404,12 +405,12 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
         )
         : { rows: [] as any[] };
 
-      let id;
+      let row;
       const matchRow = wikiRes.rows[0] || exactRes.rows[0] || fuzzyRes.rows[0];
 
       if (matchRow) {
         // 2. UPDATE existing node (duplicate found)
-        id = matchRow.id;
+        const matchId = matchRow.id;
         const existingType = matchRow.type;
         const existingWiki = matchRow.wikipedia_id || '';
         // Prefer the more specific type (capitalized like "Movie" over lowercase like "event")
@@ -432,18 +433,20 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
                     ${atomicCol} = $9,
                     updated_at = now()
                   where id = $7
+                  returning *
                `;
-          await client.query(updateSql, [
+          const updateRes = await client.query(updateSql, [
             typeToKeep,
             n.description ?? null,
             n.year ?? null,
             meta,
             imageUrl,
             wikiSummary,
-            id,
+            matchId,
             wikiToKeep,
             isAtomicToKeep
           ]);
+          row = updateRes.rows[0];
         } else {
           const updateSql = `
                   update nodes set
@@ -456,17 +459,19 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
                     wikipedia_id = $8,
                     updated_at = now()
                   where id = $7
+                  returning *
                `;
-          await client.query(updateSql, [
+          const updateRes = await client.query(updateSql, [
             typeToKeep,
             n.description ?? null,
             n.year ?? null,
             meta,
             imageUrl,
             wikiSummary,
-            id,
+            matchId,
             wikiToKeep
           ]);
+          row = updateRes.rows[0];
         }
       } else {
         // 3. INSERT new
@@ -477,7 +482,7 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
           insertSql = `
                  insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary, ${atomicCol})
                  values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                 returning id
+                 returning *
                `;
           insertParams = [
             title,
@@ -494,7 +499,7 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
           insertSql = `
                  insert into nodes (title, type, description, year, meta, wikipedia_id, image_url, wiki_summary)
                  values ($1, $2, $3, $4, $5, $6, $7, $8)
-                 returning id
+                 returning *
                `;
           insertParams = [
             title,
@@ -508,17 +513,25 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
           ];
         }
         const insertRes = await client.query(insertSql, insertParams);
-        id = insertRes.rows[0].id;
+        row = insertRes.rows[0];
       }
 
-      const key = `${title}|${n.type}|${n.wikipedia_id || ''}`;
-      idMap.set(key, id);
+      if (row) {
+        // Map this input node to the resulting database row
+        const key = `${normalizedWikiId}|${(n.title || n.id || "").toString().toLowerCase()}|${(n.type || "").toString().toLowerCase()}`;
+        nodeMap.set(key, {
+          ...row,
+          imageUrl: row.image_url,
+          wikiSummary: row.wiki_summary,
+          is_atomic: row.is_atomic ?? (row.type?.toLowerCase() === 'person')
+        });
+      }
     } catch (e: any) {
       console.error("Upsert failed for node", n.title, e.message);
       throw e;
     }
   }
-  return idMap;
+  return nodeMap;
 }
 
 // ---- CLI Expansion Endpoint ----
@@ -836,34 +849,27 @@ app.post("/expansion", async (req, res) => {
     const sourceIsAtomic = sourceRes.rows[0].is_atomic ?? (sourceRes.rows[0].type?.toLowerCase() === 'person');
 
     // 2. Upsert target nodes
-    // Build key->node payload map so we can also persist edge evidence (label/meta)
-    const nodeByKey = new Map<string, any>();
-    for (const n of nodes) {
-      const title = n.title || n.id;
-      const wikiId = (n.wikipedia_id || n.wikipediaId || "").toString().trim();
-      const key = `${title}|${n.type}|${wikiId || ''}`;
-      nodeByKey.set(key, n);
-    }
-    const idMap = await upsertNodes(client, nodes);
+    const nodeMap = await upsertNodes(client, nodes);
 
     // 3. Create edges
-    for (const [key, targetId] of idMap.entries()) {
-      const [title, type, wikiId] = key.split("|");
+    for (const n of nodes) {
+      const normalizedWikiId = (n.wikipedia_id || n.wikipediaId || "").toString().trim();
+      const key = `${normalizedWikiId}|${(n.title || n.id || "").toString().toLowerCase()}|${(n.type || "").toString().toLowerCase()}`;
+      const dbNode = nodeMap.get(key);
+      if (!dbNode) continue;
 
+      const targetId = dbNode.id;
       let atomicId, compositeId;
       if (sourceIsAtomic) {
-        // Source is an atomic, so source -> target is atomic -> composite
         atomicId = sourceId;
         compositeId = targetId;
       } else {
-        // Source is a composite, so target -> source is atomic -> composite
         atomicId = targetId;
         compositeId = sourceId;
       }
 
-      const payload = nodeByKey.get(key);
-      const edgeLabel = payload?.edge_label || payload?.label || null;
-      const edgeMeta = payload?.edge_meta || payload?.meta_edge || null;
+      const edgeLabel = n.edge_label || n.label || null;
+      const edgeMeta = n.edge_meta || n.meta_edge || null;
       await upsertEdge(client, atomicId, compositeId, edgeLabel || undefined, edgeMeta || undefined);
     }
 
@@ -886,7 +892,7 @@ app.post("/node", async (req, res) => {
 
   const client = await pool.connect();
   try {
-    const idMap = await upsertNodes(client, [{
+    const nodeMap = await upsertNodes(client, [{
       title: node.title || (node as any).id,
       type: node.type,
       description: node.description ?? null,
@@ -895,8 +901,12 @@ app.post("/node", async (req, res) => {
       wikipedia_id: node.wikipedia_id ?? null
     }]);
 
-    const id = Array.from(idMap.values())[0];
-    res.json({ ok: true, id });
+    const title = node.title || (node as any).id || "";
+    const type = node.type || "";
+    const wikiId = (node.wikipedia_id || "").toString().trim();
+    const key = `${wikiId}|${title.toLowerCase()}|${type.toLowerCase()}`;
+    const dbNode = nodeMap.get(key);
+    res.json({ ok: true, id: dbNode?.id, ...dbNode });
   } catch (e: any) {
     console.error(e);
     res.status(500).json({ error: e.message });

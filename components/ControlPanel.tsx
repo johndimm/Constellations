@@ -214,7 +214,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       {headerActions}
       <div
         className={`absolute left-0 z-40 flex flex-col gap-2 transition-transform duration-300 ease-in-out pointer-events-none ${isCollapsed ? '-translate-x-[calc(100%-24px)]' : 'translate-x-[12px] sm:translate-x-[16px]'} top-16`}
-        style={{ width: 'calc(100% - 1.5rem)', maxWidth: '36rem' }}
+        style={{ width: 'calc(100% - 1.5rem)', maxWidth: '28rem' }}
       >
         <div className="bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative overflow-hidden flex flex-col max-h-[calc(100vh-64px)]">
           {/* Scrollable area for everything above the Start Here list if it gets too tall (e.g. Help open) */}

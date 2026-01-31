@@ -47,7 +47,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
     const [pathEnd, setPathEnd] = useState('');
 
     const upsertNodeLocal = useCallback(async (title: string, type: string, description: string, wiki: any) => {
-        let id = -1;
+        let nodeData: any = null;
         if (cacheEnabled) {
             try {
                 const res = await fetch(new URL("/node", cacheBaseUrl).toString(), {
@@ -61,15 +61,23 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                     })
                 });
                 if (res.ok) {
-                    const data = await res.json();
-                    id = data.id;
+                    nodeData = await res.json();
                 }
             } catch (e) {
                 console.warn("Cache server unreachable", e);
             }
         }
-        if (id === -1) id = wiki.pageid || Math.floor(Math.random() * 1000000);
-        return { id };
+
+        if (!nodeData) {
+            nodeData = {
+                id: wiki.pageid || Math.floor(Math.random() * 1000000),
+                title: title.trim(),
+                type,
+                description: wiki.extract || description,
+                wikipedia_id: wiki.pageid?.toString()
+            };
+        }
+        return nodeData;
     }, [cacheEnabled, cacheBaseUrl]);
 
     const handleStartSearch = useCallback(async (term: string, recursiveDepth = 0) => {
@@ -99,16 +107,24 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
             // This ensures "Republic (book)" stays as "Republic (book)" in the UI.
             setExploreTerm(term);
 
-            const { id: nodeId } = await upsertNodeLocal(canonicalTitle, type, description || '', wiki);
+            const nodeData = await upsertNodeLocal(canonicalTitle, type, description || '', wiki);
 
             const startNode: GraphNode = {
-                id: nodeId, title: canonicalTitle, type, is_atomic: isAtomic,
+                id: nodeData.id,
+                title: canonicalTitle,
+                type,
+                is_atomic: isAtomic,
                 wikipedia_id: wiki.pageid?.toString(),
                 description: wiki.extract || description || '',
-                x: dimensions.width / 2, y: dimensions.height / 2, expanded: false,
+                x: dimensions.width / 2,
+                y: dimensions.height / 2,
+                expanded: false,
                 wikiSummary: wiki.extract || undefined,
                 classification_reasoning: reasoning,
-                atomic_type: chosenPair.atomicType, composite_type: chosenPair.compositeType
+                atomic_type: chosenPair.atomicType,
+                composite_type: chosenPair.compositeType,
+                imageUrl: nodeData.imageUrl || nodeData.image_url,
+                ...nodeData
             };
 
             setGraphData({ nodes: [startNode], links: [] });
@@ -153,14 +169,18 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                 id: startNodeData.id, title: start.trim(), type: startC.type, is_atomic: startC.isAtomic,
                 wikipedia_id: startWiki.pageid?.toString(), description: startWiki.extract || startC.description || '',
                 x: dimensions.width / 4, y: dimensions.height / 2, fx: dimensions.width / 4, fy: dimensions.height / 2,
-                expanded: false, wikiSummary: startWiki.extract || undefined
+                expanded: false, wikiSummary: startWiki.extract || undefined,
+                imageUrl: startNodeData.imageUrl || startNodeData.image_url,
+                ...startNodeData
             };
 
             const endNode: GraphNode = {
                 id: endNodeData.id, title: end.trim(), type: endC.type, is_atomic: endC.isAtomic,
                 wikipedia_id: endWiki.pageid?.toString(), description: endWiki.extract || endC.description || '',
                 x: (dimensions.width * 3) / 4, y: dimensions.height / 2, fx: (dimensions.width * 3) / 4, fy: dimensions.height / 2,
-                expanded: false, wikiSummary: endWiki.extract || undefined
+                expanded: false, wikiSummary: endWiki.extract || undefined,
+                imageUrl: endNodeData.imageUrl || endNodeData.image_url,
+                ...endNodeData
             };
 
             setGraphData({ nodes: [startNode, endNode], links: [] });
@@ -235,13 +255,20 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                     const step = pathData.path[i];
                     setNotification({ message: `Stitching path... step ${i} of ${pathData.path.length - 1}: ${step.id}`, type: 'success' });
                     const stepWiki = await fetchWikipediaSummary(step.id);
-                    const { id: resolvedId } = await upsertNodeLocal(step.id, step.type, step.description, stepWiki);
+                    const stepNodeData = await upsertNodeLocal(step.id, step.type, step.description, stepWiki);
+                    const resolvedId = stepNodeData.id;
                     if (!pathNodeIdsList.some(id => String(id) === String(resolvedId))) pathNodeIdsList.push(resolvedId);
 
                     setGraphData(current => {
                         const tailNode = current.nodes.find(n => String(n.id) === String(currentTailId));
                         const clamped = clampToViewport((tailNode?.x || 400) + (Math.random() - 0.5) * 150, (tailNode?.y || 400) + (Math.random() - 0.5) * 150, 80);
-                        const newNode: GraphNode = { id: resolvedId, title: step.id, type: step.type, description: step.description, x: clamped.x, y: clamped.y, fx: clamped.x, fy: clamped.y, expanded: false, wikipedia_id: stepWiki.pageid?.toString() };
+                        const newNode: GraphNode = {
+                            id: resolvedId, title: step.id, type: step.type, description: step.description,
+                            x: clamped.x, y: clamped.y, fx: clamped.x, fy: clamped.y, expanded: false,
+                            wikipedia_id: stepWiki.pageid?.toString(),
+                            imageUrl: stepNodeData.imageUrl || stepNodeData.image_url,
+                            ...stepNodeData
+                        };
                         const updatedNodes = current.nodes.some(n => String(n.id) === String(resolvedId)) ? current.nodes.map(n => String(n.id) === String(resolvedId) ? newNode : n) : [...current.nodes, newNode];
                         const updatedLinks = [...current.links, { source: currentTailId, target: resolvedId, id: `${currentTailId}-${resolvedId}` }];
                         loadNodeImage(resolvedId, newNode.title);

@@ -407,7 +407,7 @@ export const fetchConnections = async (
       ${workSourceHint}
       ${theorySourceHint}
       ${(compositeType || "").match(/^(Movie|Film|Book|Novel|Play|Opera)$/i) ? '\nSPECIAL CASE (Fiction): For works of fiction, prioritize returning CHARACTERS as the atomic entities.' : ''}
-      ${(compositeType || "").match(/^(Magazine|Newspaper|Journal|Periodical|Publication)$/i) ? '\nSPECIAL CASE (Magazine): For periodicals/magazines, prioritize returning its most FAMOUS AND LONG-TIME WRITERS, columnists, and editors-in-chief.' : ''}
+      ${(compositeType || "").match(/^(Magazine|Newspaper|Journal|Periodical|Publication)$/i) ? '\nSPECIAL CASE (Magazine): For periodicals/magazines, prioritize returning its most FAMOUS AND LONG-TIME WRITERS, columnists, and editors-in-chief. If some of these are already in the graph, find other significant figures.' : ''}
       
       CRITICAL BIPARTITE RULE:
       - The Source Node is a COMPOSITE entity.
@@ -540,10 +540,10 @@ export const fetchPersonWorks = async (
        ${dateRequirementPrompt}
        
        BIDIRECTIONAL RULE:
-       - If "${nodeName}" is an author, you MUST include their most famous books/novels/works.
-       - If "${nodeName}" is a book, novel, movie, or play, you MUST include its most famous CHARACTERS.
-       - If "${nodeName}" is an artist, you MUST include their most famous paintings/sculptures/artworks.
-       - If "${nodeName}" is a writer famous for writing in a specific MAGAZINE (e.g., The New Yorker), you MUST include that Magazine.
+       - If "${nodeName}" is an author, you should prioritize including their most famous books/novels/works (unless already in the excluded list).
+       - If "${nodeName}" is a book, novel, movie, or play, you should prioritize including its most famous CHARACTERS (unless already in the excluded list).
+       - If "${nodeName}" is an artist, you should prioritize including their most famous paintings/sculptures/artworks (unless already in the excluded list).
+       - If "${nodeName}" is a writer famous for writing in a specific MAGAZINE (e.g., The New Yorker), you should prioritize including that Magazine (unless already in the excluded list).
        - Ensure that if a user expands a creator, they find their works, and vice-versa.
        
        BUSINESSPERSON GUARDRAIL:
