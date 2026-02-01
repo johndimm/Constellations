@@ -33,7 +33,7 @@ export interface GraphNode extends SimulationNodeDatum {
 export interface GraphLink extends SimulationLinkDatum<GraphNode> {
   source: number | string | GraphNode;
   target: number | string | GraphNode;
-  id: string; // Unique link ID
+  id: string | number; // Unique link ID
   label?: string; // Role or connection description
   evidence?: {
     kind: 'wikipedia' | 'openalex' | 'crossref' | 'ai' | 'none';

@@ -185,15 +185,13 @@ export function useExpansion(options: UseExpansionOptions) {
 
                         if (isStale()) return;
 
-                        const mergedGraph = mergeExpansionGraph({
-                            nodes: graphDataRef.current.nodes,
-                            links: graphDataRef.current.links,
+                        setGraphData(prev => mergeExpansionGraph({
+                            nodes: prev.nodes,
+                            links: prev.links,
                             parent: node,
                             targets: validCached,
                             seedFromParent: true
-                        });
-
-                        setGraphData(mergedGraph);
+                        }));
 
                         maybeAutoExpandMore(validCached.length);
                         if (!skipSelection) setSelectedNode(node);

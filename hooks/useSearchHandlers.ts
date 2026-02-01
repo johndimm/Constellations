@@ -2,8 +2,9 @@ import React, { useState, useCallback } from 'react';
 import { GraphNode, GraphLink } from '../types';
 import { classifyStartPair, fetchConnectionPath, LockedPair, classifyEntity, fetchConnections } from '../services/geminiService';
 import { fetchWikipediaSummary } from '../services/wikipediaService';
-import { dedupeGraph } from '../services/graphUtils';
+import { dedupeGraph, normalizeForDedup } from '../services/graphUtils';
 import { clampToViewport } from '../utils/graphLogicUtils';
+import { buildWikiUrl } from '../utils/wikiUtils';
 
 interface PathResponse {
     path: any[];
@@ -255,34 +256,98 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                     const step = pathData.path[i];
                     setNotification({ message: `Stitching path... step ${i} of ${pathData.path.length - 1}: ${step.id}`, type: 'success' });
                     const stepWiki = await fetchWikipediaSummary(step.id);
-                    const stepNodeData = await upsertNodeLocal(step.id, step.type, step.description, stepWiki);
+                    const stepNodeData = await upsertNodeLocal(stepWiki.title || step.id, step.type, step.description, stepWiki);
                     const resolvedId = stepNodeData.id;
-                    if (!pathNodeIdsList.some(id => String(id) === String(resolvedId))) pathNodeIdsList.push(resolvedId);
+
+                    const fromId = currentTailId;
+                    const toId = resolvedId;
+                    const justification = step.justification || "";
 
                     setGraphData(current => {
-                        const tailNode = current.nodes.find(n => String(n.id) === String(currentTailId));
+                        const tailNode = current.nodes.find(n => String(n.id) === String(fromId));
                         const clamped = clampToViewport((tailNode?.x || 400) + (Math.random() - 0.5) * 150, (tailNode?.y || 400) + (Math.random() - 0.5) * 150, 80);
                         const newNode: GraphNode = {
-                            id: resolvedId, title: step.id, type: step.type, description: step.description,
+                            id: toId, title: stepWiki.title || step.id, type: step.type, description: step.description,
                             x: clamped.x, y: clamped.y, fx: clamped.x, fy: clamped.y, expanded: false,
                             wikipedia_id: stepWiki.pageid?.toString(),
                             imageUrl: stepNodeData.imageUrl || stepNodeData.image_url,
                             ...stepNodeData
                         };
-                        const updatedNodes = current.nodes.some(n => String(n.id) === String(resolvedId)) ? current.nodes.map(n => String(n.id) === String(resolvedId) ? newNode : n) : [...current.nodes, newNode];
-                        const updatedLinks = [...current.links, { source: currentTailId, target: resolvedId, id: `${currentTailId}-${resolvedId}` }];
-                        loadNodeImage(resolvedId, newNode.title);
-                        setTimeout(() => fetchAndExpandNode(newNode), 0);
-                        return { nodes: updatedNodes, links: updatedLinks };
+                        const updatedNodes = current.nodes.some(n => String(n.id) === String(toId)) ? current.nodes.map(n => String(n.id) === String(toId) ? newNode : n) : [...current.nodes, newNode];
+                        const updatedLinks = [...current.links, {
+                            source: fromId,
+                            target: toId,
+                            id: `${fromId}-${toId}`,
+                            label: justification,
+                            evidence: {
+                                kind: 'ai',
+                                pageTitle: stepWiki.title || step.id,
+                                snippet: justification,
+                                url: buildWikiUrl(stepWiki.title || step.id)
+                            }
+                        }];
+                        loadNodeImage(toId, newNode.title);
+                        // CRITICAL: Dedupe immediately so that if this node merged with an existing one,
+                        // we know the correct ID for the next link in the chain.
+                        return dedupeGraph(updatedNodes, updatedLinks);
                     });
-                    currentTailId = resolvedId;
+
+                    // Wait a moment for state to settle, then find the RESOLVED id of the node we just added.
+                    // This handles cases where baseDedupeKey merged our new node into an existing one.
+                    await new Promise(r => setTimeout(r, 100));
+                    const latestGraph = graphDataRef.current;
+                    const foundNode = latestGraph.nodes.find(n => {
+                        const wikiIdResult = String(n.wikipedia_id || "");
+                        const wikiIdStep = String(stepWiki.pageid || "");
+                        if (wikiIdResult && wikiIdStep && wikiIdResult === wikiIdStep) return true;
+                        return normalizeForDedup(n.title) === normalizeForDedup(stepWiki.title || step.id);
+                    });
+
+                    if (foundNode) {
+                        currentTailId = foundNode.id;
+                        if (!pathNodeIdsList.includes(foundNode.id)) pathNodeIdsList.push(foundNode.id);
+                    } else {
+                        // Fallback if lookup failed (shouldn't happen with immediate dedupe)
+                        currentTailId = toId;
+                        if (!pathNodeIdsList.includes(toId)) pathNodeIdsList.push(toId);
+                    }
                 }
                 if (!pathNodeIdsList.some(id => String(id) === String(endNode.id))) pathNodeIdsList.push(endNode.id);
             }
 
             await new Promise(r => setTimeout(r, 300));
-            const nodeIdsInGraph = new Set(graphDataRef.current.nodes.map(n => String(n.id)));
-            const finalPathIds = pathNodeIdsList.filter(id => nodeIdsInGraph.has(String(id)));
+
+            // EXPAND START AND END NODES (ONLY) using their FINAL resolved IDs
+            const finalGraph = graphDataRef.current;
+            const finalStartNode = finalGraph.nodes.find(n =>
+                (n.wikipedia_id && String(n.wikipedia_id) === String(startNode.wikipedia_id)) ||
+                normalizeForDedup(n.title) === normalizeForDedup(startNode.title)
+            );
+            const finalEndNode = finalGraph.nodes.find(n =>
+                (n.wikipedia_id && String(n.wikipedia_id) === String(endNode.wikipedia_id)) ||
+                normalizeForDedup(n.title) === normalizeForDedup(endNode.title)
+            );
+
+            if (finalStartNode) fetchAndExpandNode(finalStartNode);
+            if (finalEndNode) fetchAndExpandNode(finalEndNode);
+
+            // FINAL RESOLUTION OF ALL PATH IDs
+            // This ensures that pathNodeIdsList contains only stable IDs present in the final graph.
+            const resolvedPathIds = pathNodeIdsList.map(originalId => {
+                const node = finalGraph.nodes.find(n => {
+                    if (String(n.id) === String(originalId)) return true;
+                    // Check if it was merged via wikipedia_id
+                    const nodeInOriginalPath = pathData?.path.find((p: any) => String(p.id) === String(originalId));
+                    if (nodeInOriginalPath && n.wikipedia_id && nodeInOriginalPath.wikipedia_id && String(n.wikipedia_id) === String(nodeInOriginalPath.wikipedia_id)) return true;
+                    // Check if it was merged via title
+                    if (nodeInOriginalPath && normalizeForDedup(n.title) === normalizeForDedup(nodeInOriginalPath.title || nodeInOriginalPath.id)) return true;
+                    return false;
+                });
+                return node ? node.id : originalId;
+            });
+
+            const nodeIdsInGraph = new Set(finalGraph.nodes.map(n => String(n.id)));
+            const finalPathIds = Array.from(new Set(resolvedPathIds)).filter(id => nodeIdsInGraph.has(String(id)));
 
             setGraphData(current => ({
                 ...current,

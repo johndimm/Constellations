@@ -220,10 +220,16 @@ export function useGraphActions(options: UseGraphActionsOptions) {
     }, [cacheEnabled, cacheBaseUrl, setConfirmDialog, setSavedGraphs, setNotification]);
 
     const handleSaveGraph = useCallback(async (nameOrSpecial?: string) => {
-        // Special case: Copy Link - just generate URL with current starting term
         if (nameOrSpecial === '__COPY_LINK__') {
             const baseUrl = window.location.origin + window.location.pathname;
-            const shareUrl = `${baseUrl}?q=${encodeURIComponent(exploreTerm || 'Einstein')}`;
+            const url = new URL(baseUrl);
+            if (searchMode === 'connect') {
+                if (pathStart) url.searchParams.set('start', pathStart);
+                if (pathEnd) url.searchParams.set('end', pathEnd);
+            } else if (exploreTerm) {
+                url.searchParams.set('q', exploreTerm);
+            }
+            const shareUrl = url.toString();
 
             try {
                 await navigator.clipboard.writeText(shareUrl);
@@ -234,9 +240,14 @@ export function useGraphActions(options: UseGraphActionsOptions) {
                 textarea.value = shareUrl;
                 document.body.appendChild(textarea);
                 textarea.select();
-                document.execCommand('copy');
+                try {
+                    document.execCommand('copy');
+                    setNotification({ message: `Link copied to clipboard!`, type: 'success' });
+                } catch (err) {
+                    console.error('Copy fallback failed:', err);
+                    setNotification({ message: `Failed to copy link.`, type: 'error' });
+                }
                 document.body.removeChild(textarea);
-                setNotification({ message: `Link copied to clipboard!`, type: 'success' });
             }
             return;
         }

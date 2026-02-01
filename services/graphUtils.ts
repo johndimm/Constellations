@@ -18,7 +18,7 @@ export const normalizeForDedup = (str: unknown) => {
         .replace(/[\u200B-\u200D\uFEFF]/g, '') // zero-width chars
         .replace(/\u00A0/g, ' ')              // NBSP -> space
         .trim()
-        // .replace(/\s*\([^)]*\)$/, '')         // We no longer remove disambiguations like "(film)"
+        .replace(/\s*\([^)]*\)$/, '')         // STRIP DISAMBIGUATIONS (e.g. "(film)")
         .toLowerCase()
         .replace(/[^\p{L}\p{N}\s]/gu, '')     // Remove punctuation (keep letters/numbers)
         .replace(/\s+/g, ' ')
@@ -64,13 +64,15 @@ export const dedupeKey = (title: string, type?: string, wikipediaId?: string | n
 // Key insight: duplicates often happen when type metadata is missing/inconsistent on Atomics.
 // To avoid duplicates like "Euclid" appearing twice, we dedupe Atomics by title only (within the Atomic partition),
 // and Composites by title+type (to avoid merging distinct things that share a title).
-export const baseDedupeKey = (node: { title: string; type?: string; is_atomic?: boolean; is_person?: boolean }) => {
+export const baseDedupeKey = (node: { title: string; type?: string; is_atomic?: boolean; is_person?: boolean; wikipedia_id?: string | null }) => {
     const normTitle = normalizeForDedup(node.title);
     const isAtomic =
         node.is_atomic ??
         node.is_person ??
         ((node.type || '').trim().toLowerCase() === 'person');
+
     if (isAtomic) return `a|${normTitle}`;
+
     const normType = canonicalType(node.type);
     // If type is missing, dedupe by title only (we'll merge any typed variant into this bucket).
     // This avoids duplicates like identical works where one node has type metadata and the other doesn't.
@@ -83,8 +85,8 @@ export const dedupeGraph = (
     nodes: GraphNode[],
     links: GraphLink[]
 ): { nodes: GraphNode[]; links: GraphLink[] } => {
-    // Use base key (normalized title + type) for deduplication, regardless of wikipedia_id
     const dedupMap = new Map<string, GraphNode>();
+    const wikiIdMap = new Map<string, string>(); // wiki_id -> primary_node_id
     const idRemap = new Map<string, string>();
 
     const normalizeType = (t?: string) => {
@@ -121,27 +123,46 @@ export const dedupeGraph = (
 
     nodes.forEach(n => {
         const key = baseDedupeKey(n as any);
-        let existing = dedupMap.get(key);
+        const wikiId = n.wikipedia_id ? String(n.wikipedia_id) : null;
+
+        let existing: GraphNode | undefined;
         let targetKey = key;
 
-        // If no exact match, check for title-only collisions in the Composite partition.
-        // This handles merging a node with a generic/missing type into a more specific one (or vice versa).
-        if (!existing && key.startsWith('c|')) {
-            const titleOnlyKey = key.split('|').slice(0, 2).join('|'); // "c|<title>"
+        // 1. Try to find by Wikipedia ID first (strongest match)
+        if (wikiId && wikiIdMap.has(wikiId)) {
+            const primaryId = wikiIdMap.get(wikiId)!;
+            // Find the node in dedupMap that has this ID
+            for (const [k, node] of dedupMap.entries()) {
+                if (String(node.id) === primaryId) {
+                    existing = node;
+                    targetKey = k;
+                    break;
+                }
+            }
+        }
 
-            // 1. Try to find a wildcard (title-only) entry
-            const wildcard = dedupMap.get(titleOnlyKey);
-            if (wildcard) {
-                existing = wildcard;
-                targetKey = titleOnlyKey;
-            } else {
-                // 2. Try to find ANY typed entry with the same title
-                // We search all keys for one that starts with our title-only key
-                for (const [k, node] of dedupMap.entries()) {
-                    if (k.startsWith(titleOnlyKey + '|') || k === titleOnlyKey) {
-                        existing = node;
-                        targetKey = k;
-                        break;
+        // 2. Fall back to title-based lookup if no wiki_id match
+        if (!existing) {
+            existing = dedupMap.get(key);
+            targetKey = key;
+
+            // If no exact match, check for title-only collisions in the Composite partition.
+            // This handles merging a node with a generic/missing type into a more specific one (or vice versa).
+            if (!existing && key.startsWith('c|')) {
+                const titleOnlyKey = key.split('|').slice(0, 2).join('|'); // "c|<title>"
+                const wildcard = dedupMap.get(titleOnlyKey);
+                if (wildcard) {
+                    existing = wildcard;
+                    targetKey = titleOnlyKey;
+                } else {
+                    // 2. Try to find ANY typed entry with the same title
+                    // We search all keys for one that starts with our title-only key
+                    for (const [k, node] of dedupMap.entries()) {
+                        if (k.startsWith(titleOnlyKey + '|') || k === titleOnlyKey) {
+                            existing = node;
+                            targetKey = k;
+                            break;
+                        }
                     }
                 }
             }
@@ -150,11 +171,13 @@ export const dedupeGraph = (
         if (!existing) {
             dedupMap.set(key, n);
             idRemap.set(String(n.id), String(n.id));
+            if (wikiId) wikiIdMap.set(wikiId, String(n.id));
         } else {
             const merged = mergeNode(existing, n);
             dedupMap.set(targetKey, merged);
             idRemap.set(String(n.id), String(merged.id));
             idRemap.set(String(existing.id), String(merged.id));
+            if (merged.wikipedia_id) wikiIdMap.set(String(merged.wikipedia_id), String(merged.id));
         }
     });
 

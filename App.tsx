@@ -255,11 +255,20 @@ const App: React.FC<AppProps> = ({
 
         const params = new URLSearchParams(window.location.search);
         const queryParam = params.get('q');
+        const startParam = params.get('start');
+        const endParam = params.get('end');
+
         if (queryParam && isKeyReady && nodes.length === 0) {
             urlQueryProcessedRef.current = true;
             handleStartSearch(queryParam);
+        } else if (startParam && endParam && isKeyReady && nodes.length === 0) {
+            urlQueryProcessedRef.current = true;
+            setSearchMode('connect');
+            setPathStart(startParam);
+            setPathEnd(endParam);
+            handlePathSearch(startParam, endParam);
         }
-    }, [isKeyReady, nodes.length, handleStartSearch]);
+    }, [isKeyReady, nodes.length, handleStartSearch, handlePathSearch, setSearchMode, setPathStart, setPathEnd]);
 
     const applyGraphData = useCallback((data: any, sourceLabel: string) => {
         try {

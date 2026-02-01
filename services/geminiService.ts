@@ -46,8 +46,8 @@ Output Format Rules (apply to ALL responses):
 
 Entity Classification:
 - isAtomic: true for INDIVIDUAL PEOPLE/CHARACTERS (atomic), false for WORKS/GROUPS/ORGANIZATIONS (composite).
-  * Atomic entities (Actor, Person, Author, Artist, Character, Scientist, Director, Composer) → isAtomic=true
-  * Composite entities (Movie, Book, Novel, Play, Album, Band, Organization, Event, Company) → isAtomic=false
+  * Atomic entities (Actor, Person, Author, Artist, Character, Scientist, Philosopher, Academic, Researcher, Director, Composer) → isAtomic=true
+  * Composite entities (Movie, Book, Novel, Play, Album, Band, Organization, Institution, Movement, Event, Company, Paper, Theory, Paradox) → isAtomic=false
 
 Return strict JSON.
 `;
@@ -269,9 +269,10 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
       IMPORTANT:
       - "Person" means an individual human only.
       - Organizations, institutions, committees, societies, companies, and museums are NOT persons.
+      - Philosophers, Scientists, and Academics are INDIVIDUAL PEOPLE and should be ATOMIC (isAtomic: true).
       - In the Person↔Event pairing, treat organizations as "Event" (Composite), NOT "Person".
       - In the Person↔Event pairing, treat named works (albums, songs, books, novels, films, paintings, artworks) as "Event" (Composite), NOT "Person".
-      - In the Person↔Event pairing, treat major scientific theories, concepts, discoveries, or areas of study (e.g., "General Relativity", "Evolution", "Quantum Mechanics") as "Event" (Composite), NOT "Person".
+      - In the Person↔Event pairing, treat major scientific theories, concepts, discoveries, paradoxes, or areas of study (e.g., "General Relativity", "Evolution", "Quantum Mechanics", "Russell's Paradox") as "Event" (Composite), NOT "Person".
       - If the title explicitly contains a disambiguator like "(album)" / "(film)" / "(book)", it is a work: treat it as "Event" (Composite).
       
       Identify the relevant Bipartite Pair this belongs to (e.g. Actor/Movie, Ingredient/Recipe, Symptom/Disease, Person/Event).
@@ -689,12 +690,30 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     Your goal is to find the most direct and historically significant connection path.
     
     CRITICAL RULES:
-    1. The path must ALTERNATE between "Person" and "Event" (where "Event" includes organizations, works, projects, places, etc.; anything that is not a person).
+    1. The path must ALTERNATE between "Person" and "Event" (where "Event" includes organizations, programs, shows, works, projects, places, etc.; anything that is not a person).
     2. A "Person" MUST NOT be connected directly to another "Person".
     3. An "Event" MUST NOT be connected directly to another "Event".
     4. Each step must be a direct and verifiable collaboration, affiliation, or relationship.
     5. The path must be a continuous chain where each node is connected to the next.
-    6. For every "Event" that is an actual Event, Work, or Historical Occurrence, strictly provide the Year it occurred or was created in the "year" field. If it is a persistent entity without a clear year (like a Location or specialized Concept), year is optional.
+    6. For every "Event" that is an actual Event, Show, Program, Work, or Historical Occurrence, strictly provide the Year it occurred or was created in the "year" field. If it is a persistent entity without a clear year (like a Location or specialized Concept), year is optional.
+    7. MEDIA PERSONALITIES RULE: When connecting media personalities (journalists, hosts, actors, comedians), you MUST use specific TV programs, radio shows, movies, plays, or books they worked on together as the connecting "Event".
+        - PREFER: Specific shared credits (e.g., "The Daily Show", "Crossfire", "Saturday Night Live").
+        - AVOID: Broad networks or shared employers (e.g., "Fox News", "CNN", "NBC") unless no specific show exists.
+        - AVOID: Broad professional categories (e.g., "Journalism", "Comedy").
+
+    8. ACADEMIC & SCIENTIFIC RULE: For philosophers, scientists, and academics, you COMPLETE INTELLECTUAL SPECIFICITY.
+        - HIGHEST PRIORITY: "Eponymous Concepts" (Paradoxes, Theorems, Laws, Constants named after them) that connect them (e.g., "Russell's Paradox", "Gödel's Incompleteness Theorems").
+        - HIGH PRIORITY: "Direct Correspondence" (e.g., specific letter exchanges) and "Specific Co-authored Works" (books, papers).
+        - STRICTLY FORBIDDEN: Do NOT return another Person (Name) as the connecting node. The connection MUST be a composite entity (Concept, Work, Meeting, Correspondence).
+        - FORBIDDEN: Do NOT use "Direct Mentorship" unless you can name the specific Lab, University Department, or Project where it happened as the node.
+        - FORBIDDEN: Do NOT use broad movements, schools, or circles (e.g., "Vienna Circle", "Analytic Philosophy", "Rationalism", "British Empiricism") as the primary connecting node if *any* direct intellectual work, paradox, or correspondence exists.
+        - FORBIDDEN: Do NOT use "University of X" or "Fellowship at Y" unless they were there at the exact same time and collaborated.
+        
+    BIPARTITE ENFORCEMENT:
+    - If Node A is a Person and Node B is a Person, the intermediary MUST be a COMPOSITE (Event/Work/Concept).
+    - It CANNOT be another Person.
+    - WRONG: Russell -> Peano -> Frege
+    - RIGHT: Russell -> Peano Axioms -> Peano -> Letter to Frege -> Frege
     
     Example valid path:
     Person (Isaac Asimov) -> Event (Star Trek) -> Person (Gene Roddenberry)
@@ -704,9 +723,9 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     Return JSON:
     {
       "path": [
-        { "id": "${start}", "type": "Person/Organization/etc", "description": "Short bio", "justification": "Start node", "year": 1950 },
-        { "id": "Intermediary 1...", "type": "...", "description": "...", "justification": "...", "year": 1965 },
-        { "id": "${end}", "type": "...", "description": "...", "justification": "Destination", "year": 1990 }
+        { "id": "${start}", "type": "Person", "description": "Short bio", "justification": "Start node", "year": 1950 },
+        { "id": "Intermediary 1...", "type": "TV Program/Movie/etc", "description": "...", "justification": "Directly connected to the PREVIOUS node because...", "year": 1965 },
+        { "id": "${end}", "type": "Person", "description": "...", "justification": "Directly connected to the PREVIOUS node because...", "year": 1990 }
       ]
     }`;
 
