@@ -891,10 +891,11 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             const old = oldNodeMap.get(n.id);
             if (old) {
                 // Preserve physics state
-                if (n.x === undefined || isNaN(n.x)) n.x = old.x;
-                if (n.y === undefined || isNaN(n.y)) n.y = old.y;
-                if (n.vx === undefined || isNaN(n.vx)) n.vx = old.vx;
-                if (n.vy === undefined || isNaN(n.vy)) n.vy = old.vy;
+                const oldNode = old as GraphNode;
+                if (n.x === undefined || isNaN(n.x)) n.x = oldNode.x;
+                if (n.y === undefined || isNaN(n.y)) n.y = oldNode.y;
+                if (n.vx === undefined || isNaN(n.vx)) n.vx = oldNode.vx;
+                if (n.vy === undefined || isNaN(n.vy)) n.vy = oldNode.vy;
             }
         });
 
@@ -1314,22 +1315,22 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
     useEffect(() => {
         if (!zoomGroupRef.current) return;
 
-        const keepHighlight = new Set(highlightKeepIds || []);
-        const dropHighlight = new Set(highlightDropIds || []);
+        const keepHighlight = new Set((highlightKeepIds || []).map(String));
+        const dropHighlight = new Set((highlightDropIds || []).map(String));
         const hasHighlight = keepHighlight.size > 0 || dropHighlight.size > 0;
 
         // Build set of path links
         const pathLinkIds = new Set<string>();
         if (hasHighlight && highlightKeepIds && highlightKeepIds.length > 1) {
             for (let i = 0; i < highlightKeepIds.length - 1; i++) {
-                const nodeId1 = highlightKeepIds[i];
-                const nodeId2 = highlightKeepIds[i + 1];
+                const nodeId1 = String(highlightKeepIds[i]);
+                const nodeId2 = String(highlightKeepIds[i + 1]);
                 const link = links.find(l => {
-                    const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
-                    const tId = typeof l.target === 'object' ? (l.target as GraphNode).id : l.target;
+                    const sId = String(typeof l.source === 'object' ? (l.source as GraphNode).id : l.source);
+                    const tId = String(typeof l.target === 'object' ? (l.target as GraphNode).id : l.target);
                     return (sId === nodeId1 && tId === nodeId2) || (sId === nodeId2 && tId === nodeId1);
                 });
-                if (link) pathLinkIds.add(link.id);
+                if (link) pathLinkIds.add(String(link.id));
             }
         }
 
@@ -1350,8 +1351,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             const g = d3.select(this);
             const isHovered = d.id === hoveredNode?.id;
             const isFocused = d.id === effectiveFocused?.id;
-            const isDrop = dropHighlight.has(d.id);
-            const isKeep = keepHighlight.has(d.id);
+            const isDrop = dropHighlight.has(String(d.id));
+            const isKeep = keepHighlight.has(String(d.id));
 
             let baseOpacity = 1;
             if (isDrop) {
@@ -1360,12 +1361,17 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 baseOpacity = isKeep ? 1 : 0.3;
             } else {
                 if (expandingNodeId !== null) {
-                    const isExpanding = expandingNodeId === d.id;
+                    const isExpanding = String(expandingNodeId) === String(d.id);
                     const isNewChild = newChildNodeIds.has(String(d.id));
                     if (!isExpanding && !isNewChild) baseOpacity = 0.25;
                 } else if (effectiveFocused) {
                     const isNewChild = newChildNodeIds.has(String(d.id));
-                    if (!isFocused && !neighborIds.has(d.id) && !isNewChild) baseOpacity = 0.25;
+                    const isFocused = String(d.id) === String(effectiveFocused.id);
+                    // Use neighborIds (which are potentially mixed types) carefully by stringifying
+                    // We need to check if neighborIds HAS d.id
+                    const isNeighbor = Array.from(neighborIds).some(nid => String(nid) === String(d.id));
+
+                    if (!isFocused && !isNeighbor && !isNewChild) baseOpacity = 0.25;
                 }
             }
             g.style("opacity", d.isLoading ? 1 : baseOpacity);
@@ -1424,8 +1430,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         if (!isTimelineMode) {
             allLinks.style("display", null)
                 .style("stroke-opacity", d => {
-                    const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
-                    const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
+                    const sId = String(typeof d.source === 'object' ? (d.source as GraphNode).id : d.source);
+                    const tId = String(typeof d.target === 'object' ? (d.target as GraphNode).id : d.target);
 
                     if (dropHighlight.has(sId) || dropHighlight.has(tId)) return 0.12;
 
@@ -1440,14 +1446,18 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     const isNewTarget = newChildNodeIds.has(String(tId)) || newChildNodeIds.has(tId);
 
                     if (expandingNodeId !== null) {
-                        const sourceBright = sId === expandingNodeId || isNewSource;
-                        const targetBright = tId === expandingNodeId || isNewTarget;
+                        const sourceBright = String(sId) === String(expandingNodeId) || isNewSource;
+                        const targetBright = String(tId) === String(expandingNodeId) || isNewTarget;
                         if (sourceBright && targetBright) return 0.95;
                         if (sourceBright || targetBright) return 0.5;
                         return 0.25;
                     } else if (effectiveFocused) {
-                        const sourceBright = sId === effectiveFocused.id || neighborIds.has(sId);
-                        const targetBright = tId === effectiveFocused.id || neighborIds.has(tId);
+                        // neighborIds check needs string normalization too
+                        const sIsNeighbor = Array.from(neighborIds).some(nid => String(nid) === String(sId));
+                        const tIsNeighbor = Array.from(neighborIds).some(nid => String(nid) === String(tId));
+
+                        const sourceBright = String(sId) === String(effectiveFocused.id) || sIsNeighbor;
+                        const targetBright = String(tId) === String(effectiveFocused.id) || tIsNeighbor;
                         if (sourceBright && targetBright) return 0.95;
                         if (sourceBright || targetBright) return 0.5;
                         return 0.25;
@@ -1459,13 +1469,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     return 0.85;
                 })
                 .style("stroke", d => {
-                    const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
-                    const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
+                    const sId = String(typeof d.source === 'object' ? (d.source as GraphNode).id : d.source);
+                    const tId = String(typeof d.target === 'object' ? (d.target as GraphNode).id : d.target);
 
                     if (dropHighlight.has(sId) || dropHighlight.has(tId)) return "#f87171";
 
                     if (hasHighlight) {
-                        const inPath = keepHighlight.has(sId) && keepHighlight.has(tId);
+                        const inPath = pathLinkIds.has(String(d.id));
                         if (inPath) return "#f59e0b"; // Highlight any link between path nodes
                         return "#94a3b8"; // Blue-grey for external noise when path is active
                     }

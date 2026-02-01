@@ -552,6 +552,13 @@ export const fetchPersonWorks = async (
        - DO NOT return generic "companies acquired by X" lists unless "${nodeName}" personally founded/led the acquired company or was a named executive involved.
        - Prefer fewer, higher-confidence entities over a long list of weakly-related acquisitions.
 
+        FAMOUS MEETING RULE:
+        - Prioritize cases where two famous people finally meet each other in person or by some other direct one-on-one connection.
+        - PREFER: Specific events (summits, premieres, dinners, lab meetings) over broad eras or movements.
+        - AVOID: Broad eras (e.g., "World War II", "Civil Rights Movement") or shared workplaces (e.g., "Bell Labs", "Hollywood") unless no specific meeting or project exists.
+        - Illustrative Example: Alan Turing -> Meeting at Bell Labs (1943) -> Claude Shannon (BETTER than Turing -> World War II -> Shannon).
+        - Illustrative Example: Goethe -> Meeting at Teplitz -> Beethoven (BETTER than Goethe -> Romanticism -> Beethoven).
+
        SPECIAL CASE (art): If "${nodeName}" is an artist (painter/sculptor/architect/photographer), include their major named artworks as returned entities.
        - These artworks may be primarily made by a single person; that is OK.
        - Set the returned item's "type" field to "Artwork" (or "Architecture" / "Sculpture" / "Painting" when clearly applicable).
@@ -708,6 +715,13 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
         - FORBIDDEN: Do NOT use "Direct Mentorship" unless you can name the specific Lab, University Department, or Project where it happened as the node.
         - FORBIDDEN: Do NOT use broad movements, schools, or circles (e.g., "Vienna Circle", "Analytic Philosophy", "Rationalism", "British Empiricism") as the primary connecting node if *any* direct intellectual work, paradox, or correspondence exists.
         - FORBIDDEN: Do NOT use "University of X" or "Fellowship at Y" unless they were there at the exact same time and collaborated.
+
+    9. FAMOUS MEETING RULE:
+        - Prioritize cases where two famous people finally meet each other in person or by some other direct one-on-one connection.
+        - PREFER: Specific events (summits, premieres, dinners, lab meetings) over broad eras or movements.
+        - AVOID: Broad eras (e.g., "World War II", "Civil Rights Movement") or shared workplaces (e.g., "Bell Labs", "Hollywood") unless no specific meeting or project exists.
+        - Illustrative Example: Alan Turing -> Meeting at Bell Labs (1943) -> Claude Shannon (BETTER than Turing -> World War II -> Shannon).
+        - Illustrative Example: Goethe -> Meeting at Teplitz -> Beethoven (BETTER than Goethe -> Romanticism -> Beethoven).
         
     BIPARTITE ENFORCEMENT:
     - If Node A is a Person and Node B is a Person, the intermediary MUST be a COMPOSITE (Event/Work/Concept).

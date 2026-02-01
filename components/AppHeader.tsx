@@ -40,7 +40,10 @@ const AppHeader: React.FC<AppHeaderProps> = ({
                     {panelCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
                 </button>
                 <button
-                    onClick={(e) => { e.preventDefault(); onReset(); }}
+                    onClick={(e) => {
+                        e.preventDefault();
+                        window.location.href = window.location.origin + window.location.pathname;
+                    }}
                     className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap hover:text-red-400 transition-colors"
                 >
                     Constellations
