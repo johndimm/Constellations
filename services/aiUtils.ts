@@ -97,11 +97,31 @@ export function getResponseText(response: any): string {
   return "";
 }
 
-// Clean JSON response from markdown wrappers
+// Clean JSON response from markdown wrappers or conversational chatter
 export function cleanJson(text: unknown): string {
   if (typeof text !== "string") return "";
-  // Remove markdown code blocks if present (e.g. ```json ... ``` or ``` ...)
-  return text.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();
+
+  // 1. Remove markdown code blocks if present (e.g. ```json ... ``` or ``` ...)
+  let cleaned = text.replace(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/g, '$1').trim();
+
+  // 2. If it doesn't start with JSON, try to find the first '{' or '[' and extract from there
+  if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
+    const firstBrace = cleaned.indexOf('{');
+    const firstBracket = cleaned.indexOf('[');
+    const startIdx = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
+    
+    if (startIdx !== -1) {
+      const lastBrace = cleaned.lastIndexOf('}');
+      const lastBracket = cleaned.lastIndexOf(']');
+      const endIdx = Math.max(lastBrace, lastBracket);
+      
+      if (endIdx > startIdx) {
+        cleaned = cleaned.substring(startIdx, endIdx + 1);
+      }
+    }
+  }
+
+  return cleaned.trim();
 }
 
 // Safely retrieve API key

@@ -860,6 +860,104 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
 
 // Optional: grounded lookup for org leadership using Google Search tool.
 // NOTE: This cannot use responseSchema/responseMimeType; we parse JSON from text.
+/**
+ * Uses Google Search to find a person's professional background (LinkedIn, etc.)
+ */
+export async function fetchPersonBioViaSearch(personName: string): Promise<string | null> {
+  if (shouldProxy()) {
+    return callAiProxy("/api/ai/search-person", { personName });
+  }
+
+  const apiKey = await getApiKey();
+  if (!apiKey) return null;
+
+  const name = String(personName || "").trim();
+  if (!name) return null;
+
+  const ai = new GoogleGenAI({ apiKey });
+  const prompt = `Use Google Search to find professional background for "${name}".
+
+  Goal: Extract current / past roles, companies, key achievements, and location. 
+  Specifically look for LinkedIn, Crunchbase, corporate bios, or news articles.
+  
+  Return STRICT JSON only (no prose):
+{
+  "summary": "1-2 sentence professional bio",
+  "experience": [{ "role": "Role", "company": "Company", "duration": "Years/Dates", "details": "Key contribution" }],
+  "education": [{ "degree": "Degree", "school": "School" }],
+  "sourceUrl": "Primary source URL (e.g. LinkedIn profile)",
+  "sourceTitle": "Primary source page title"
+}
+
+Rules:
+- EXACT MATCH ONLY: Ensure the results are for the exact name "${name}". Do NOT follow search engine "corrections" to similar-sounding or more famous names.
+- IDENTITY GUARD: If a potential match has a different number of letters (e.g., "Moy" vs "Mowatt") or a different first letter in the surnames (e.g., "Dimm" vs "Simm"), it is NOT a typo; it is a COMPLETELY DIFFERENT person.
+- STRIKE POLICY: If you find information about a famous person who has a similar but different name (e.g., John Simm when searching for John Dimm), you MUST return an empty JSON object. DO NOT mention the famous person in the summary.
+- STRICTLY avoid names of famous people who have similar but different names (e.g. "Rick Moy" is NOT "Rick Mowatt", "John Dimm" is NOT "John Simm").
+- If unsure about the identity, leave experience empty and return a minimal summary: "No information found for exact name ${name}."
+- Do NOT invent facts.`;
+
+  try {
+    const response = await withRetry(
+      () =>
+        withTimeout(
+          ai.models.generateContent({
+            model: getGeminiModel(),
+            contents: prompt,
+            config: {
+              systemInstruction: "You are a careful professional research assistant. Use Google Search for grounding.",
+              tools: [{ googleSearch: {} }]
+            }
+          }),
+          25000,
+          "Person bio search timed out"
+        ),
+      3,
+      1000
+    );
+
+    const rawText = getResponseText(response);
+    const text = cleanJson(rawText);
+    if (!text) {
+      console.log(`[DEBUG] No JSON extracted for "${personName}". Raw text:`, rawText.substring(0, 200));
+      return null;
+    }
+    const json = JSON.parse(text) as any;
+    console.log(`[DEBUG] Parsed JSON for "${personName}":`, JSON.stringify(json, null, 2));
+
+    const summary = json?.summary ? String(json.summary).trim() : "";
+    const exp = Array.isArray(json?.experience) ? json.experience : [];
+
+    // Sanitize: If the LLM mentions a similar-looking but different name as a negative example, 
+    // it can still lead to hallucination in the next stage.
+    if (!summary || summary.toLowerCase().includes("no information found") || exp.length === 0) {
+      console.log(`[DEBUG] Rejecting for "${personName}": summary=${!!summary}, hasNoInfo=${summary.toLowerCase().includes("no information found")}, expLength=${exp.length}`);
+      return null;
+    }
+
+    const lines: string[] = [];
+    if (summary) lines.push(`Summary: ${summary}`);
+    if (exp.length) {
+      lines.push("Experience:");
+      exp.slice(0, 5).forEach((e: any) => {
+        lines.push(`- ${e.role} at ${e.company} (${e.duration || ""})`);
+      });
+    }
+
+    const source = json?.sourceUrl && json?.sourceTitle
+      ? `[${json.sourceTitle}](${json.sourceUrl})`
+      : null;
+
+    return [
+      `PROFESSIONAL_GROUNDING (Grounded Search for "${name}")`,
+      ...lines,
+      ...(source ? ["Source:", `- ${source}`] : [])
+    ].join("\n");
+  } catch (e) {
+    console.warn("Person bio search failed:", name, e);
+    return null;
+  }
+}
 export const fetchOrgKeyPeopleBlockViaSearch = async (orgName: string): Promise<string | null> => {
   if (shouldProxy()) {
     return callAiProxy("/api/ai/search-org", { orgName });

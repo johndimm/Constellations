@@ -1436,7 +1436,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     if (dropHighlight.has(sId) || dropHighlight.has(tId)) return 0.12;
 
                     if (hasHighlight) {
-                        const inPath = keepHighlight.has(sId) && keepHighlight.has(tId);
+                        const inPath = pathLinkIds.has(String(d.id));
                         if (inPath) return 0.95;
                         return 0.3; // Dim everything else when path is active
                     }

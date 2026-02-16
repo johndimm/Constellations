@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { GraphNode, GraphLink } from '../types';
-import { fetchConnections, fetchPersonWorks, classifyEntity, fetchOrgKeyPeopleBlockViaSearch, LockedPair } from '../services/geminiService';
+import { fetchConnections, fetchPersonWorks, classifyEntity, fetchOrgKeyPeopleBlockViaSearch, fetchPersonBioViaSearch, LockedPair } from '../services/geminiService';
 import { fetchWikipediaSummary, fetchWikipediaExtract, fetchWikidataKeyPeopleForTitle, fetchWikidataCastForTitle } from '../services/wikipediaService';
 import {
     searchOpenAlexAuthor,
@@ -287,6 +287,7 @@ export function useExpansion(options: UseExpansionOptions) {
                 } else {
                     const classification = await classifyEntity(node.title);
                     currentIsAtomic = classification.isAtomic;
+                    currentType = classification.type;
                     nodeUpdates.set(node.id, {
                         ...(typeof (node.is_atomic ?? (node as any).is_person) === 'boolean' ? {} : { is_atomic: classification.isAtomic }),
                         type: classification.type
@@ -301,7 +302,7 @@ export function useExpansion(options: UseExpansionOptions) {
 
             let verifiedContext = sourceLong;
             try {
-                const expandingComposite = !(currentIsAtomic ?? currentType.toLowerCase() === 'person');
+                const expandingComposite = !(currentIsAtomic ?? (currentType || '').toLowerCase() === 'person');
 
                 if (!isAcademicPair && pair.atomicType.toLowerCase() === 'person' && expandingComposite) {
 
@@ -317,6 +318,14 @@ export function useExpansion(options: UseExpansionOptions) {
                         if (lines.length) verifiedContext = `${verifiedContext}\n\nWIKIDATA (structured properties for "${node.title}", ${wd.wikidataId}):\n${lines.map(l => `- ${l}`).join('\n')}\n`;
                     } else if (ENABLE_WEB_SEARCH && (verifiedContext || '').trim().length < 400) {
                         const grounded = await fetchOrgKeyPeopleBlockViaSearch(node.title);
+                        if (grounded) verifiedContext = `${verifiedContext}\n\n${grounded}\n`;
+                    }
+                }
+
+                // New logic: grounded professional discovery for People
+                if (!isAcademicPair && (currentIsAtomic || (currentType || '').toLowerCase() === 'person') && !expandingComposite) {
+                    if (ENABLE_WEB_SEARCH && (verifiedContext || '').trim().length < 200) {
+                        const grounded = await fetchPersonBioViaSearch(node.title);
                         if (grounded) verifiedContext = `${verifiedContext}\n\n${grounded}\n`;
                     }
                 }

@@ -6,7 +6,7 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch } from "./services/geminiService";
+import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, fetchPersonBioViaSearch } from "./services/geminiService";
 import { fetchWikipediaSummary } from "./services/wikipediaService";
 
 // Load env from .env.local if present
@@ -555,13 +555,27 @@ app.post("/api/expand", async (req, res) => {
       type = classification.type;
     }
 
-    // 3. Expansion
+    // 3. Grounding if Wikipedia is missing/sparse
+    const ENABLE_WEB_SEARCH = process.env.VITE_ENABLE_WEB_SEARCH === 'true';
+    let verifiedContext = wiki.extract || undefined;
+
+    if (ENABLE_WEB_SEARCH && (verifiedContext || '').trim().length < 400) {
+      if (isAtomic) {
+        const grounded = await fetchPersonBioViaSearch(query);
+        if (grounded) verifiedContext = (verifiedContext ? verifiedContext + "\n\n" : "") + grounded;
+      } else {
+        const grounded = await fetchOrgKeyPeopleBlockViaSearch(query);
+        if (grounded) verifiedContext = (verifiedContext ? verifiedContext + "\n\n" : "") + grounded;
+      }
+    }
+
+    // 4. Expansion
     let data;
     if (isAtomic) {
       data = await fetchPersonWorks(
         query,
         [],
-        wiki.extract || undefined,
+        verifiedContext,
         wiki.pageid?.toString(),
         atomicType,
         compositeType,
@@ -572,7 +586,7 @@ app.post("/api/expand", async (req, res) => {
         query,
         context,
         [],
-        wiki.extract || undefined,
+        verifiedContext,
         wiki.pageid?.toString(),
         atomicType,
         compositeType,
@@ -1392,6 +1406,17 @@ app.post("/api/ai/search-org", async (req, res) => {
   if (!orgName) return res.status(400).json({ error: "orgName is required" });
   try {
     const result = await fetchOrgKeyPeopleBlockViaSearch(orgName);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/ai/search-person", async (req, res) => {
+  const { personName } = req.body;
+  if (!personName) return res.status(400).json({ error: "personName is required" });
+  try {
+    const result = await fetchPersonBioViaSearch(personName);
     return res.status(200).json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
