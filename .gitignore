@@ -24,3 +24,4 @@ wikipedia/
 *.sln
 *.sw?
 dist-extension
+.chrome-pdf-profile/

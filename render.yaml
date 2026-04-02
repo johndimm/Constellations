@@ -3,7 +3,7 @@ services:
     name: constellations-cache
     env: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install --include=dev
     startCommand: npm run start:cache
     envVars:
       - key: DATABASE_URL
