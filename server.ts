@@ -640,8 +640,9 @@ app.get("/api/crossref/work", async (req, res) => {
 });
 
 app.post("/init", async (_, res) => {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     await client.query("drop table if exists edges cascade");
     await client.query("drop table if exists nodes cascade");
     await client.query("drop table if exists saved_graphs cascade");
@@ -651,14 +652,15 @@ app.post("/init", async (_, res) => {
     console.error(e);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
 // Clear all cached data (nodes and edges)
 app.delete("/cache/clear", async (_, res) => {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     console.log("🗑️  Clearing all cached data...");
     await client.query("BEGIN");
 
@@ -679,11 +681,11 @@ app.delete("/cache/clear", async (_, res) => {
       deleted: { nodes: nodesDeleted, edges: edgesDeleted }
     });
   } catch (e: any) {
-    await client.query("ROLLBACK");
+    if (client) await client.query("ROLLBACK").catch(() => {});
     console.error("❌ Failed to clear cache:", e);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
@@ -698,8 +700,9 @@ app.get("/path", async (req, res) => {
   const maxD = parseInt(maxDepth || "10");
   if (isNaN(start) || isNaN(end)) return res.status(400).json({ error: "startId and endId must be numbers" });
 
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     // BFS to find path between two nodes
     // Graph is bipartite: Person <-> Event <-> Person <-> Event...
     const visited = new Set<number>();
@@ -769,7 +772,7 @@ app.get("/path", async (req, res) => {
     console.error(e);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
@@ -781,8 +784,9 @@ app.get("/expansion", async (req, res) => {
   const id = parseInt(sourceId);
   if (isNaN(id)) return res.status(400).json({ error: "sourceId must be a number" });
 
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     // Fetch all nodes connected to this node
     const result = await client.query(
       `
@@ -826,7 +830,7 @@ app.get("/expansion", async (req, res) => {
     console.error(e);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
@@ -839,8 +843,9 @@ app.post("/expansion", async (req, res) => {
 
   if (!sourceId || !nodes) return res.status(400).json({ error: "sourceId and nodes required" });
 
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     await client.query("begin");
 
     // 1. Get source node is_atomic to know if it's an atomic or composite
@@ -876,11 +881,11 @@ app.post("/expansion", async (req, res) => {
     await client.query("commit");
     res.json({ ok: true });
   } catch (e: any) {
-    await client.query("rollback");
+    if (client) await client.query("rollback").catch(() => {});
     console.error(e);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
@@ -890,8 +895,9 @@ app.post("/node", async (req, res) => {
   if (!node.title && !(node as any).id) return res.status(400).json({ error: "title required" });
   if (!node.type) return res.status(400).json({ error: "type required" });
 
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     const nodeMap = await upsertNodes(client, [{
       title: node.title || (node as any).id,
       type: node.type,
@@ -911,28 +917,30 @@ app.post("/node", async (req, res) => {
     console.error(e);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
 // Saved Graphs Endpoints
 app.get("/graphs", async (_, res) => {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     const result = await client.query("select name, updated_at from saved_graphs order by name asc");
     res.json(result.rows);
   } catch (e: any) {
     console.error(e);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
 app.get("/graphs/:name", async (req, res) => {
   const { name } = req.params;
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     const result = await client.query("select data from saved_graphs where name = $1", [name]);
     if (result.rowCount === 0) return res.status(404).json({ error: "Graph not found" });
     res.json(result.rows[0].data);
@@ -940,7 +948,7 @@ app.get("/graphs/:name", async (req, res) => {
     console.error(e);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
@@ -951,8 +959,9 @@ app.post("/graphs", async (req, res) => {
   const dataSize = JSON.stringify(data).length;
   console.log(`[${new Date().toISOString()}] Saving graph "${name}", size: ${(dataSize / 1024 / 1024).toFixed(2)} MB`);
 
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     await client.query(
       `
       insert into saved_graphs (name, data, updated_at)
@@ -967,14 +976,15 @@ app.post("/graphs", async (req, res) => {
     console.error(e);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
 app.delete("/graphs/:name", async (req, res) => {
   const { name } = req.params;
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     const result = await client.query("delete from saved_graphs where name = $1", [name]);
     if (result.rowCount === 0) return res.status(404).json({ error: "Graph not found" });
     res.json({ ok: true });
@@ -982,7 +992,7 @@ app.delete("/graphs/:name", async (req, res) => {
     console.error(e);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
