@@ -131,10 +131,15 @@ const HelpOverlay: React.FC<HelpOverlayProps> = ({
                             <span>Visit Standalone Website</span>
                         </a>
                     ) : (
-                        <div className="flex items-center gap-2 text-slate-500">
+                        <a
+                            href="https://chromewebstore.google.com/detail/nphipbpoephgjgapmeanccnaikljggkg"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 transition-colors"
+                        >
                             <LinkIcon size={14} />
-                            <span>Chrome Extension (Coming Soon)</span>
-                        </div>
+                            <span>Install Chrome Extension</span>
+                        </a>
                     )}
                 </section>
             </div>

@@ -11,6 +11,31 @@ export type KioskDomain = {
 
 export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
   {
+    id: "actors-movies-tv",
+    label: "Actors / Movies / TV",
+    description: "People ↔ Works (films / TV).",
+    terms: [
+      "The Godfather",
+      "Pulp Fiction",
+      "Schindler's List",
+      "2001: A Space Odyssey",
+      "The Lord of the Rings (film series)",
+      "The Sopranos",
+      "Breaking Bad",
+      "Game of Thrones",
+      "Martin Scorsese",
+      "Stanley Kubrick",
+      "Steven Spielberg",
+      "Alfred Hitchcock",
+      "Meryl Streep",
+      "Marlon Brando",
+      "Tom Hanks",
+      "Kevin Bacon",
+      "Christopher Nolan",
+      "Coen Brothers"
+    ]
+  },
+  {
     id: "mathematicians",
     label: "Mathematics",
     description: "Mostly mathematicians (people), plus a few foundational ideas.",
@@ -57,33 +82,6 @@ export const DEFAULT_KIOSK_DOMAINS: KioskDomain[] = [
       "1984",
       "The Road",
       "Blood Meridian"
-    ]
-  },
-  {
-    id: "actors-movies-tv",
-    label: "Actors / Movies / TV",
-    description: "People ↔ Works (films / TV).",
-    terms: [
-      "The Godfather",
-      "Scarface (1983 film)",
-      "The Lord of the Rings (film series)",
-      "Peter Jackson",
-      "The Matrix",
-      "Keanu Reeves",
-      "Breaking Bad",
-      "Better Call Saul",
-      "The Sopranos",
-      "Hayao Miyazaki",
-      "Spirited Away",
-      "Kevin Bacon",
-      "Zendaya",
-      "Timothée Chalamet",
-      "Florence Pugh",
-      "Margot Robbie",
-      "Ryan Gosling",
-      "Pedro Pascal",
-      "Emma Stone",
-      "Robert Downey Jr."
     ]
   },
   {

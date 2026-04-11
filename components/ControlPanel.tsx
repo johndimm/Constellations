@@ -511,19 +511,39 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               <div className="space-y-3">
                 {/* Search / connect inputs (always available) */}
                 {searchMode === 'explore' ? (
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <input type="text" value={exploreTerm} onChange={(e) => setExploreTerm(e.target.value)} placeholder="Enter a person or event..." className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-8 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" disabled={isProcessing} />
-                      <Search className="absolute left-3 top-3.5 text-slate-400" size={16} />
-                      {exploreTerm && (
-                        <button type="button" onClick={() => setExploreTerm('')} className="absolute right-2 top-3.5 text-slate-400 hover:text-white">
-                          <X size={14} />
-                        </button>
-                      )}
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input type="text" value={exploreTerm} onChange={(e) => setExploreTerm(e.target.value)} placeholder="Enter a person or event..." className="w-full bg-slate-800 border border-slate-600 text-white pl-10 pr-8 py-3 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" disabled={isProcessing} />
+                        <Search className="absolute left-3 top-3.5 text-slate-400" size={16} />
+                        {exploreTerm && (
+                          <button type="button" onClick={() => setExploreTerm('')} className="absolute right-2 top-3.5 text-slate-400 hover:text-white">
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                      <button type="submit" disabled={isProcessing} className={`px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-all shadow-lg ${isProcessing ? 'bg-slate-700 text-slate-400' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'}`}>
+                        {isProcessing ? '...' : 'GO'}
+                      </button>
                     </div>
-                    <button type="submit" disabled={isProcessing} className={`px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-all shadow-lg ${isProcessing ? 'bg-slate-700 text-slate-400' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'}`}>
-                      {isProcessing ? '...' : 'GO'}
-                    </button>
+                    <div className="flex gap-2">
+                      {['The Godfather', 'French Revolution', 'Alan Turing'].map(term => (
+                        <button
+                          key={term}
+                          type="button"
+                          onClick={() => {
+                            setExploreTerm(term);
+                            onSearch(term);
+                            setHasStarted(true);
+                            if (window.innerWidth < 768) onSetCollapsed(true);
+                          }}
+                          disabled={isProcessing}
+                          className="flex-1 text-[11px] bg-slate-800/60 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-300 px-2 py-1.5 rounded-lg border border-slate-700 hover:border-indigo-500/40 transition-all truncate"
+                        >
+                          {term}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
