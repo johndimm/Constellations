@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regeneration Prompt — Constellations</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface2: #162032;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #818cf8;
+            --accent2: #38bdf8;
+            --border: #334155;
+            --tag-bg: #1e293b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.75;
+            color: var(--text);
+            background: var(--bg);
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 3rem 2rem 6rem;
+        }
+
+        header {
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 800;
+            color: white;
+            letter-spacing: -0.03em;
+            margin-bottom: 0.4rem;
+        }
+
+        header .subtitle {
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        header .subtitle a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        header .subtitle a:hover { text-decoration: underline; }
+
+        .intro {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 0.5rem 0.5rem 0;
+            padding: 1.2rem 1.5rem;
+            margin-bottom: 3rem;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        section {
+            margin-bottom: 3rem;
+        }
+
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: white;
+            letter-spacing: -0.02em;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        h2 .num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.6rem;
+            height: 1.6rem;
+            background: var(--accent);
+            color: #0f172a;
+            border-radius: 50%;
+            font-size: 0.72rem;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+        h3 {
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--accent2);
+            margin: 1.5rem 0 0.5rem;
+        }
+
+        p {
+            color: var(--text);
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+        }
+
+        ul, ol {
+            padding-left: 1.4rem;
+            margin-bottom: 0.75rem;
+        }
+
+        li {
+            font-size: 0.95rem;
+            color: var(--text);
+            margin-bottom: 0.3rem;
+        }
+
+        li strong { color: white; }
+
+        .pair-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 0.6rem;
+            margin: 1rem 0;
+        }
+
+        .pair-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 0.6rem 0.9rem;
+            font-size: 0.88rem;
+        }
+
+        .pair-card .atomic { color: var(--accent2); font-weight: 700; }
+        .pair-card .sep { color: var(--muted); margin: 0 0.3rem; }
+        .pair-card .composite { color: var(--accent); font-weight: 700; }
+        .pair-card .desc { color: var(--muted); font-size: 0.78rem; margin-top: 0.1rem; }
+
+        .source-block {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1rem 1.2rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .source-block .source-name {
+            font-weight: 700;
+            color: white;
+            margin-bottom: 0.3rem;
+            font-size: 0.95rem;
+        }
+
+        .source-block ul {
+            margin: 0;
+        }
+
+        .source-block li {
+            color: var(--muted);
+            font-size: 0.87rem;
+        }
+
+        code {
+            font-family: "SF Mono", "Fira Code", monospace;
+            font-size: 0.82em;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.35em;
+            color: var(--accent2);
+        }
+
+        .param-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.75rem 0;
+            font-size: 0.88rem;
+        }
+
+        .param-table th {
+            text-align: left;
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 0.78rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 0.4rem 0.8rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .param-table td {
+            padding: 0.45rem 0.8rem;
+            border-bottom: 1px solid #1e2d3d;
+            vertical-align: top;
+        }
+
+        .param-table td:first-child { color: var(--accent2); font-family: monospace; }
+        .param-table td:last-child { color: var(--muted); }
+
+        .stack-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.6rem;
+            margin-top: 0.75rem;
+        }
+
+        .stack-item {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.4rem;
+            padding: 0.5rem 0.8rem;
+            font-size: 0.88rem;
+        }
+
+        .stack-item .stack-label {
+            color: var(--muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.15rem;
+        }
+
+        .stack-item .stack-val { color: white; font-weight: 600; }
+
+        @media (max-width: 600px) {
+            .pair-grid { grid-template-columns: 1fr 1fr; }
+            .stack-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Regeneration Prompt</h1>
+    <p class="subtitle">
+        A complete English specification of <strong>Constellations</strong> — sufficient to rebuild the app from scratch.
+        &nbsp;·&nbsp; <a href="/">← Back to app</a>
+    </p>
+</header>
+
+<div class="intro">
+    This document describes every feature of Constellations without prescribing layout or visual design. It is intended as a prompt for an AI coding agent to regenerate the application.
+</div>
+
+<section>
+    <h2><span class="num">1</span> Core Concept</h2>
+    <p>Build an interactive knowledge graph explorer called <strong>Constellations</strong>. The user types any person, place, work, or concept and the app expands it into a network of related entities, which can themselves be expanded. The graph grows outward from the seed term, revealing connections between people, events, works, and ideas.</p>
+    <p>The organizing principle is a <strong>strict bipartite graph</strong>: the graph alternates between two kinds of nodes — <em>atomic</em> entities (fundamental individuals such as people, ingredients, or symptoms) and <em>composite</em> entities (collections or works such as events, recipes, or diseases). Edges only connect an atomic node to a composite node — never two nodes of the same kind. This constraint gives the graph its navigable structure.</p>
+</section>
+
+<section>
+    <h2><span class="num">2</span> Bipartite Pairs</h2>
+    <p>The system supports multiple bipartite pairs, all using identical mechanics. When the user searches a term, the system classifies it and locks a pair for the entire graph — the pair never changes mid-session.</p>
+    <div class="pair-grid">
+        <div class="pair-card"><span class="atomic">Person</span><span class="sep">↔</span><span class="composite">Event</span><div class="desc">History, politics, culture (default)</div></div>
+        <div class="pair-card"><span class="atomic">Actor</span><span class="sep">↔</span><span class="composite">Movie</span><div class="desc">Film and television</div></div>
+        <div class="pair-card"><span class="atomic">Author</span><span class="sep">↔</span><span class="composite">Paper</span><div class="desc">Academic literature</div></div>
+        <div class="pair-card"><span class="atomic">Ingredient</span><span class="sep">↔</span><span class="composite">Recipe</span><div class="desc">Culinary</div></div>
+        <div class="pair-card"><span class="atomic">Symptom</span><span class="sep">↔</span><span class="composite">Disease</span><div class="desc">Medical</div></div>
+        <div class="pair-card"><span class="atomic">Artist</span><span class="sep">↔</span><span class="composite">Artwork</span><div class="desc">Visual arts</div></div>
+        <div class="pair-card"><span class="atomic">Musician</span><span class="sep">↔</span><span class="composite">Album</span><div class="desc">Popular music</div></div>
+        <div class="pair-card"><span class="atomic">Composer</span><span class="sep">↔</span><span class="composite">Composition</span><div class="desc">Classical music</div></div>
+    </div>
+    <p>Classification uses an LLM call with structured JSON output. Fast heuristics skip the LLM: a DOI/arXiv pattern implies Author↔Paper; a parenthetical disambiguator like "(album)" implies Person↔Event. The LLM returns type, is_atomic flag, atomic type label, composite type label, and a brief reasoning string.</p>
+</section>
+
+<section>
+    <h2><span class="num">3</span> Data Sources</h2>
+
+    <div class="source-block">
+        <div class="source-name">Gemini (Google AI) — primary intelligence</div>
+        <ul>
+            <li>Classify a search term into its bipartite pair and atomic/composite role</li>
+            <li>Given a composite node, return 8–12 connected atomic nodes (e.g. actors for a film)</li>
+            <li>Given an atomic node, return 8–12 connected composite nodes (e.g. events for a person)</li>
+            <li>Given two terms, find a connecting chain of intermediary nodes</li>
+            <li>All calls receive Wikipedia article text as verified context to reduce hallucination</li>
+            <li>Returns structured JSON including entity name, type, year, role, and a one-sentence evidence snippet</li>
+        </ul>
+    </div>
+
+    <div class="source-block">
+        <div class="source-name">Wikipedia</div>
+        <ul>
+            <li>Full plain-text article extract (not just intro) used as verified context for Gemini</li>
+            <li>Canonical title resolution with redirect following</li>
+            <li>Page IDs as the strongest deduplication key across nodes</li>
+            <li>When a term has no article, find Wikipedia pages that mention it and use those as context</li>
+        </ul>
+    </div>
+
+    <div class="source-block">
+        <div class="source-name">Wikidata</div>
+        <ul>
+            <li>For organization nodes: retrieve founders, directors, CEOs, and key people</li>
+            <li>For film/TV titles: retrieve cast and crew</li>
+        </ul>
+    </div>
+
+    <div class="source-block">
+        <div class="source-name">OpenAlex (academic mode)</div>
+        <ul>
+            <li>Look up authors by name, retrieve their most-cited papers</li>
+            <li>Look up papers by title and retrieve co-authors</li>
+            <li>Crossref is the fallback for DOI lookups</li>
+        </ul>
+    </div>
+
+    <div class="source-block">
+        <div class="source-name">Images (server-side)</div>
+        <ul>
+            <li>Server proxies image fetches to avoid browser CORS restrictions</li>
+            <li>Primary source: Wikipedia Commons</li>
+            <li>Fallback: DuckDuckGo image search</li>
+        </ul>
+    </div>
+</section>
+
+<section>
+    <h2><span class="num">4</span> Search Modes</h2>
+
+    <h3>Explore</h3>
+    <p>The user enters a single term. The system classifies it, creates a seed node, then immediately expands it to show 8–12 connected neighbors. The user can continue expanding any node in the graph. URL parameter: <code>?q=term</code> auto-starts an explore search.</p>
+
+    <h3>Connect (Pathfinding)</h3>
+    <p>The user enters two terms. The system asks the LLM to find a chain of intermediary nodes connecting them, then renders the entire path as a graph. URL parameters: <code>?start=term&amp;end=term</code> auto-start a path search.</p>
+</section>
+
+<section>
+    <h2><span class="num">5</span> Graph Interaction</h2>
+
+    <h3>Node actions</h3>
+    <ul>
+        <li><strong>Click</strong> — select node, show details in sidebar</li>
+        <li><strong>Double-click</strong> — open context menu</li>
+        <li><strong>Expand</strong> — fetch and display connected neighbors via AI or cache</li>
+        <li><strong>Expand More</strong> — force fresh expansion, passing existing neighbors to avoid duplicates</li>
+        <li><strong>Expand Leaf Nodes</strong> — bulk-expand all unexpanded children of the selected node</li>
+        <li><strong>Delete</strong> — remove node and all edges connected to it; optionally prune the disconnected subtree</li>
+        <li><strong>Find Better Photo</strong> — re-query image sources for the selected node</li>
+    </ul>
+
+    <h3>Edge actions</h3>
+    <ul>
+        <li><strong>Click edge</strong> — show evidence snippet in sidebar (one sentence justifying the connection, with a link to the source)</li>
+    </ul>
+
+    <h3>Canvas</h3>
+    <ul>
+        <li>Pan and zoom the entire graph</li>
+        <li>Drag individual nodes to reposition them (pins them in place)</li>
+        <li>Arrow keys navigate between nodes in timeline mode</li>
+    </ul>
+
+    <h3>Auto-expand</h3>
+    <p>After expanding a node, if it receives fewer than three neighbors, the app automatically queues a second "expand more" call. This ensures nodes with sparse initial results still build out a useful subgraph. The auto-expand fires at most once per node.</p>
+</section>
+
+<section>
+    <h2><span class="num">6</span> Evidence System</h2>
+    <p>Every edge carries an evidence object with: a source kind (<code>wikipedia</code>, <code>openalex</code>, <code>crossref</code>, or <code>ai</code>), a one-sentence snippet justifying the connection, and a URL to verify it. Evidence is extracted from the verified context text used during expansion — not generated separately. Clicking an edge shows this evidence in the sidebar.</p>
+</section>
+
+<section>
+    <h2><span class="num">7</span> Caching and Persistence</h2>
+    <p>All expansions are cached in a PostgreSQL database so repeated queries return instantly without calling the AI.</p>
+
+    <h3>Database schema</h3>
+    <ul>
+        <li><strong>nodes</strong> — title, type, is_atomic, wikipedia_id (unique), description, year, image URL, wiki summary, JSON metadata</li>
+        <li><strong>edges</strong> — atomic_id (FK), composite_id (FK), label, JSON metadata (evidence)</li>
+        <li><strong>saved_graphs</strong> — name (unique), full graph state as JSON, updated_at</li>
+    </ul>
+
+    <h3>Cache behavior</h3>
+    <p>On expansion, the server is queried for cached neighbors by node database ID. A cache hit returns all previously fetched neighbors immediately. On a miss, AI is called and the result is saved for future sessions. Wikipedia page ID is the strongest deduplication key; title + type is the fallback.</p>
+
+    <h3>Save / load graphs</h3>
+    <p>Users can save a named snapshot of the current graph (nodes, links, display settings, search context) and reload it later. Graphs can also be exported as JSON files and imported.</p>
+</section>
+
+<section>
+    <h2><span class="num">8</span> Display Modes</h2>
+
+    <h3>Force-directed graph (default)</h3>
+    <p>Nodes positioned by a D3.js physics simulation with repulsion, link forces, and collision detection. Nodes are draggable. The canvas is pan/zoomable.</p>
+
+    <h3>Timeline mode</h3>
+    <p>Only composite (non-atomic) nodes are shown, arranged chronologically on a horizontal axis by their year field. Useful for seeing the arc of a person's career or a historical period.</p>
+
+    <h3>Text-only mode</h3>
+    <p>Suppresses all image loading. Useful on slow connections.</p>
+
+    <h3>Compact mode</h3>
+    <p>Reduces node card sizes and overall visual density.</p>
+</section>
+
+<section>
+    <h2><span class="num">9</span> Node Display</h2>
+    <p>Atomic nodes (people, etc.) render as circular cards with a photo and name. Composite nodes (events, films, etc.) render as rectangular cards with a title, year, and brief description. Both types show a loading indicator while expanding.</p>
+    <p>Each node stores: title, type, is_atomic flag, Wikipedia page ID, year, image URL, short description/wiki summary, and a classification reasoning string (shown in admin mode only).</p>
+</section>
+
+<section>
+    <h2><span class="num">10</span> People Browser</h2>
+    <p>A panel lets users browse Wikipedia's most-notable people filtered by nationality, occupation, and birth century, using a pre-loaded JSON dataset. Clicking a person starts a search for them.</p>
+</section>
+
+<section>
+    <h2><span class="num">11</span> URL Parameters</h2>
+    <table class="param-table">
+        <thead>
+            <tr><th>Parameter</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>?q=term</td><td>Auto-start an explore search for the given term</td></tr>
+            <tr><td>?start=A&amp;end=B</td><td>Auto-start a pathfinding search between A and B</td></tr>
+            <tr><td>?admin=1</td><td>Enable admin mode: shows classification reasoning, allows domain editing</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<section>
+    <h2><span class="num">12</span> Kiosk / Domain Mode</h2>
+    <p>The app can be locked to a specific subject domain (History, Film, Literature, Music, Science, etc.). The selected domain is passed as context to Wikipedia and Gemini to disambiguate searches. Each domain has a label, description, and a list of seed terms. Admin mode allows editing domains in-app.</p>
+</section>
+
+<section>
+    <h2><span class="num">13</span> Chrome Extension</h2>
+    <ul>
+        <li>A background service worker registers a right-click context menu: <em>"Graph '[selection]' on Constellations"</em></li>
+        <li>Selecting text on any page and choosing this option opens the side panel and starts a search</li>
+        <li>Clicking the extension icon opens a popup that auto-searches the current page title (stripping suffixes like "— Wikipedia" or "— IMDb")</li>
+        <li>The side panel renders the full app in a compact layout with evidence popups as floating overlays</li>
+    </ul>
+</section>
+
+<section>
+    <h2><span class="num">14</span> Backend Server</h2>
+    <p>An Express server handles:</p>
+    <ul>
+        <li>Node upsert and lookup by title or Wikipedia page ID</li>
+        <li>Expansion cache read (GET) and write (POST)</li>
+        <li>Saved graph CRUD</li>
+        <li>Image fetching proxy (avoids browser CORS)</li>
+        <li>AI proxy: forwards Gemini calls using a server-side API key, so users don't need their own</li>
+    </ul>
+    <p>The server connects to PostgreSQL. All tables have permissive access policies since the data is non-sensitive.</p>
+</section>
+
+<section>
+    <h2><span class="num">15</span> Tech Stack</h2>
+    <div class="stack-grid">
+        <div class="stack-item"><div class="stack-label">Frontend</div><div class="stack-val">React + TypeScript + Vite</div></div>
+        <div class="stack-item"><div class="stack-label">Styling</div><div class="stack-val">Tailwind CSS</div></div>
+        <div class="stack-item"><div class="stack-label">Graph rendering</div><div class="stack-val">D3.js force simulation</div></div>
+        <div class="stack-item"><div class="stack-label">AI</div><div class="stack-val">Google Gemini API</div></div>
+        <div class="stack-item"><div class="stack-label">Backend</div><div class="stack-val">Express.js + PostgreSQL</div></div>
+        <div class="stack-item"><div class="stack-label">Database</div><div class="stack-val">Supabase (PostgreSQL)</div></div>
+        <div class="stack-item"><div class="stack-label">Hosting</div><div class="stack-val">Vercel (frontend) · Render (backend)</div></div>
+        <div class="stack-item"><div class="stack-label">Extension</div><div class="stack-val">Chrome Manifest V3</div></div>
+    </div>
+</section>
+
+</body>
+</html>

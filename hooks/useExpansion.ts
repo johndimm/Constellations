@@ -145,10 +145,8 @@ export function useExpansion(options: UseExpansionOptions) {
 
             if (cacheEnabled && !forceMore) {
                 const cacheHit = await fetchCacheExpansion(node.id);
-                console.log(`[cache] "${node.title}" id=${node.id} => hit=${cacheHit?.hit}, nodes=${cacheHit?.nodes?.length ?? 0}`);
                 if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
                     let validCached: any[] = cacheHit.nodes.filter((cn: any) => String(cn.id) !== String(node.id));
-                    console.log(`[cache] "${node.title}" validCached after filter: ${validCached.length}`);
                     // Concurrent upgrade of Wikipedia summaries if needed
                     const upgraded = await Promise.all(validCached.map(async (cn: any) => {
                         const meta = cn.meta || {};
@@ -191,7 +189,6 @@ export function useExpansion(options: UseExpansionOptions) {
                         // Include ALL connected nodes for highlighting, not just new ones
                         const allConnectedNodeIds = validCached.map(cn => cn.id);
 
-                        console.log(`[cache] "${node.title}" isStale=${isStale()} guardId=${guardId} current=${searchIdRef.current}`);
                         if (isStale()) return;
 
                         setGraphData(prev => mergeExpansionGraph({
@@ -306,8 +303,6 @@ export function useExpansion(options: UseExpansionOptions) {
 
             const extractResult = await fetchWikipediaExtract(node.title, 12000);
             const sourceLong = extractResult.extract || wiki.extract || '';
-            console.log(`[expansion] fetchWikipediaExtract("${node.title}") => ${extractResult.extract?.length ?? 0} chars (wiki.extract fallback: ${wiki.extract?.length ?? 0} chars)`);
-            console.log(`[expansion] sourceLong (first 500):`, sourceLong.slice(0, 500));
 
             const hasReliableWikipediaForThisTitle = !!(sourceLong && String(sourceLong).trim().length > 0);
 

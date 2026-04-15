@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Development Journal — Constellations</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface2: #263348;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #818cf8;
+            --accent2: #38bdf8;
+            --green: #34d399;
+            --border: #334155;
+            --date-bg: #1e293b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.7;
+            color: var(--text);
+            background: var(--bg);
+            max-width: 780px;
+            margin: 0 auto;
+            padding: 3rem 2rem 6rem;
+        }
+
+        header {
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 800;
+            color: white;
+            letter-spacing: -0.03em;
+            margin-bottom: 0.4rem;
+        }
+
+        header .subtitle {
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        header .subtitle a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        header .subtitle a:hover { text-decoration: underline; }
+
+        .timeline {
+            position: relative;
+            padding-left: 2rem;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0.5rem;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, var(--accent), transparent);
+            border-radius: 1px;
+        }
+
+        .entry {
+            position: relative;
+            margin-bottom: 2.5rem;
+        }
+
+        .entry::before {
+            content: '';
+            position: absolute;
+            left: -2.35rem;
+            top: 0.5rem;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: 2px solid var(--bg);
+            box-shadow: 0 0 0 2px var(--accent);
+        }
+
+        .entry.minor::before {
+            background: var(--border);
+            box-shadow: 0 0 0 2px var(--border);
+        }
+
+        .entry-date {
+            display: inline-block;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--accent);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 0.15rem 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .entry.minor .entry-date {
+            color: var(--muted);
+        }
+
+        .entry-body {
+            color: var(--text);
+            font-size: 0.95rem;
+        }
+
+        .entry-body p {
+            margin-bottom: 0.4rem;
+        }
+
+        .tag {
+            display: inline-block;
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            border-radius: 4px;
+            padding: 0.1rem 0.45rem;
+            margin-right: 0.3rem;
+            vertical-align: middle;
+            position: relative;
+            top: -1px;
+        }
+
+        .tag-fix    { background: #7f1d1d; color: #fca5a5; }
+        .tag-feat   { background: #14532d; color: #6ee7b7; }
+        .tag-perf   { background: #1e1b4b; color: #a5b4fc; }
+        .tag-data   { background: #1c1917; color: #d6d3d1; }
+        .tag-infra  { background: #0c4a6e; color: #7dd3fc; }
+
+        .year-divider {
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin: 2.5rem 0 1.5rem -2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .year-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Development Journal</h1>
+    <p class="subtitle">
+        A reverse-chronological log of changes to <strong>Constellations</strong>, reconstructed from the git history.
+        &nbsp;·&nbsp; <a href="/">← Back to app</a>
+    </p>
+</header>
+
+<div class="timeline">
+
+    <div class="year-divider">2026</div>
+
+    <div class="entry">
+        <div class="entry-date">April 15, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-fix">Fix</span> Wikipedia <code>exchars</code> parameter silently under-delivered text for citation-heavy articles — Gayle Skidmore's article returned only 1,208 chars regardless of the limit requested. Removed <code>exchars</code> from the API call entirely and truncate client-side instead, giving Gemini the full 3,576-char article including her EP discography.</p>
+            <p><span class="tag tag-fix">Fix</span> Stale <code>is_atomic</code> values in the cache caused the bipartite filter to drop all edges for nodes like <em>The Godfather</em> — actors were stored with <code>is_atomic: false</code>. Now infers correct atomicity from the parent node's bipartite position when loading from cache.</p>
+        </div>
+    </div>
+
+    <div class="entry minor">
+        <div class="entry-date">April 11, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Improved example starting points shown to new users.</p>
+        </div>
+    </div>
+
+    <div class="entry minor">
+        <div class="entry-date">April 8, 2026</div>
+        <div class="entry-body">
+            <p>Minor cleanup and documentation.</p>
+        </div>
+    </div>
+
+    <div class="entry minor">
+        <div class="entry-date">April 2, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-infra">Infra</span> Added API key documentation. Fixed deployment issues on Render.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">February 1, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Better connection suggestions from Gemini. Improved app icon.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 31, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Improved connection quality for paths like Jon Stewart → Tucker Carlson and Bertrand Russell → Gottlob Frege.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 30, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Added Truman Capote as a featured starting example. Improved sentence-boundary detection for evidence snippets. Updated app icon.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 29, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-fix">Fix</span> Fixed node movement and physics simulation stability. Stopped unnecessary jitter in the force layout.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 28, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Added connected people list to event detail cards.</p>
+            <p><span class="tag tag-infra">Infra</span> Removed localStorage in favor of server-side persistence. Fixed load-graph and Expand More functionality. Added welcome page for the Chrome extension. Cleaned up console logs.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 27, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-infra">Infra</span> Added privacy policy page. Hid domain selector and "Start Here" section by default (admin-only). Google site verification. Homepage and Chrome extension page improvements.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 26, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-fix">Fix</span> Fixed <em>Republic (Plato)</em> incorrectly routing through the academic corpus.</p>
+            <p><span class="tag tag-data">Data</span> Updated technical paper with links to both implementations (standalone site + Chrome extension).</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 25, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-infra">Infra</span> Published Chrome Extension to the Chrome Web Store.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 24, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-infra">Infra</span> Added Gemini API key proxy through the Render server so extension users don't need their own key.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 23, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Chrome extension: right-click context menu to graph selected text on any web page.</p>
+            <p><span class="tag tag-feat">Feat</span> Events now require a known year — entities without a year are excluded from Event-type expansions.</p>
+        </div>
+    </div>
+
+    <div class="entry minor">
+        <div class="entry-date">January 21, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-data">Data</span> Revised technical paper draft.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 20, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Added DuckDuckGo as fallback image source for posters (e.g. <em>The Morning Show</em>). High-res demo video. "Start Here" section scrolls into view on load.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 19, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-data">Data</span> Reviewed all starting-point examples: Starry Night, Pride and Prejudice, Philosophy, and more.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 17–18, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-fix">Fix</span> Fixed bipartite pair switching mid-graph. Added kiosk mode (locked subject domain). Cleared database for a fresh start. Two-column PDF layout for the technical paper.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 16, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-data">Data</span> Technical paper published.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 15, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Added edge evidence display — clicking a connection shows a one-sentence justification in the sidebar. Schema updated for edge metadata storage.</p>
+        </div>
+    </div>
+
+    <div class="entry minor">
+        <div class="entry-date">January 11, 2026</div>
+        <div class="entry-body">
+            <p>Added more example starting points.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 10, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> <strong>Major generalization:</strong> system now supports arbitrary bipartite pairs beyond Person↔Event — Author↔Paper, Ingredient↔Recipe, Symptom↔Disease, and more. Prompt tuning for improved entity extraction across all domains.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 9, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Added graph controls toolbar. Autoplay / auto-expand mode. Updated README with demo videos.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 8, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-infra">Infra</span> Added Supabase row-level security policies to nodes, edges, and saved_graphs tables.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 7, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Increased SQL result limits. Fixed timeline arrow direction. Auto-load saved graph if URL params match. Save graph to database.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 6, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Show connection paths in the graph view. Better connection suggestions.</p>
+        </div>
+    </div>
+
+    <div class="entry minor">
+        <div class="entry-date">January 5, 2026</div>
+        <div class="entry-body">
+            <p>Updated to new node/edge data format.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">January 4, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-perf">Perf</span> People browser switched to Simple Wikipedia for faster lookups.</p>
+        </div>
+    </div>
+
+    <div class="year-divider">2025</div>
+
+    <div class="entry minor">
+        <div class="entry-date">December 31, 2025</div>
+        <div class="entry-body">
+            <p>Multiple layout and positioning fixes for the force-directed graph.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">December 26, 2025</div>
+        <div class="entry-body">
+            <p><span class="tag tag-infra">Infra</span> <strong>Major milestone:</strong> added PostgreSQL backend via Supabase, image caching, expansion caching, and a new schema with atomic/composite distinction. Deployed cache server to Render. Node photos added.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">December 22–23, 2025</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Mobile layout improvements. Non-selected nodes dim when a node is active. Stopped graph spinning on initial load. Pre-bundled example graphs.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">December 20–21, 2025</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Academic corpus integration via OpenAlex. Bulk "expand leaf nodes" operation. Delete a node and its subtree. Edge evidence — "show your work" for each connection. Fixed sidebar overflow.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">December 19, 2025</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Added help overlay. Fixed text bleed-through in timeline mode. URL parameters for sharing (<code>?q=</code>, <code>?start=</code>, <code>?end=</code>). Added More and Delete to node context menu.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">December 18, 2025</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Export and import graphs as JSON. Retry logic for image loading. Reduced text overlap in the graph.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">December 16–17, 2025</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Text-only mode. Pathfinding between two entities. Entity deduplication improvements. Curved link rendering. Better contextual analysis for connections.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">December 14, 2025</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> Entity classification system introduced (atomic vs. composite). Image existence checking. API call timeouts.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">December 11–13, 2025</div>
+        <div class="entry-body">
+            <p><span class="tag tag-infra">Infra</span> Project initialized. API key handling. Multiple environment variable sources for Gemini key. Dynamic API key management in UI. Chronological sorting in timeline mode. D3 simulation optimizations.</p>
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>

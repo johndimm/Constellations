@@ -93,6 +93,24 @@ const HelpOverlay: React.FC<HelpOverlayProps> = ({
 
                 <section className="pt-4 border-t border-slate-800 space-y-3">
                     <a
+                        href="/doc/journal.html"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
+                    >
+                        <LinkIcon size={14} className="text-slate-500" />
+                        <span>Development Journal</span>
+                    </a>
+                    <a
+                        href="/doc/prompt.html"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
+                    >
+                        <LinkIcon size={14} className="text-slate-500" />
+                        <span>Regeneration Prompt</span>
+                    </a>
+                    <a
                         href="/doc/api_queries.html"
                         target="_blank"
                         rel="noopener noreferrer"

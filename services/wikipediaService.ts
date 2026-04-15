@@ -935,7 +935,6 @@ export const fetchWikipediaExtract = async (
     // when exchars is set (returns fewer chars than the article actually contains). We fetch
     // the full extract and truncate client-side instead.
     const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&explaintext&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
-    console.log(`[fetchWikipediaExtract] URL: ${url}`);
     const res = await fetch(url);
     const data = await res.json();
     const pages = data.query?.pages;
@@ -949,7 +948,6 @@ export const fetchWikipediaExtract = async (
       }
       const rawExtract: string | null = page.extract || null;
       const extract = rawExtract && rawExtract.length > maxChars ? rawExtract.slice(0, maxChars) : rawExtract;
-      console.log(`[fetchWikipediaExtract] "${title}" => raw: ${rawExtract?.length ?? 0} chars, returned: ${extract?.length ?? 0} chars`);
       return { extract, pageid: page.pageid || null, title: page.title || null };
     }
   } catch (e) {
