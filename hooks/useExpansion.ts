@@ -145,8 +145,10 @@ export function useExpansion(options: UseExpansionOptions) {
 
             if (cacheEnabled && !forceMore) {
                 const cacheHit = await fetchCacheExpansion(node.id);
+                console.log(`[cache] "${node.title}" id=${node.id} => hit=${cacheHit?.hit}, nodes=${cacheHit?.nodes?.length ?? 0}`);
                 if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
                     let validCached: any[] = cacheHit.nodes.filter((cn: any) => String(cn.id) !== String(node.id));
+                    console.log(`[cache] "${node.title}" validCached after filter: ${validCached.length}`);
                     // Concurrent upgrade of Wikipedia summaries if needed
                     const upgraded = await Promise.all(validCached.map(async (cn: any) => {
                         const meta = cn.meta || {};
@@ -175,7 +177,13 @@ export function useExpansion(options: UseExpansionOptions) {
                         }
                         return cn;
                     }));
-                    validCached = upgraded;
+                    // The edge position (atomic_id vs composite_id) is the ground truth for
+                    // bipartite membership. The is_atomic column in the DB can be stale/wrong.
+                    // Infer the correct value from the parent: neighbors of a composite are atomic
+                    // and vice versa.
+                    const parentIsAtomic = !!(node.is_atomic ?? (node as any).is_person ?? (node.type || '').toLowerCase() === 'person');
+                    const expectedChildIsAtomic = !parentIsAtomic;
+                    validCached = upgraded.map((cn: any) => ({ ...cn, is_atomic: expectedChildIsAtomic }));
 
                     if (validCached.length >= 5) {
                         const existingNodeIdsBefore = new Set(graphDataRef.current.nodes.map(n => String(n.id)));
@@ -183,6 +191,7 @@ export function useExpansion(options: UseExpansionOptions) {
                         // Include ALL connected nodes for highlighting, not just new ones
                         const allConnectedNodeIds = validCached.map(cn => cn.id);
 
+                        console.log(`[cache] "${node.title}" isStale=${isStale()} guardId=${guardId} current=${searchIdRef.current}`);
                         if (isStale()) return;
 
                         setGraphData(prev => mergeExpansionGraph({
@@ -295,7 +304,10 @@ export function useExpansion(options: UseExpansionOptions) {
             }
 
 
-            const sourceLong = (await fetchWikipediaExtract(node.title, 2000)).extract || wiki.extract || '';
+            const extractResult = await fetchWikipediaExtract(node.title, 12000);
+            const sourceLong = extractResult.extract || wiki.extract || '';
+            console.log(`[expansion] fetchWikipediaExtract("${node.title}") => ${extractResult.extract?.length ?? 0} chars (wiki.extract fallback: ${wiki.extract?.length ?? 0} chars)`);
+            console.log(`[expansion] sourceLong (first 500):`, sourceLong.slice(0, 500));
 
             const hasReliableWikipediaForThisTitle = !!(sourceLong && String(sourceLong).trim().length > 0);
 

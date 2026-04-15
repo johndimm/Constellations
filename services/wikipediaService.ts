@@ -928,10 +928,14 @@ export const fetchWikipediaSummary = async (
 // Returns at most maxChars characters of the page extract.
 export const fetchWikipediaExtract = async (
   title: string,
-  maxChars: number = 6000
+  maxChars: number = 12000
 ): Promise<{ extract: string | null; pageid: number | null; title: string | null }> => {
   try {
-    const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&explaintext&exchars=${maxChars}&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+    // Note: exchars is intentionally omitted — the Wikipedia API mis-truncates short articles
+    // when exchars is set (returns fewer chars than the article actually contains). We fetch
+    // the full extract and truncate client-side instead.
+    const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&explaintext&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+    console.log(`[fetchWikipediaExtract] URL: ${url}`);
     const res = await fetch(url);
     const data = await res.json();
     const pages = data.query?.pages;
@@ -943,7 +947,10 @@ export const fetchWikipediaExtract = async (
         const full = String(page.extract || "");
         if (looksLikePersonExtract(full)) return { extract: null, pageid: null, title: null };
       }
-      return { extract: page.extract || null, pageid: page.pageid || null, title: page.title || null };
+      const rawExtract: string | null = page.extract || null;
+      const extract = rawExtract && rawExtract.length > maxChars ? rawExtract.slice(0, maxChars) : rawExtract;
+      console.log(`[fetchWikipediaExtract] "${title}" => raw: ${rawExtract?.length ?? 0} chars, returned: ${extract?.length ?? 0} chars`);
+      return { extract, pageid: page.pageid || null, title: page.title || null };
     }
   } catch (e) {
     // console.warn("fetchWikipediaExtract failed:", title, e);
