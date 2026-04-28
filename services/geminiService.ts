@@ -1,8 +1,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { getApiKey, getResponseText, cleanJson, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify } from "./aiUtils";
+import { getApiKey, getResponseText, cleanJson, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, getLlmApiKey, getLlmProvider } from "./aiUtils";
+import { runJsonCompletion } from "./llmClient";
 
-export { getApiKey, getResponseText, cleanJson, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify } from "./aiUtils";
+export { getApiKey, getResponseText, cleanJson, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, getLlmApiKey, getLlmProvider } from "./aiUtils";
 
 const SYSTEM_INSTRUCTION = `
 You are a Bipartite Graph Generator.
@@ -87,6 +88,34 @@ async function callAiProxy(endpoint: string, body: any) {
 
     if (!resp.ok) {
       const err = await resp.text();
+      const degraded =
+        resp.status === 500 ||
+        resp.status === 502 ||
+        resp.status === 503 ||
+        resp.status === 429;
+      // Degrade gracefully when the cache server errors (quota, old deploy, etc.) so the UI keeps working.
+      if (degraded && endpoint === "/api/ai/connections") {
+        console.warn(`[Proxy] ${endpoint} ${resp.status}; returning empty people.`, err.slice(0, 300));
+        return { people: [] };
+      }
+      if (degraded && endpoint === "/api/ai/works") {
+        console.warn(`[Proxy] ${endpoint} ${resp.status}; returning empty works.`, err.slice(0, 300));
+        return { works: [] };
+      }
+      if (degraded && endpoint === "/api/ai/path") {
+        console.warn(`[Proxy] ${endpoint} ${resp.status}; returning empty path.`, err.slice(0, 300));
+        return { path: [], found: false };
+      }
+      if (degraded && endpoint === "/api/ai/classify-start") {
+        console.warn(`[Proxy] ${endpoint} ${resp.status}; defaulting start pair.`, err.slice(0, 300));
+        return defaultStartPairResult(
+          "Classification proxy error (quota or server); defaulting to Person↔Event."
+        );
+      }
+      if (degraded && endpoint === "/api/ai/classify") {
+        console.warn(`[Proxy] ${endpoint} ${resp.status}; defaulting classify.`, err.slice(0, 300));
+        return { type: "Event", description: "", isAtomic: false };
+      }
       throw new Error(`AI Proxy Error (${resp.status}): ${err}`);
     }
     return resp.json();
@@ -111,6 +140,24 @@ function shouldProxy(): boolean {
   return !!baseUrl;
 }
 
+export function defaultStartPairResult(reason: string): {
+  type: string;
+  description: string;
+  isAtomic: boolean;
+  atomicType: string;
+  compositeType: string;
+  reasoning: string;
+} {
+  return {
+    type: "Event",
+    description: "",
+    isAtomic: false,
+    atomicType: "Person",
+    compositeType: "Event",
+    reasoning: reason,
+  };
+}
+
 export const classifyStartPair = async (
   term: string,
   wikiContext?: string
@@ -126,7 +173,7 @@ export const classifyStartPair = async (
     return callAiProxy("/api/ai/classify-start", { term, wikiContext });
   }
 
-  const apiKey = await getApiKey();
+  const apiKey = await getLlmApiKey();
   // String-level safety heuristic (no Wikipedia required):
   // Disambiguated titles like "Discover (Daft Punk album)" must never be treated as Person.
   // Treat common work/media parentheticals as Composite/Event in the temporary Person↔Event model.
@@ -156,17 +203,11 @@ export const classifyStartPair = async (
 
 
   if (!apiKey) {
-    return {
-      type: "Event",
-      description: "",
-      isAtomic: false,
-      atomicType: "Person",
-      compositeType: "Event",
-      reasoning: "No API key available; defaulting to Person↔Event."
-    };
+    return defaultStartPairResult("No API key available; defaulting to Person↔Event.");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const useGemini = getLlmProvider() === "gemini";
+  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
 
   const prompt = `Choose the most appropriate bipartite pair for this session based on the input: "${term}".
 
@@ -180,45 +221,53 @@ Rules:
 - If "${term}" is a very famous person, it is ATOMIC even if they have works.
 `;
 
-  const makeApiCall = () => ai.models.generateContent({
-    model: getGeminiModelClassify(),
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          type: { type: Type.STRING },
-          description: { type: Type.STRING },
-          isAtomic: { type: Type.BOOLEAN },
-          atomicType: { type: Type.STRING },
-          compositeType: { type: Type.STRING },
-          reasoning: { type: Type.STRING }
-        },
-        required: ["type", "isAtomic", "atomicType", "compositeType"]
-      }
-    }
-  });
+  try {
+    const rawText = await runJsonCompletion({
+      user: prompt,
+      timeoutMs: CLASSIFY_TIMEOUT_MS,
+      attempts: 3,
+      gemini: gemini
+        ? () =>
+            gemini.models.generateContent({
+              model: getGeminiModelClassify(),
+              contents: prompt,
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    type: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    isAtomic: { type: Type.BOOLEAN },
+                    atomicType: { type: Type.STRING },
+                    compositeType: { type: Type.STRING },
+                    reasoning: { type: Type.STRING }
+                  },
+                  required: ["type", "isAtomic", "atomicType", "compositeType"]
+                }
+              }
+            })
+        : undefined,
+    });
+    // console.log(`🤖 [Gemini] Raw Classify-Start response for "${term}":`, rawText);
+    const text = cleanJson(rawText);
+    const json = text ? JSON.parse(text) : {};
 
-  const response = await withRetry(
-    () => withTimeout(makeApiCall(), CLASSIFY_TIMEOUT_MS, "Start-pair classification timed out"),
-    3,
-    1000
-  );
-
-  const rawText = getResponseText(response);
-  // console.log(`🤖 [Gemini] Raw Classify-Start response for "${term}":`, rawText);
-  const text = cleanJson(rawText);
-  const json = text ? JSON.parse(text) : {};
-
-  return {
-    type: json.type || "Event",
-    description: json.description || "",
-    isAtomic: !!json.isAtomic,
-    atomicType: json.atomicType || "Person",
-    compositeType: json.compositeType || "Event",
-    reasoning: json.reasoning || ""
-  };
+    return {
+      type: json.type || "Event",
+      description: json.description || "",
+      isAtomic: !!json.isAtomic,
+      atomicType: json.atomicType || "Person",
+      compositeType: json.compositeType || "Event",
+      reasoning: json.reasoning || ""
+    };
+  } catch (e: any) {
+    const msg = String(e?.message || e || "");
+    console.warn(`[classifyStartPair] failed for "${term}":`, msg.slice(0, 200));
+    return defaultStartPairResult(
+      "Classification API unavailable (quota, rate limit, or error); defaulting to Person↔Event."
+    );
+  }
 };
 
 export const classifyEntity = async (term: string, wikiContext?: string): Promise<{
@@ -233,7 +282,7 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
     return callAiProxy("/api/ai/classify", { term, wikiContext });
   }
 
-  const apiKey = await getApiKey();
+  const apiKey = await getLlmApiKey();
   const normalized = term.trim().toLowerCase();
 
   // String-level safety heuristic (no Wikipedia required):
@@ -254,8 +303,8 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
     console.error("❌ [Gemini] classifyEntity: No API key found");
     return { type: 'Event', description: '', isAtomic: false };
   }
-  // console.log(`🧪 [Gemini] classify start`, { term, timeoutMs: CLASSIFY_TIMEOUT_MS });
-  const ai = new GoogleGenAI({ apiKey });
+  const useGemini = getLlmProvider() === "gemini";
+  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
 
   const wikiPrompt = wikiContext
     ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
@@ -289,33 +338,33 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
 
     // console.log("🤖 [Gemini] Classify Prompt:", prompt);
 
-    const makeApiCall = () => ai.models.generateContent({
-      model: getGeminiModelClassify(),
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            type: { type: Type.STRING },
-            description: { type: Type.STRING, description: "Short 1-sentence description" },
-            isAtomic: { type: Type.BOOLEAN },
-            atomicType: { type: Type.STRING },
-            compositeType: { type: Type.STRING },
-            reasoning: { type: Type.STRING }
-          },
-          required: ["type", "isAtomic", "atomicType", "compositeType"]
-        }
-      }
+    const rawText = await runJsonCompletion({
+      user: prompt,
+      timeoutMs: CLASSIFY_TIMEOUT_MS,
+      attempts: 3,
+      gemini: gemini
+        ? () =>
+            gemini.models.generateContent({
+              model: getGeminiModelClassify(),
+              contents: prompt,
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    type: { type: Type.STRING },
+                    description: { type: Type.STRING, description: "Short 1-sentence description" },
+                    isAtomic: { type: Type.BOOLEAN },
+                    atomicType: { type: Type.STRING },
+                    compositeType: { type: Type.STRING },
+                    reasoning: { type: Type.STRING }
+                  },
+                  required: ["type", "isAtomic", "atomicType", "compositeType"]
+                }
+              }
+            })
+        : undefined,
     });
-
-    const response = await withRetry(
-      () => withTimeout(makeApiCall(), CLASSIFY_TIMEOUT_MS, "Classification timed out"),
-      3,
-      1000
-    );
-
-    const rawText = getResponseText(response);
     // console.log(`🤖 [Gemini] Raw Classify response for "${term}":`, rawText);
     const text = cleanJson(rawText);
     // console.log("Classify response text:", text);
@@ -349,13 +398,15 @@ export const fetchConnections = async (
     return callAiProxy("/api/ai/connections", { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles });
   }
 
-  const apiKey = await getApiKey();
+  try {
+  const apiKey = await getLlmApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] fetchConnections: No API key found");
-    throw new Error("No API key found");
+    return { people: [] };
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const useGemini = getLlmProvider() === "gemini";
+  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
 
   const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
   const contextualPrompt = context
@@ -396,8 +447,6 @@ export const fetchConnections = async (
       ? `\nSPECIAL CASE (theory/concept/discovery): If the Source is a scientific theory, concept, or discovery, return the primary scientists, authors, or discoverers who established or significantly developed it.`
       : "";
 
-
-  try {
     const prompt = `${contextualPrompt}${wikiPrompt}${mentionPrompt}${excludePrompt}
       Source Node: ${nodeName} (Type: ${compositeLabel})
       
@@ -431,60 +480,62 @@ export const fetchConnections = async (
 
     // console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
 
-    const makeApiCall = () => ai.models.generateContent({
-      model: getGeminiModel(),
-      contents: prompt,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            sourceYear: { type: Type.INTEGER, description: "Year of the source node" },
-            people: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  isAtomic: { type: Type.BOOLEAN, nullable: true, description: "True if atomic, false if composite" },
-                  wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
-                  role: { type: Type.STRING, nullable: true, description: "Role in the requested Source Node" },
-                  description: { type: Type.STRING, nullable: true, description: "Short 1-sentence bio" },
-                  evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
-                  evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
-                },
-                required: ["name", "evidenceSnippet", "evidencePageTitle"]
+    const rawText = await runJsonCompletion({
+      system: SYSTEM_INSTRUCTION,
+      user: prompt,
+      timeoutMs: GEMINI_TIMEOUT_MS,
+      attempts: 4,
+      gemini: gemini
+        ? () =>
+            gemini.models.generateContent({
+              model: getGeminiModel(),
+              contents: prompt,
+              config: {
+                systemInstruction: SYSTEM_INSTRUCTION,
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    sourceYear: { type: Type.INTEGER, description: "Year of the source node" },
+                    people: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          name: { type: Type.STRING },
+                          isAtomic: { type: Type.BOOLEAN, nullable: true, description: "True if atomic, false if composite" },
+                          wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
+                          role: { type: Type.STRING, nullable: true, description: "Role in the requested Source Node" },
+                          description: { type: Type.STRING, nullable: true, description: "Short 1-sentence bio" },
+                          evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
+                          evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
+                        },
+                        required: ["name", "evidenceSnippet", "evidencePageTitle"]
+                      }
+                    }
+                  },
+                  required: ["people"]
+                }
               }
-            }
-          },
-          required: ["people"]
-        }
-      }
+            })
+        : undefined,
     });
-
-    const response = await withRetry(
-      () => withTimeout(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
-      4,
-      1000
-    );
-
-    const rawText = getResponseText(response);
     // console.log(`🤖 [Gemini] Raw response for "${nodeName}":`, rawText);
     const text = cleanJson(rawText);
     if (!text) return { people: [] };
 
     const parsed = JSON.parse(text) as GeminiResponse;
+    const list = Array.isArray(parsed.people) ? parsed.people : [];
     // Force correct bipartite type regardless of LLM slip-ups
-    parsed.people = parsed.people.map(p => ({
+    parsed.people = list.map(p => ({
       ...p,
       isAtomic: true // In fetchConnections, the source is COMPOSITE, so all results MUST be ATOMIC (true)
     }));
 
     return parsed;
   } catch (error) {
-    console.error("Gemini API Error:", error);
-    throw error;
+    console.error("Gemini API Error (connections):", error);
+    return { people: [] };
   }
 };
 
@@ -501,13 +552,14 @@ export const fetchPersonWorks = async (
     return callAiProxy("/api/ai/works", { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles });
   }
 
-  const apiKey = await getApiKey();
+  const apiKey = await getLlmApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] fetchPersonWorks: No API key found");
     throw new Error("No API key found");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const useGemini = getLlmProvider() === "gemini";
+  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
 
   const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
   const wikiPrompt = wikiContext
@@ -613,64 +665,64 @@ export const fetchPersonWorks = async (
 
     // console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
 
-    const makeApiCall = () => ai.models.generateContent({
-      model: getGeminiModel(),
-      contents: prompt,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            works: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  entity: { type: Type.STRING },
-                  isAtomic: { type: Type.BOOLEAN, nullable: true, description: "True if atomic, false if composite" },
-                  wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
-                  type: { type: Type.STRING },
-                  description: { type: Type.STRING, nullable: true, description: "Short 1-sentence description" },
-                  role: { type: Type.STRING, nullable: true },
-                  year: { type: Type.INTEGER, nullable: true, description: "4-digit year (YYYY), required for events/works" },
-                  evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
-                  evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
-                },
-                required: ["entity", "type", "evidenceSnippet", "evidencePageTitle"]
+    const rawText = await runJsonCompletion({
+      system: SYSTEM_INSTRUCTION,
+      user: prompt,
+      timeoutMs: GEMINI_TIMEOUT_MS,
+      attempts: 4,
+      gemini: gemini
+        ? () =>
+            gemini.models.generateContent({
+              model: getGeminiModel(),
+              contents: prompt,
+              config: {
+                systemInstruction: SYSTEM_INSTRUCTION,
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    works: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          entity: { type: Type.STRING },
+                          isAtomic: { type: Type.BOOLEAN, nullable: true, description: "True if atomic, false if composite" },
+                          wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
+                          type: { type: Type.STRING },
+                          description: { type: Type.STRING, nullable: true, description: "Short 1-sentence description" },
+                          role: { type: Type.STRING, nullable: true },
+                          year: { type: Type.INTEGER, nullable: true, description: "4-digit year (YYYY), required for events/works" },
+                          evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
+                          evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
+                        },
+                        required: ["entity", "type", "evidenceSnippet", "evidencePageTitle"]
+                      }
+                    }
+                  },
+                  required: ["works"]
+                }
               }
-            }
-          },
-          required: ["works"]
-        }
-      }
+            })
+        : undefined,
     });
-
-    const response = await withRetry(
-      () => withTimeout(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
-      4,
-      1000
-    );
-
-    const rawText = getResponseText(response);
     // console.log(`🤖 [Gemini] Raw response for "${nodeName}" (works):`, rawText);
     const text = cleanJson(rawText);
     if (!text) return { works: [] };
     const parsed = JSON.parse(text) as PersonWorksResponse;
+    if (!Array.isArray(parsed.works)) parsed.works = [];
     // Force correct bipartite type regardless of LLM slip-ups
-    if (parsed.works) {
-      if (dateRequired) {
-        parsed.works = parsed.works.filter(w => w.year !== null && w.year !== undefined && !isNaN(Number(w.year)));
-      }
-      parsed.works = parsed.works.map(w => ({
-        ...w,
-        isAtomic: false // In fetchPersonWorks, the source is ATOMIC, so all results MUST be COMPOSITE (false)
-      }));
+    if (dateRequired) {
+      parsed.works = parsed.works.filter(w => w.year !== null && w.year !== undefined && !isNaN(Number(w.year)));
     }
+    parsed.works = parsed.works.map(w => ({
+      ...w,
+      isAtomic: false // In fetchPersonWorks, the source is ATOMIC, so all results MUST be COMPOSITE (false)
+    }));
     return parsed;
   } catch (error) {
     console.error("Gemini API Error (Person Works):", error);
-    throw error;
+    return { works: [] };
   }
 };
 
@@ -679,13 +731,14 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     return callAiProxy("/api/ai/path", { start, end, context });
   }
 
-  const apiKey = await getApiKey();
+  const apiKey = await getLlmApiKey();
   if (!apiKey) {
     console.error("❌ [Gemini] fetchConnectionPath: No API key found");
     throw new Error("No API key found");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const useGemini = getLlmProvider() === "gemini";
+  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
 
   const wikiPrompt = (context?.startWiki || context?.endWiki)
     ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${context?.startWiki ? `[${start}]: ${context.startWiki}\n` : ''}${context?.endWiki ? `[${end}]: ${context.endWiki}\n` : ''}`
@@ -744,36 +797,43 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     }`;
 
   try {
-    const response = await withTimeout(ai.models.generateContent({
-      model: getGeminiModel(),
-      contents: prompt,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            path: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  type: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  justification: { type: Type.STRING, description: "Relationship to the PREVIOUS node in the chain" },
-                  year: { type: Type.INTEGER, nullable: true, description: "Year of occurrence/creation (Required for Events)" }
-                },
-                required: ["id", "type", "description", "justification"]
+    const text = await runJsonCompletion({
+      system: SYSTEM_INSTRUCTION,
+      user: prompt,
+      timeoutMs: 45000,
+      attempts: 4,
+      gemini: gemini
+        ? () =>
+            gemini.models.generateContent({
+              model: getGeminiModel(),
+              contents: prompt,
+              config: {
+                systemInstruction: SYSTEM_INSTRUCTION,
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    path: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          id: { type: Type.STRING },
+                          type: { type: Type.STRING },
+                          description: { type: Type.STRING },
+                          justification: { type: Type.STRING, description: "Relationship to the PREVIOUS node in the chain" },
+                          year: { type: Type.INTEGER, nullable: true, description: "Year of occurrence/creation (Required for Events)" }
+                        },
+                        required: ["id", "type", "description", "justification"]
+                      }
+                    }
+                  },
+                  required: ["path"]
+                }
               }
-            }
-          },
-          required: ["path"]
-        }
-      }
-    }), 45000, "Pathfinding timed out");
-
-    const text = getResponseText(response);
+            })
+        : undefined,
+    });
     const json = JSON.parse(cleanJson(text));
 
     // Ensure the path starts with the start node and ends with the end node
@@ -807,7 +867,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
     return json as PathResponse;
   } catch (error) {
     console.error("Gemini Pathfinding Error:", error);
-    throw error;
+    return { path: [], found: false };
   }
 };
 
@@ -816,9 +876,10 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
     return callAiProxy("/api/ai/title", { name, description });
   }
 
-  const apiKey = await getApiKey();
+  const apiKey = await getLlmApiKey();
   if (!apiKey) return null;
-  const ai = new GoogleGenAI({ apiKey });
+  const useGemini = getLlmProvider() === "gemini";
+  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
 
   const prompt = `Find the exact English Wikipedia article title for "${name}"${description ? ` described as "${description}"` : ''}.
     Also, if you know a specific Wikimedia Commons filename for a good portrait of this person/thing, include it.
@@ -830,23 +891,29 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
     }`;
 
   try {
-    const response = await withTimeout(ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            imageHint: { type: Type.STRING, nullable: true }
-          },
-          required: ["title"]
-        }
-      }
-    }), 10000, "Title lookup timed out");
-
-    const text = getResponseText(response);
+    const text = await runJsonCompletion({
+      user: prompt,
+      timeoutMs: 10000,
+      attempts: 2,
+      gemini: gemini
+        ? () =>
+            gemini.models.generateContent({
+              model: getGeminiModel(),
+              contents: prompt,
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    imageHint: { type: Type.STRING, nullable: true }
+                  },
+                  required: ["title"]
+                }
+              }
+            })
+        : undefined,
+    });
     const json = JSON.parse(cleanJson(text));
     return {
       title: json.title,
@@ -865,7 +932,10 @@ export const fetchOrgKeyPeopleBlockViaSearch = async (orgName: string): Promise<
     return callAiProxy("/api/ai/search-org", { orgName });
   }
 
-  const apiKey = await getApiKey();
+  // Google Search grounding is Gemini-only in this codebase.
+  if (getLlmProvider() !== "gemini") return null;
+
+  const apiKey = await getLlmApiKey();
   if (!apiKey) return null;
 
   const name = String(orgName || "").trim();

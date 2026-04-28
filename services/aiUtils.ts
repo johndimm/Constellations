@@ -48,7 +48,7 @@ export const getEnvGeminiModel = (): string => {
   } catch (e) { }
   if (urlModel) return urlModel;
 
-  return getEnvVar("VITE_GEMINI_MODEL") || "gemini-2.0-flash";
+  return getEnvVar("VITE_GEMINI_MODEL") || "gemini-2.5-flash";
 };
 
 export const getEnvGeminiModelClassify = (): string => {
@@ -65,6 +65,36 @@ export const getEnvGeminiModelClassify = (): string => {
 
   return getEnvVar("VITE_GEMINI_MODEL_CLASSIFY") || getEnvGeminiModel();
 };
+
+export type LlmProviderId = "gemini" | "openai" | "deepseek" | "anthropic";
+
+/** Set LLM_PROVIDER (preferred on servers) or VITE_LLM_PROVIDER to openai | deepseek | anthropic | gemini (default). */
+export function getLlmProvider(): LlmProviderId {
+  // LLM_PROVIDER first: Render/Heroku/etc. set this; VITE_* must not override it if both exist.
+  const raw = (getEnvVar("LLM_PROVIDER") || getEnvVar("VITE_LLM_PROVIDER") || "gemini")
+    .trim()
+    .toLowerCase();
+  if (raw === "openai" || raw === "deepseek" || raw === "anthropic" || raw === "gemini") {
+    return raw;
+  }
+  return "gemini";
+}
+
+/** API key for the active provider (Gemini uses existing getApiKey / AI Studio). */
+export async function getLlmApiKey(): Promise<string> {
+  const p = getLlmProvider();
+  if (p === "gemini") {
+    return getApiKey();
+  }
+  // Prefer plain env names on servers (OPENAI_API_KEY); VITE_* is for local Vite client.
+  const keys: Record<Exclude<LlmProviderId, "gemini">, [string, string]> = {
+    openai: ["OPENAI_API_KEY", "VITE_OPENAI_API_KEY"],
+    deepseek: ["DEEPSEEK_API_KEY", "VITE_DEEPSEEK_API_KEY"],
+    anthropic: ["ANTHROPIC_API_KEY", "VITE_ANTHROPIC_API_KEY"],
+  };
+  const [primary, secondary] = keys[p];
+  return getEnvVar(primary) || getEnvVar(secondary);
+}
 
 // Robust text extraction from Gemini API response
 export function getResponseText(response: any): string {
@@ -173,36 +203,92 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string
   });
 }
 
-// Improved retry logic with exponential backoff and jitter
-export async function withRetry<T>(fn: () => Promise<T>, attempts = 3, backoffMs = 1000): Promise<T> {
+/** Collects message / nested API fields / JSON so 429s are not missed as "[object Object]". */
+function errorTextForMatch(e: any): string {
+  const parts: string[] = [];
+  if (e?.message) parts.push(String(e.message));
+  if (e?.error) {
+    parts.push(
+      typeof e.error === "string" ? e.error : JSON.stringify(e.error)
+    );
+  }
+  if (e?.status) parts.push(String(e.status));
+  if (e?.code !== undefined && e?.code !== null) parts.push(String(e.code));
+  if (typeof e === "string") parts.push(e);
+  if (typeof e === "object" && parts.length === 0) {
+    try {
+      parts.push(JSON.stringify(e));
+    } catch {
+      parts.push(String(e));
+    }
+  }
+  return parts.join(" ").toLowerCase();
+}
+
+/** True for HTTP 429 / RESOURCE_EXHAUSTED (e.g. Vertex quota). */
+export function isRateLimitError(e: any): boolean {
+  if (e?.error?.code === 429) return true;
+  if (e?.code === 429) return true;
+  const s = String(e?.error?.status || "").toLowerCase();
+  if (s === "resource_exhausted") return true;
+  const t = errorTextForMatch(e);
+  return t.includes("429") || t.includes("resource_exhausted");
+}
+
+function isTransientError(errText: string): boolean {
+  return (
+    errText.includes("429") ||
+    errText.includes("resource_exhausted") ||
+    errText.includes("rate limit") ||
+    errText.includes("timeout") ||
+    errText.includes("fetch") ||
+    errText.includes("network") ||
+    errText.includes("econnreset") ||
+    errText.includes("etimedout") ||
+    errText.includes("503") ||
+    errText.includes("unavailable")
+  );
+}
+
+/**
+ * Retries on transient API failures. If a 429 (rate / quota) is seen, the run can extend
+ * to `rateLimitAttempts` tries with longer waits (Vertex often needs many seconds between retries).
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  attempts = 3,
+  backoffMs = 1000,
+  rateLimitAttempts = 8
+): Promise<T> {
   let lastError: any;
-  for (let i = 0; i < attempts; i++) {
+  let maxTries = Math.max(1, attempts);
+  for (let i = 0; i < maxTries; i++) {
     try {
       return await fn();
     } catch (error: any) {
       lastError = error;
-      const errorStr = String(error?.message || error || '').toLowerCase();
-      // Only retry if it looks like a transient error (rate limit, timeout, or network)
-      const isRetryable =
-        errorStr.includes('429') ||
-        errorStr.includes('resource_exhausted') ||
-        errorStr.includes('rate limit') ||
-        errorStr.includes('timeout') ||
-        errorStr.includes('fetch') ||
-        errorStr.includes('network');
-
-      if (i < attempts - 1 && isRetryable) {
-        // Exponential backoff: 1s, 2s, 4s...
-        const baseDelay = backoffMs * Math.pow(2, i);
-        // Add jitter: +/- 20% to avoid "thundering herd"
-        const jitter = baseDelay * 0.2 * (Math.random() * 2 - 1);
-        const delay = Math.max(0, baseDelay + jitter);
-
-        console.warn(`[Retry] Attempt ${i + 1} failed. Retrying in ${Math.round(delay)}ms...`, errorStr);
-        await new Promise(res => setTimeout(res, delay));
-      } else {
+      if (isRateLimitError(error)) {
+        maxTries = Math.max(maxTries, rateLimitAttempts);
+      }
+      const errText = errorTextForMatch(error);
+      const retryable = isTransientError(errText);
+      const isLast = i + 1 >= maxTries;
+      if (isLast || !retryable) {
         throw error;
       }
+      const isRate = isRateLimitError(error);
+      // Longer waits for 429/RESOURCE_EXHAUSTED (capped) vs generic transient errors
+      const baseDelay = isRate
+        ? Math.min(90_000, 5_000 * Math.pow(1.45, i))
+        : backoffMs * Math.pow(2, i);
+      const jitter = baseDelay * 0.2 * (Math.random() * 2 - 1);
+      const delay = Math.max(0, baseDelay + jitter);
+
+      console.warn(
+        `[Retry] Attempt ${i + 1} failed. Retrying in ${Math.round(delay)}ms...`,
+        errText.slice(0, 500)
+      );
+      await new Promise((res) => setTimeout(res, delay));
     }
   }
   throw lastError;

@@ -6,7 +6,7 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch } from "./services/geminiService";
+import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, defaultStartPairResult, getLlmProvider } from "./services/geminiService";
 import { fetchWikipediaSummary } from "./services/wikipediaService";
 
 // Load env from .env.local if present
@@ -1323,16 +1323,33 @@ app.get("/api/ddg-image-test", async (req, res) => {
 
 // --- AI Proxy Endpoints ---
 
+/** Send 200 + JSON without using res.json (avoids Express passing stringify errors to the global 500 handler). */
+function sendAiJson(res: express.Response, payload: unknown, fallbackBody: string) {
+  try {
+    if (res.headersSent) return;
+    res.status(200).type("application/json").send(JSON.stringify(payload));
+  } catch (e) {
+    console.error("[sendAiJson] stringify failed; sending fallback", e);
+    if (!res.headersSent) {
+      res.status(200).type("application/json").send(fallbackBody);
+    }
+  }
+}
+
 app.post("/api/ai/classify-start", async (req, res) => {
   const { term, wikiContext } = req.body;
   if (!term) return res.status(400).json({ error: "term is required" });
   console.log(`📡 [Proxy] Classify-Start: "${term}"`);
+  const fallback = defaultStartPairResult(
+    "Classification service error; defaulting to Person↔Event."
+  );
   try {
     const result = await classifyStartPair(term, wikiContext);
     console.log(`✅ [Proxy] Classify-Start result for "${term}":`, result);
-    return res.status(200).json(result);
+    sendAiJson(res, result, JSON.stringify(fallback));
   } catch (e: any) {
-    return res.status(500).json({ error: e.message });
+    console.error(`[Proxy] Classify-Start error for "${term}":`, e);
+    sendAiJson(res, fallback, JSON.stringify(fallback));
   }
 });
 
@@ -1340,12 +1357,14 @@ app.post("/api/ai/classify", async (req, res) => {
   const { term, wikiContext } = req.body;
   if (!term) return res.status(400).json({ error: "term is required" });
   console.log(`📡 [Proxy] Classify: "${term}"`);
+  const fallback = { type: "Event", description: "", isAtomic: false };
   try {
     const result = await classifyEntity(term, wikiContext);
     console.log(`✅ [Proxy] Classify internal result for "${term}":`, result);
-    return res.status(200).json(result);
+    sendAiJson(res, result, JSON.stringify(fallback));
   } catch (e: any) {
-    return res.status(500).json({ error: e.message });
+    console.error(`[Proxy] Classify error for "${term}":`, e);
+    sendAiJson(res, fallback, JSON.stringify(fallback));
   }
 });
 
@@ -1353,12 +1372,14 @@ app.post("/api/ai/connections", async (req, res) => {
   const { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
   console.log(`📡 [Proxy] Connections: "${nodeName}" (Type: ${compositeType})`);
+  const empty = { people: [] };
   try {
     const result = await fetchConnections(nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
     console.log(`✅ [Proxy] Connections internal result for "${nodeName}":`, result.people?.length || 0, "people found");
-    return res.status(200).json(result);
+    sendAiJson(res, result, '{"people":[]}');
   } catch (e: any) {
-    return res.status(500).json({ error: e.message });
+    console.error(`[Proxy] Connections error for "${nodeName}":`, e);
+    sendAiJson(res, empty, '{"people":[]}');
   }
 });
 
@@ -1366,23 +1387,27 @@ app.post("/api/ai/works", async (req, res) => {
   const { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
   console.log(`📡 [Proxy] Works: "${nodeName}" (Type: ${atomicType})`);
+  const empty = { works: [] };
   try {
     const result = await fetchPersonWorks(nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
     console.log(`✅ [Proxy] Works result for "${nodeName}":`, result.works?.length || 0, "works found");
-    return res.status(200).json(result);
+    sendAiJson(res, result, '{"works":[]}');
   } catch (e: any) {
-    return res.status(500).json({ error: e.message });
+    console.error(`[Proxy] Works error for "${nodeName}":`, e);
+    sendAiJson(res, empty, '{"works":[]}');
   }
 });
 
 app.post("/api/ai/path", async (req, res) => {
   const { start, end, context } = req.body;
   if (!start || !end) return res.status(400).json({ error: "start and end are required" });
+  const empty = { path: [], found: false };
   try {
     const result = await fetchConnectionPath(start, end, context);
-    return res.status(200).json(result);
+    sendAiJson(res, result, '{"path":[],"found":false}');
   } catch (e: any) {
-    return res.status(500).json({ error: e.message });
+    console.error(`[Proxy] Path error:`, e);
+    sendAiJson(res, empty, '{"path":[],"found":false}');
   }
 });
 
@@ -1391,9 +1416,10 @@ app.post("/api/ai/title", async (req, res) => {
   if (!name) return res.status(400).json({ error: "name is required" });
   try {
     const result = await findWikipediaTitle(name, description);
-    return res.status(200).json(result);
+    sendAiJson(res, result, "null");
   } catch (e: any) {
-    return res.status(500).json({ error: e.message });
+    console.error(`[Proxy] Title error for "${name}":`, e);
+    sendAiJson(res, null, "null");
   }
 });
 
@@ -1402,13 +1428,31 @@ app.post("/api/ai/search-org", async (req, res) => {
   if (!orgName) return res.status(400).json({ error: "orgName is required" });
   try {
     const result = await fetchOrgKeyPeopleBlockViaSearch(orgName);
-    return res.status(200).json(result);
+    sendAiJson(res, result, "null");
   } catch (e: any) {
-    return res.status(500).json({ error: e.message });
+    console.error(`[Proxy] search-org error:`, e);
+    sendAiJson(res, null, "null");
   }
 });
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
-  console.log(`Cache server listening on ${port}`);
+  const prov = getLlmProvider();
+  const hasKey =
+    prov === "gemini"
+      ? Boolean(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY)
+      : prov === "openai"
+        ? Boolean(process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY)
+        : prov === "deepseek"
+          ? Boolean(process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY)
+          : Boolean(process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY);
+  const hasGemini429Fallback = Boolean(
+    process.env.OPENAI_API_KEY ||
+      process.env.VITE_OPENAI_API_KEY ||
+      process.env.DEEPSEEK_API_KEY ||
+      process.env.VITE_DEEPSEEK_API_KEY
+  );
+  console.log(
+    `Cache server listening on ${port} (LLM_PROVIDER=${process.env.LLM_PROVIDER ?? "unset"} → effective ${prov}, primary key: ${hasKey ? "set" : "missing"}; ${prov === "gemini" ? `429 fallback keys: ${hasGemini429Fallback ? "set" : "missing"}` : "—"})`
+  );
 });

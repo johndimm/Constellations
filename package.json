@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start:cache": "tsx server.ts",
+    "test:render:classify": "tsx scripts/test_render_classify_start.ts",
     "fetch:top-bios": "node scripts/fetchTopBiographies.js",
     "render:paper": "node scripts/renderPaperMarkdown.mjs",
     "render:paper:pdf": "node scripts/renderPaperPdf.mjs",
