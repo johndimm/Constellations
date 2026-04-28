@@ -296,6 +296,8 @@ export const mergeExpansionGraph = (params: {
     const bipartiteSafeCandidates = candidateLinks.filter(l => {
         const s = String(typeof l.source === 'object' ? l.source.id : l.source);
         const t = String(typeof l.target === 'object' ? l.target.id : l.target);
+        // Match useExpansion: edges incident to the expanded parent trust the AI/cache (avoid empty merges when is_atomic drifted in the DB/UI).
+        if (s === String(parent.id) || t === String(parent.id)) return true;
         const sa = isAtomicForId.get(s);
         const ta = isAtomicForId.get(t);
         const pass = (sa === undefined || ta === undefined) || (sa !== ta);

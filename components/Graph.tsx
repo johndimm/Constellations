@@ -843,6 +843,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         const hoverOut = () => setHoveredNode(null);
 
         nodeEnter.merge(nodeSel)
+            .attr("role", "button")
+            .attr("aria-label", (d: GraphNode) => (d.title ? `Graph node: ${d.title}` : "Graph node"))
             .style("cursor", "pointer")
             .on("click", clickHandler)
             .on("contextmenu", contextMenuHandler)

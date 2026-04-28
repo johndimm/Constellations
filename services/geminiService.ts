@@ -1,9 +1,44 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { getApiKey, getResponseText, cleanJson, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, getLlmApiKey, getLlmProvider } from "./aiUtils";
+import { GeminiResponse, PersonWork, PersonWorksResponse, PathResponse } from "../types";
+import {
+  clipForLlmLog,
+  getApiKey,
+  getResponseText,
+  cleanJson,
+  fetchWithTimeout,
+  withTimeout,
+  withRetry,
+  getEnvCacheUrl,
+  getEnvGeminiModel,
+  getEnvGeminiModelClassify,
+  getLlmApiKey,
+  getLlmProvider,
+  getBrowserLlmOverride,
+  setBrowserLlmOverride,
+} from "./aiUtils";
 import { runJsonCompletion } from "./llmClient";
 
-export { getApiKey, getResponseText, cleanJson, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, getLlmApiKey, getLlmProvider } from "./aiUtils";
+function withProxyLlm(body: Record<string, unknown>) {
+  const o = getBrowserLlmOverride();
+  return o ? { ...body, llmProvider: o } : body;
+}
+
+export {
+  clipForLlmLog,
+  getApiKey,
+  getResponseText,
+  cleanJson,
+  fetchWithTimeout,
+  withTimeout,
+  withRetry,
+  getEnvCacheUrl,
+  getEnvGeminiModel,
+  getEnvGeminiModelClassify,
+  getLlmApiKey,
+  getLlmProvider,
+  getBrowserLlmOverride,
+  setBrowserLlmOverride,
+} from "./aiUtils";
 
 const SYSTEM_INSTRUCTION = `
 You are a Bipartite Graph Generator.
@@ -56,6 +91,8 @@ Return strict JSON.
 // Loosened timeouts to tolerate slower responses without failing immediately.
 const GEMINI_TIMEOUT_MS = 60000; // 60 seconds for heavier graph expansions
 const CLASSIFY_TIMEOUT_MS = 15000; // 15 seconds for classification
+/** Client wait for cache server (LLM + JSON) so the graph never spins forever on a hung proxy. */
+const PROXY_FETCH_TIMEOUT_MS = 120_000;
 
 // Model selection (configurable via Vite env vars)
 // - VITE_GEMINI_MODEL: used for expansions + pathfinding (default)
@@ -73,17 +110,28 @@ async function callAiProxy(endpoint: string, body: any) {
   const baseUrl = getEnvCacheUrl();
   let resolvedBase = baseUrl;
 
-  const url = new URL(endpoint, resolvedBase || (typeof window !== 'undefined' ? window.location.origin : '')).toString();
+  const url = new URL(
+    endpoint,
+    resolvedBase ||
+      (typeof window !== "undefined" ? window.location.origin : ""),
+  ).toString();
+  const payload = withProxyLlm(body && typeof body === "object" && !Array.isArray(body) ? body : {});
   try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
+    console.info("[LLM] proxy REQUEST", endpoint, clipForLlmLog(JSON.stringify(payload)));
+
+    const resp = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+      PROXY_FETCH_TIMEOUT_MS,
+    );
 
     if (resp.status === 404 && endpoint === "/api/ai/classify-start") {
       // console.warn(`⚠️ [Proxy] ${endpoint} not found, falling back to /api/ai/classify`);
-      return callAiProxy("/api/ai/classify", body);
+      return callAiProxy("/api/ai/classify", payload);
     }
 
     if (!resp.ok) {
@@ -95,35 +143,66 @@ async function callAiProxy(endpoint: string, body: any) {
         resp.status === 429;
       // Degrade gracefully when the cache server errors (quota, old deploy, etc.) so the UI keeps working.
       if (degraded && endpoint === "/api/ai/connections") {
-        console.warn(`[Proxy] ${endpoint} ${resp.status}; returning empty people.`, err.slice(0, 300));
+        console.warn(
+          `[Proxy] ${endpoint} ${resp.status}; returning empty people.`,
+          err.slice(0, 300),
+        );
         return { people: [] };
       }
       if (degraded && endpoint === "/api/ai/works") {
-        console.warn(`[Proxy] ${endpoint} ${resp.status}; returning empty works.`, err.slice(0, 300));
+        console.warn(
+          `[Proxy] ${endpoint} ${resp.status}; returning empty works.`,
+          err.slice(0, 300),
+        );
         return { works: [] };
       }
       if (degraded && endpoint === "/api/ai/path") {
-        console.warn(`[Proxy] ${endpoint} ${resp.status}; returning empty path.`, err.slice(0, 300));
+        console.warn(
+          `[Proxy] ${endpoint} ${resp.status}; returning empty path.`,
+          err.slice(0, 300),
+        );
         return { path: [], found: false };
       }
       if (degraded && endpoint === "/api/ai/classify-start") {
-        console.warn(`[Proxy] ${endpoint} ${resp.status}; defaulting start pair.`, err.slice(0, 300));
+        console.warn(
+          `[Proxy] ${endpoint} ${resp.status}; defaulting start pair.`,
+          err.slice(0, 300),
+        );
         return defaultStartPairResult(
-          "Classification proxy error (quota or server); defaulting to Person↔Event."
+          "Classification proxy error (quota or server); defaulting to Person↔Event.",
         );
       }
       if (degraded && endpoint === "/api/ai/classify") {
-        console.warn(`[Proxy] ${endpoint} ${resp.status}; defaulting classify.`, err.slice(0, 300));
+        console.warn(
+          `[Proxy] ${endpoint} ${resp.status}; defaulting classify.`,
+          err.slice(0, 300),
+        );
         return { type: "Event", description: "", isAtomic: false };
       }
       throw new Error(`AI Proxy Error (${resp.status}): ${err}`);
     }
-    return resp.json();
+    const data = await resp.json();
+    console.info("[LLM] proxy RESPONSE", endpoint, clipForLlmLog(JSON.stringify(data)));
+    return data;
   } catch (e: any) {
-    if (endpoint === "/api/ai/classify-start" && !e.message?.includes("AI Proxy Error")) {
+    const aborted = e?.name === "AbortError";
+    if (aborted) {
+      console.warn(`[Proxy] ${endpoint} timed out after ${PROXY_FETCH_TIMEOUT_MS}ms; degrading or rethrowing.`);
+      if (endpoint === "/api/ai/connections") return { people: [] };
+      if (endpoint === "/api/ai/works") return { works: [] };
+      if (endpoint === "/api/ai/path") return { path: [], found: false };
+      if (endpoint === "/api/ai/classify-start") {
+        return defaultStartPairResult("Classification request timed out; defaulting to Person↔Event.");
+      }
+      if (endpoint === "/api/ai/classify") return { type: "Event", description: "", isAtomic: false };
+    }
+    if (
+      endpoint === "/api/ai/classify-start" &&
+      !e.message?.includes("AI Proxy Error")
+    ) {
       // Network error or fetch failure, try fallback anyway if it's the start pair
       // console.warn(`⚠️ [Proxy] ${endpoint} failed, trying fallback /api/ai/classify`, e);
-      return callAiProxy("/api/ai/classify", body);
+      return callAiProxy("/api/ai/classify", payload);
     }
     throw e;
   }
@@ -133,7 +212,7 @@ async function callAiProxy(endpoint: string, body: any) {
  * Helper to determine if we should use the proxy (browser + proxy URL available).
  */
 function shouldProxy(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === "undefined") return false;
   if ((window as any).__PRERENDER_INJECTED) return false;
 
   const baseUrl = getEnvCacheUrl();
@@ -160,7 +239,7 @@ export function defaultStartPairResult(reason: string): {
 
 export const classifyStartPair = async (
   term: string,
-  wikiContext?: string
+  wikiContext?: string,
 ): Promise<{
   type: string;
   description: string;
@@ -180,30 +259,40 @@ export const classifyStartPair = async (
   const t = term.trim();
   // Academic heuristics (no model required):
   // If the seed looks like a paper/DOI/arXiv query, default to Author↔Paper so the system can use an academic corpus.
-  if (/\b10\.\d{4,9}\/\S+\b/i.test(t) || /\barxiv\b|arxiv:\s*\d{4}\.\d{4,5}/i.test(t)) {
+  if (
+    /\b10\.\d{4,9}\/\S+\b/i.test(t) ||
+    /\barxiv\b|arxiv:\s*\d{4}\.\d{4,5}/i.test(t)
+  ) {
     return {
       type: "Paper",
       description: "",
       isAtomic: false,
       atomicType: "Author",
       compositeType: "Paper",
-      reasoning: "Seed looks like an academic paper identifier (DOI/arXiv); selecting Author↔Paper."
+      reasoning:
+        "Seed looks like an academic paper identifier (DOI/arXiv); selecting Author↔Paper.",
     };
   }
-  if (/\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(t)) {
+  if (
+    /\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(
+      t,
+    )
+  ) {
     return {
       type: "Event",
       description: "",
       isAtomic: false,
       atomicType: "Person",
       compositeType: "Event",
-      reasoning: "Title contains an explicit work/media disambiguator (e.g., '(album)'); treating it as Composite in Person↔Event."
+      reasoning:
+        "Title contains an explicit work/media disambiguator (e.g., '(album)'); treating it as Composite in Person↔Event.",
     };
   }
 
-
   if (!apiKey) {
-    return defaultStartPairResult("No API key available; defaulting to Person↔Event.");
+    return defaultStartPairResult(
+      "No API key available; defaulting to Person↔Event.",
+    );
   }
 
   const useGemini = getLlmProvider() === "gemini";
@@ -241,11 +330,11 @@ Rules:
                     isAtomic: { type: Type.BOOLEAN },
                     atomicType: { type: Type.STRING },
                     compositeType: { type: Type.STRING },
-                    reasoning: { type: Type.STRING }
+                    reasoning: { type: Type.STRING },
                   },
-                  required: ["type", "isAtomic", "atomicType", "compositeType"]
-                }
-              }
+                  required: ["type", "isAtomic", "atomicType", "compositeType"],
+                },
+              },
             })
         : undefined,
     });
@@ -259,18 +348,24 @@ Rules:
       isAtomic: !!json.isAtomic,
       atomicType: json.atomicType || "Person",
       compositeType: json.compositeType || "Event",
-      reasoning: json.reasoning || ""
+      reasoning: json.reasoning || "",
     };
   } catch (e: any) {
     const msg = String(e?.message || e || "");
-    console.warn(`[classifyStartPair] failed for "${term}":`, msg.slice(0, 200));
+    console.warn(
+      `[classifyStartPair] failed for "${term}":`,
+      msg.slice(0, 200),
+    );
     return defaultStartPairResult(
-      "Classification API unavailable (quota, rate limit, or error); defaulting to Person↔Event."
+      "Classification API unavailable (quota, rate limit, or error); defaulting to Person↔Event.",
     );
   }
 };
 
-export const classifyEntity = async (term: string, wikiContext?: string): Promise<{
+export const classifyEntity = async (
+  term: string,
+  wikiContext?: string,
+): Promise<{
   type: string;
   description: string;
   isAtomic: boolean;
@@ -287,21 +382,25 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
 
   // String-level safety heuristic (no Wikipedia required):
   // Disambiguated titles like "... (album)" must never be treated as Person.
-  if (/\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(term.trim())) {
+  if (
+    /\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(
+      term.trim(),
+    )
+  ) {
     return {
       type: "Event",
       description: "",
       isAtomic: false,
       atomicType: "Person",
       compositeType: "Event",
-      reasoning: "Title contains an explicit work/media disambiguator (e.g., '(album)'); treating it as Composite in Person↔Event."
+      reasoning:
+        "Title contains an explicit work/media disambiguator (e.g., '(album)'); treating it as Composite in Person↔Event.",
     };
   }
 
-
   if (!apiKey) {
     console.error("❌ [Gemini] classifyEntity: No API key found");
-    return { type: 'Event', description: '', isAtomic: false };
+    return { type: "Event", description: "", isAtomic: false };
   }
   const useGemini = getLlmProvider() === "gemini";
   const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
@@ -353,34 +452,37 @@ export const classifyEntity = async (term: string, wikiContext?: string): Promis
                   type: Type.OBJECT,
                   properties: {
                     type: { type: Type.STRING },
-                    description: { type: Type.STRING, description: "Short 1-sentence description" },
+                    description: {
+                      type: Type.STRING,
+                      description: "Short 1-sentence description",
+                    },
                     isAtomic: { type: Type.BOOLEAN },
                     atomicType: { type: Type.STRING },
                     compositeType: { type: Type.STRING },
-                    reasoning: { type: Type.STRING }
+                    reasoning: { type: Type.STRING },
                   },
-                  required: ["type", "isAtomic", "atomicType", "compositeType"]
-                }
-              }
+                  required: ["type", "isAtomic", "atomicType", "compositeType"],
+                },
+              },
             })
         : undefined,
     });
     // console.log(`🤖 [Gemini] Raw Classify response for "${term}":`, rawText);
     const text = cleanJson(rawText);
     // console.log("Classify response text:", text);
-    if (!text) return { type: 'Event', description: '', isAtomic: false };
+    if (!text) return { type: "Event", description: "", isAtomic: false };
     const json = JSON.parse(text);
     return {
-      type: json.type || 'Event',
-      description: json.description || '',
+      type: json.type || "Event",
+      description: json.description || "",
       isAtomic: !!json.isAtomic,
       atomicType: json.atomicType,
       compositeType: json.compositeType,
-      reasoning: json.reasoning
+      reasoning: json.reasoning,
     };
   } catch (error) {
     // console.warn("Classification failed, defaulting to Event:", error);
-    return { type: 'Event', description: '', isAtomic: false };
+    return { type: "Event", description: "", isAtomic: false };
   }
 };
 
@@ -392,72 +494,87 @@ export const fetchConnections = async (
   wikipediaId?: string,
   atomicType?: string,
   compositeType?: string,
-  mentioningPageTitles?: string[]
+  mentioningPageTitles?: string[],
 ): Promise<GeminiResponse> => {
   if (shouldProxy()) {
-    return callAiProxy("/api/ai/connections", { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles });
+    return callAiProxy("/api/ai/connections", {
+      nodeName,
+      context,
+      excludeNodes,
+      wikiContext,
+      wikipediaId,
+      atomicType,
+      compositeType,
+      mentioningPageTitles,
+    });
   }
 
   try {
-  const apiKey = await getLlmApiKey();
-  if (!apiKey) {
-    console.error("❌ [Gemini] fetchConnections: No API key found");
-    return { people: [] };
-  }
+    const apiKey = await getLlmApiKey();
+    if (!apiKey) {
+      console.error("❌ [Gemini] fetchConnections: No API key found");
+      return { people: [] };
+    }
 
-  const useGemini = getLlmProvider() === "gemini";
-  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
+    const useGemini = getLlmProvider() === "gemini";
+    const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
 
-  const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
-  const contextualPrompt = context
-    ? `Analyze: "${nodeName}"${wikiIdStr} specifically in the context of "${context}".`
-    : `Analyze: "${nodeName}"${wikiIdStr}.`;
+    const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
+    const contextualPrompt = context
+      ? `Analyze: "${nodeName}"${wikiIdStr} specifically in the context of "${context}".`
+      : `Analyze: "${nodeName}"${wikiIdStr}.`;
 
-  const wikiPrompt = wikiContext
-    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
-    : "";
+    const wikiPrompt = wikiContext
+      ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
+      : "";
 
-  const excludePrompt = excludeNodes.length > 0
-    ? `\nDO NOT include the following already known connections: ${JSON.stringify(excludeNodes)}. Find NEW high-impact connections.`
-    : "";
+    const excludePrompt =
+      excludeNodes.length > 0
+        ? `\nDO NOT include the following already known connections: ${JSON.stringify(excludeNodes)}. Find NEW high-impact connections.`
+        : "";
 
-  const mentionPrompt = mentioningPageTitles && mentioningPageTitles.length > 0
-    ? `\nIMPORTANT: This entity does not have a dedicated Wikipedia article, but it is explicitly mentioned in the following Wikipedia articles: ${mentioningPageTitles.join(', ')}. You MUST investigate these contexts and include relevant connections found there.`
-    : "";
+    const mentionPrompt =
+      mentioningPageTitles && mentioningPageTitles.length > 0
+        ? `\nIMPORTANT: This entity does not have a dedicated Wikipedia article, but it is explicitly mentioned in the following Wikipedia articles: ${mentioningPageTitles.join(", ")}. You MUST investigate these contexts and include relevant connections found there.`
+        : "";
 
-  const atomicLabel = atomicType || "ATOMIC entity";
-  const compositeLabel = compositeType || "COMPOSITE entity";
-  const personOnlyRule =
-    (atomicType || "").trim().toLowerCase() === "person"
-      ? `\nCRITICAL: The atomic side is "Person" meaning INDIVIDUAL HUMAN BEINGS ONLY.
+    const atomicLabel = atomicType || "ATOMIC entity";
+    const compositeLabel = compositeType || "COMPOSITE entity";
+    const personOnlyRule =
+      (atomicType || "").trim().toLowerCase() === "person"
+        ? `\nCRITICAL: The atomic side is "Person" meaning INDIVIDUAL HUMAN BEINGS ONLY.
 - Return ONLY specific individual people with proper names (e.g., "Leonardo da Vinci"), not categories, groups, or locations.
 - DO NOT return organizations, institutions, committees, councils, companies, museums, foundations, agencies, or any group entities (e.g., do NOT return "Republic of Florence" as a person).
 - DO NOT return locations, places, buildings, or geographical entities (e.g., do NOT return "Florence" or "Italy").
 - DO NOT return generic or collective phrases like "Various Local Artists", "Local Artists", "Staff", "Visitors", "Students", "Members", "Volunteers", "Team", "The Public", "Curators".
 - If you cannot find enough specific individual humans, return fewer.`
-      : "";
-  const workSourceHint =
-    (compositeType || "").trim().toLowerCase() === "event"
-      ? `\nIf the Source is a named work (e.g., artwork/painting/sculpture/album/book/novel/film), you MUST return the primary creator(s) (author, artist, director, etc.) as the first few results. DO NOT omit the creator even if they are already widely known. Return people directly connected to the work (creator, depicted subject/model if distinct, commissioners/patrons, notable collectors/owners, curators/restorers/biographers explicitly associated). 
+        : "";
+    const workSourceHint =
+      (compositeType || "").trim().toLowerCase() === "event"
+        ? `\nIf the Source is a named work (e.g., artwork/painting/sculpture/album/book/novel/film), you MUST return the primary creator(s) (author, artist, director, etc.) as the first few results. DO NOT omit the creator even if they are already widely known. Return people directly connected to the work (creator, depicted subject/model if distinct, commissioners/patrons, notable collectors/owners, curators/restorers/biographers explicitly associated). 
 - Do NOT invent names; if only the creator is reliably connected, return only that person.`
-      : "";
-  const theorySourceHint =
-    /\b(theory|concept|discovery|law|principle|formula|field|science|physics|mathematics|biology|chemistry|mechanics|evolution|relativity)\b/i.test(compositeType || "") ||
-      /\b(theory|physics|mathematics|discovery|principle|mechanics|evolution|relativity)\b/i.test(nodeName)
-      ? `\nSPECIAL CASE (theory/concept/discovery): If the Source is a scientific theory, concept, or discovery, return the primary scientists, authors, or discoverers who established or significantly developed it.`
-      : "";
+        : "";
+    const theorySourceHint =
+      /\b(theory|concept|discovery|law|principle|formula|field|science|physics|mathematics|biology|chemistry|mechanics|evolution|relativity)\b/i.test(
+        compositeType || "",
+      ) ||
+      /\b(theory|physics|mathematics|discovery|principle|mechanics|evolution|relativity)\b/i.test(
+        nodeName,
+      )
+        ? `\nSPECIAL CASE (theory/concept/discovery): If the Source is a scientific theory, concept, or discovery, return the primary scientists, authors, or discoverers who established or significantly developed it.`
+        : "";
 
     const prompt = `${contextualPrompt}${wikiPrompt}${mentionPrompt}${excludePrompt}
       Source Node: ${nodeName} (Type: ${compositeLabel})
       
-      Return ${excludeNodes.length > 0 ? '12-15 NEW' : '10-12 key'} ${atomicLabel} entities (participants, creators, major figures, stars, ingredients, its most famous writers/editors for magazines, etc.) that are fundamental components of this ${compositeLabel}.
+      Return ${excludeNodes.length > 0 ? "12-15 NEW" : "10-12 key"} ${atomicLabel} entities (participants, creators, major figures, stars, ingredients, its most famous writers/editors for magazines, etc.) that are fundamental components of this ${compositeLabel}.
       
       Straying Guardrails:
       ${personOnlyRule}
       ${workSourceHint}
       ${theorySourceHint}
-      ${(compositeType || "").match(/^(Movie|Film|Book|Novel|Play|Opera)$/i) ? '\nSPECIAL CASE (Fiction): For works of fiction, prioritize returning CHARACTERS as the atomic entities.' : ''}
-      ${(compositeType || "").match(/^(Magazine|Newspaper|Journal|Periodical|Publication)$/i) ? '\nSPECIAL CASE (Magazine): For periodicals/magazines, prioritize returning its most FAMOUS AND LONG-TIME WRITERS, columnists, and editors-in-chief. If some of these are already in the graph, find other significant figures.' : ''}
+      ${(compositeType || "").match(/^(Movie|Film|Book|Novel|Play|Opera)$/i) ? "\nSPECIAL CASE (Fiction): For works of fiction, prioritize returning CHARACTERS as the atomic entities." : ""}
+      ${(compositeType || "").match(/^(Magazine|Newspaper|Journal|Periodical|Publication)$/i) ? "\nSPECIAL CASE (Magazine): For periodicals/magazines, prioritize returning its most FAMOUS AND LONG-TIME WRITERS, columnists, and editors-in-chief. If some of these are already in the graph, find other significant figures." : ""}
       
       CRITICAL BIPARTITE RULE:
       - The Source Node is a COMPOSITE entity.
@@ -465,7 +582,7 @@ export const fetchConnections = async (
       - DO NOT return other ${compositeLabel} entities.
       - If you find connections to other ${compositeLabel} entities, you MUST find the ${atomicLabel} entities (people, characters, etc.) that link them.
 
-      ${excludeNodes.length > 0 ? `\nEXPAND MORE: Since you have already provided some connections, please dig deeper into the "next tier" of significant entities. Avoid the obvious names already in the graph: ${JSON.stringify(excludeNodes)}.` : ''}
+      ${excludeNodes.length > 0 ? `\nEXPAND MORE: Since you have already provided some connections, please dig deeper into the "next tier" of significant entities. Avoid the obvious names already in the graph: ${JSON.stringify(excludeNodes)}.` : ""}
 
       IMPORTANT: For each entity specify its type (${atomicLabel}) and whether it follows the classification rules defined in the system instruction.
       
@@ -496,27 +613,59 @@ export const fetchConnections = async (
                 responseSchema: {
                   type: Type.OBJECT,
                   properties: {
-                    sourceYear: { type: Type.INTEGER, description: "Year of the source node" },
+                    sourceYear: {
+                      type: Type.INTEGER,
+                      description: "Year of the source node",
+                    },
                     people: {
                       type: Type.ARRAY,
                       items: {
                         type: Type.OBJECT,
                         properties: {
                           name: { type: Type.STRING },
-                          isAtomic: { type: Type.BOOLEAN, nullable: true, description: "True if atomic, false if composite" },
-                          wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
-                          role: { type: Type.STRING, nullable: true, description: "Role in the requested Source Node" },
-                          description: { type: Type.STRING, nullable: true, description: "Short 1-sentence bio" },
-                          evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
-                          evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
+                          isAtomic: {
+                            type: Type.BOOLEAN,
+                            nullable: true,
+                            description: "True if atomic, false if composite",
+                          },
+                          wikipediaTitle: {
+                            type: Type.STRING,
+                            nullable: true,
+                            description:
+                              "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)",
+                          },
+                          role: {
+                            type: Type.STRING,
+                            nullable: true,
+                            description: "Role in the requested Source Node",
+                          },
+                          description: {
+                            type: Type.STRING,
+                            nullable: true,
+                            description: "Short 1-sentence bio",
+                          },
+                          evidenceSnippet: {
+                            type: Type.STRING,
+                            description:
+                              "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it",
+                          },
+                          evidencePageTitle: {
+                            type: Type.STRING,
+                            description:
+                              "Wikipedia page title where the snippet came from (usually the source)",
+                          },
                         },
-                        required: ["name", "evidenceSnippet", "evidencePageTitle"]
-                      }
-                    }
+                        required: [
+                          "name",
+                          "evidenceSnippet",
+                          "evidencePageTitle",
+                        ],
+                      },
+                    },
                   },
-                  required: ["people"]
-                }
-              }
+                  required: ["people"],
+                },
+              },
             })
         : undefined,
     });
@@ -527,9 +676,9 @@ export const fetchConnections = async (
     const parsed = JSON.parse(text) as GeminiResponse;
     const list = Array.isArray(parsed.people) ? parsed.people : [];
     // Force correct bipartite type regardless of LLM slip-ups
-    parsed.people = list.map(p => ({
+    parsed.people = list.map((p) => ({
       ...p,
-      isAtomic: true // In fetchConnections, the source is COMPOSITE, so all results MUST be ATOMIC (true)
+      isAtomic: true, // In fetchConnections, the source is COMPOSITE, so all results MUST be ATOMIC (true)
     }));
 
     return parsed;
@@ -546,46 +695,99 @@ export const fetchPersonWorks = async (
   wikipediaId?: string,
   atomicType?: string,
   compositeType?: string,
-  mentioningPageTitles?: string[]
+  mentioningPageTitles?: string[],
 ): Promise<PersonWorksResponse> => {
   if (shouldProxy()) {
-    return callAiProxy("/api/ai/works", { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles });
+    const resp: any = await callAiProxy("/api/ai/works", {
+      nodeName,
+      excludeNodes,
+      wikiContext,
+      wikipediaId,
+      atomicType,
+      compositeType,
+      mentioningPageTitles,
+    });
+
+    // Compatibility: older/newer proxy servers (and some providers) return `{ entities: [...] }` instead of `{ works: [...] }`.
+    // Normalize here so the UI can use the data even if the cache server hasn't been updated.
+    if (resp && (!Array.isArray(resp.works) || resp.works.length === 0) && Array.isArray(resp.entities)) {
+      const entities = resp.entities as any[];
+      const works = entities
+        .map((e) => {
+          const wikiTitle =
+            typeof e?.wikipediaTitle === "string" ? e.wikipediaTitle.trim() : "";
+          const entity =
+            typeof e?.entity === "string" && e.entity.trim()
+              ? e.entity.trim()
+              : wikiTitle;
+          if (!entity) return null;
+          return {
+            entity,
+            wikipediaTitle: wikiTitle || undefined,
+            type:
+              typeof e?.type === "string" && e.type.trim()
+                ? e.type.trim()
+                : compositeType || "Event",
+            description: typeof e?.description === "string" ? e.description : "",
+            role: typeof e?.role === "string" ? e.role : "",
+            year:
+              e?.year === null || e?.year === undefined || isNaN(Number(e.year))
+                ? (undefined as any)
+                : Number(e.year),
+            isAtomic: false,
+            evidenceSnippet: typeof e?.evidenceSnippet === "string" ? e.evidenceSnippet : "",
+            evidencePageTitle:
+              typeof e?.evidencePageTitle === "string" ? e.evidencePageTitle : nodeName,
+          } as PersonWork;
+        })
+        .filter(Boolean) as PersonWork[];
+      return { ...resp, works };
+    }
+
+    return resp as PersonWorksResponse;
   }
 
-  const apiKey = await getLlmApiKey();
-  if (!apiKey) {
-    console.error("❌ [Gemini] fetchPersonWorks: No API key found");
-    throw new Error("No API key found");
-  }
+  try {
+    const apiKey = await getLlmApiKey();
+    if (!apiKey) {
+      console.error("❌ [Gemini] fetchPersonWorks: No API key found");
+      return { works: [] };
+    }
 
-  const useGemini = getLlmProvider() === "gemini";
-  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
+    const useGemini = getLlmProvider() === "gemini";
+    const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
 
-  const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
-  const wikiPrompt = wikiContext
-    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
-    : "";
+    const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
+    const wikiPrompt = wikiContext
+      ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
+      : "";
 
-  const atomicLabel = atomicType || "ATOMIC entity";
-  const compositeLabel = compositeType || "COMPOSITE entity";
+    const atomicLabel = atomicType || "ATOMIC entity";
+    const compositeLabel = compositeType || "COMPOSITE entity";
 
-  const mentionPrompt = mentioningPageTitles && mentioningPageTitles.length > 0
-    ? `\nIMPORTANT: This person does not have a dedicated Wikipedia article, but they are explicitly mentioned in these Wikipedia articles: ${mentioningPageTitles.join(', ')}. Prioritize these as the primary ${compositeLabel} connections for this person.`
-    : "";
+    const mentionPrompt =
+      mentioningPageTitles && mentioningPageTitles.length > 0
+        ? `\nIMPORTANT: This person does not have a dedicated Wikipedia article, but they are explicitly mentioned in these Wikipedia articles: ${mentioningPageTitles.join(", ")}. Prioritize these as the primary ${compositeLabel} connections for this person.`
+        : "";
 
-  const dateRequired = (compositeType || "").match(/^(Event|Paper|Work|Movie|Film|Book|Novel|Album|Song|Composition|Artwork|Painting|Sculpture)$/i) ||
-    (compositeLabel.toLowerCase().includes('event') || compositeLabel.toLowerCase().includes('work'));
+    const dateRequired =
+      (compositeType || "").match(
+        /^(Event|Paper|Work|Movie|Film|Book|Novel|Album|Song|Composition|Artwork|Painting|Sculpture)$/i,
+      ) ||
+      compositeLabel.toLowerCase().includes("event") ||
+      compositeLabel.toLowerCase().includes("work");
 
-  const dateRequirementPrompt = dateRequired
-    ? `\nDATE REQUIREMENT:
+    const dateRequirementPrompt = dateRequired
+      ? `\nDATE REQUIREMENT:
        - Every ${compositeLabel} MUST have a valid year (creation, publication, start date, or occurrence).
        - If you do not know the year, DO NOT include the entity.`
-    : "";
+      : "";
 
-  const contextPrompt = excludeNodes.length > 0
-    ? `The user graph already contains these nodes connected to ${nodeName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}.
+    const contextPrompt =
+      excludeNodes.length > 0
+        ? `The user graph already contains these nodes connected to ${nodeName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}.
        Return 12-15 NEW significant ${compositeLabel} entities.`
-    : `List 10-12 DISTINCT, significant ${compositeLabel} entities that this ${atomicLabel} "${nodeName}"${wikiIdStr} belongs to or is part of.
+        : `List 10-12 DISTINCT, significant ${compositeLabel} entities that this ${atomicLabel} "${nodeName}"${wikiIdStr} belongs to or is part of.
        
        CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, location, or specific historical event/incident.
        DO NOT return descriptive phrases, facts, or achievements.
@@ -650,6 +852,7 @@ export const fetchPersonWorks = async (
        - For a Person involved in a recent event: Return the named Event or Incident (e.g. "Killing of Renee Good", "2026 Minneapolis Protests").
        - For an Ingredient (e.g. "Chicken"): Return specific Recipes.
        - For an Actor: Return specific Movies.
+       - For a film director, producer, or screenwriter: Return their best-known directed (or written) films and major series; each entry MUST include a 4-digit release or first-air year in the "year" field whenever known.
        - For an Artist: Return specific major Artworks (e.g., "Mona Lisa", "The Last Supper") and optionally a few key Exhibitions/Movements.
        - For a Mathematician: Return specific named Papers (often coauthored).
         
@@ -659,9 +862,8 @@ export const fetchPersonWorks = async (
         - DO NOT return other ${atomicLabel} entities (other people, actors, or characters).
         - If "Bugs Bunny" has a rivalry with "Daffy Duck", DO NOT return "Daffy Duck". Instead, return the specific MOVIES or SERIES they appear in together.`;
 
-  try {
     const prompt = `${wikiPrompt}${mentionPrompt}${contextPrompt}
-      Ensure each entry is a different entity. ${dateRequired ? 'Sort by year. STRICTLY avoid entities without a known year.' : 'Sort by year if applicable.'}`;
+      Ensure each entry is a different entity. ${dateRequired ? "Sort by year. STRICTLY avoid entities without a known year." : "Sort by year if applicable."}`;
 
     // console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
 
@@ -687,22 +889,53 @@ export const fetchPersonWorks = async (
                         type: Type.OBJECT,
                         properties: {
                           entity: { type: Type.STRING },
-                          isAtomic: { type: Type.BOOLEAN, nullable: true, description: "True if atomic, false if composite" },
-                          wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
+                          isAtomic: {
+                            type: Type.BOOLEAN,
+                            nullable: true,
+                            description: "True if atomic, false if composite",
+                          },
+                          wikipediaTitle: {
+                            type: Type.STRING,
+                            nullable: true,
+                            description:
+                              "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)",
+                          },
                           type: { type: Type.STRING },
-                          description: { type: Type.STRING, nullable: true, description: "Short 1-sentence description" },
+                          description: {
+                            type: Type.STRING,
+                            nullable: true,
+                            description: "Short 1-sentence description",
+                          },
                           role: { type: Type.STRING, nullable: true },
-                          year: { type: Type.INTEGER, nullable: true, description: "4-digit year (YYYY), required for events/works" },
-                          evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
-                          evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
+                          year: {
+                            type: Type.INTEGER,
+                            nullable: true,
+                            description:
+                              "4-digit year (YYYY), required for events/works",
+                          },
+                          evidenceSnippet: {
+                            type: Type.STRING,
+                            description:
+                              "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it",
+                          },
+                          evidencePageTitle: {
+                            type: Type.STRING,
+                            description:
+                              "Wikipedia page title where the snippet came from (usually the source)",
+                          },
                         },
-                        required: ["entity", "type", "evidenceSnippet", "evidencePageTitle"]
-                      }
-                    }
+                        required: [
+                          "entity",
+                          "type",
+                          "evidenceSnippet",
+                          "evidencePageTitle",
+                        ],
+                      },
+                    },
                   },
-                  required: ["works"]
-                }
-              }
+                  required: ["works"],
+                },
+              },
             })
         : undefined,
     });
@@ -711,13 +944,74 @@ export const fetchPersonWorks = async (
     if (!text) return { works: [] };
     const parsed = JSON.parse(text) as PersonWorksResponse;
     if (!Array.isArray(parsed.works)) parsed.works = [];
+
+    // Some providers (notably Anthropic in this app) sometimes return an `entities` array for this endpoint
+    // instead of `works`. Map it into the canonical `works` shape so the UI can actually render nodes.
+    if (parsed.works.length === 0 && Array.isArray((parsed as any).entities)) {
+      const entities = (parsed as any).entities as any[];
+      parsed.works = entities
+        .map((e) => {
+          const wikiTitle =
+            typeof e?.wikipediaTitle === "string" ? e.wikipediaTitle.trim() : "";
+          const entity =
+            typeof e?.entity === "string" && e.entity.trim()
+              ? e.entity.trim()
+              : wikiTitle;
+          if (!entity) return null;
+          return {
+            entity,
+            wikipediaTitle: wikiTitle || undefined,
+            type: typeof e?.type === "string" && e.type.trim() ? e.type.trim() : (compositeType || "Event"),
+            description:
+              typeof e?.description === "string" ? e.description : "",
+            role: typeof e?.role === "string" ? e.role : "",
+            year:
+              e?.year === null || e?.year === undefined || isNaN(Number(e.year))
+                ? (undefined as any)
+                : Number(e.year),
+            isAtomic: false,
+            evidenceSnippet:
+              typeof e?.evidenceSnippet === "string" ? e.evidenceSnippet : "",
+            evidencePageTitle:
+              typeof e?.evidencePageTitle === "string"
+                ? e.evidencePageTitle
+                : nodeName,
+          } as PersonWork;
+        })
+        .filter(Boolean) as PersonWork[];
+    }
+
+    const hasValidYear = (w: PersonWork) =>
+      w.year !== null && w.year !== undefined && !isNaN(Number(w.year));
+
+    // OpenAI-style models sometimes use "name" instead of "entity"; keep downstream filters working.
+    parsed.works = parsed.works.map((w: any) => {
+      const entity =
+        typeof w.entity === "string" && w.entity.trim()
+          ? w.entity.trim()
+          : typeof w.wikipediaTitle === "string" && w.wikipediaTitle.trim()
+            ? w.wikipediaTitle.trim()
+            : typeof w.name === "string" && w.name.trim()
+              ? w.name.trim()
+              : "";
+      return { ...w, entity };
+    });
+
     // Force correct bipartite type regardless of LLM slip-ups
     if (dateRequired) {
-      parsed.works = parsed.works.filter(w => w.year !== null && w.year !== undefined && !isNaN(Number(w.year)));
+      const withYear = parsed.works.filter(hasValidYear);
+      // Strict year filter avoids junk, but models often omit years — then everyone fails (e.g. "Martin Scorsese" → empty graph).
+      if (withYear.length > 0) {
+        parsed.works = withYear;
+      } else if (parsed.works.length > 0) {
+        console.warn(
+          `[fetchPersonWorks] "${nodeName}": no entries with valid year; keeping ${parsed.works.length} without year filter`,
+        );
+      }
     }
-    parsed.works = parsed.works.map(w => ({
+    parsed.works = parsed.works.map((w) => ({
       ...w,
-      isAtomic: false // In fetchPersonWorks, the source is ATOMIC, so all results MUST be COMPOSITE (false)
+      isAtomic: false, // In fetchPersonWorks, the source is ATOMIC, so all results MUST be COMPOSITE (false)
     }));
     return parsed;
   } catch (error) {
@@ -726,25 +1020,31 @@ export const fetchPersonWorks = async (
   }
 };
 
-export const fetchConnectionPath = async (start: string, end: string, context?: { startWiki?: string; endWiki?: string }): Promise<PathResponse> => {
+export const fetchConnectionPath = async (
+  start: string,
+  end: string,
+  context?: { startWiki?: string; endWiki?: string },
+): Promise<PathResponse> => {
   if (shouldProxy()) {
     return callAiProxy("/api/ai/path", { start, end, context });
   }
 
-  const apiKey = await getLlmApiKey();
-  if (!apiKey) {
-    console.error("❌ [Gemini] fetchConnectionPath: No API key found");
-    throw new Error("No API key found");
-  }
+  try {
+    const apiKey = await getLlmApiKey();
+    if (!apiKey) {
+      console.error("❌ [Gemini] fetchConnectionPath: No API key found");
+      return { path: [], found: false };
+    }
 
-  const useGemini = getLlmProvider() === "gemini";
-  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
+    const useGemini = getLlmProvider() === "gemini";
+    const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
 
-  const wikiPrompt = (context?.startWiki || context?.endWiki)
-    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${context?.startWiki ? `[${start}]: ${context.startWiki}\n` : ''}${context?.endWiki ? `[${end}]: ${context.endWiki}\n` : ''}`
-    : "";
+    const wikiPrompt =
+      context?.startWiki || context?.endWiki
+        ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${context?.startWiki ? `[${start}]: ${context.startWiki}\n` : ""}${context?.endWiki ? `[${end}]: ${context.endWiki}\n` : ""}`
+        : "";
 
-  const prompt = `Find a connection path between "${start}" and "${end}".
+    const prompt = `Find a connection path between "${start}" and "${end}".
     ${wikiPrompt}
     
     Your goal is to find the most direct and historically significant connection path.
@@ -796,7 +1096,6 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
       ]
     }`;
 
-  try {
     const text = await runJsonCompletion({
       system: SYSTEM_INSTRUCTION,
       user: prompt,
@@ -821,16 +1120,30 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
                           id: { type: Type.STRING },
                           type: { type: Type.STRING },
                           description: { type: Type.STRING },
-                          justification: { type: Type.STRING, description: "Relationship to the PREVIOUS node in the chain" },
-                          year: { type: Type.INTEGER, nullable: true, description: "Year of occurrence/creation (Required for Events)" }
+                          justification: {
+                            type: Type.STRING,
+                            description:
+                              "Relationship to the PREVIOUS node in the chain",
+                          },
+                          year: {
+                            type: Type.INTEGER,
+                            nullable: true,
+                            description:
+                              "Year of occurrence/creation (Required for Events)",
+                          },
                         },
-                        required: ["id", "type", "description", "justification"]
-                      }
-                    }
+                        required: [
+                          "id",
+                          "type",
+                          "description",
+                          "justification",
+                        ],
+                      },
+                    },
                   },
-                  required: ["path"]
-                }
-              }
+                  required: ["path"],
+                },
+              },
             })
         : undefined,
     });
@@ -850,7 +1163,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
           type: "Start",
           description: context?.startWiki?.substring(0, 100) || "Start node",
           justification: "Start of path",
-          year: null
+          year: null,
         });
       }
       if (!last.includes(endLow) && !endLow.includes(last)) {
@@ -859,7 +1172,7 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
           type: "End",
           description: context?.endWiki?.substring(0, 100) || "End node",
           justification: "Destination",
-          year: null
+          year: null,
         });
       }
     }
@@ -871,7 +1184,10 @@ export const fetchConnectionPath = async (start: string, end: string, context?: 
   }
 };
 
-export const findWikipediaTitle = async (name: string, description?: string): Promise<{ title: string; imageHint?: string } | null> => {
+export const findWikipediaTitle = async (
+  name: string,
+  description?: string,
+): Promise<{ title: string; imageHint?: string } | null> => {
   if (shouldProxy()) {
     return callAiProxy("/api/ai/title", { name, description });
   }
@@ -881,7 +1197,7 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
   const useGemini = getLlmProvider() === "gemini";
   const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
 
-  const prompt = `Find the exact English Wikipedia article title for "${name}"${description ? ` described as "${description}"` : ''}.
+  const prompt = `Find the exact English Wikipedia article title for "${name}"${description ? ` described as "${description}"` : ""}.
     Also, if you know a specific Wikimedia Commons filename for a good portrait of this person/thing, include it.
     
     Return JSON:
@@ -906,18 +1222,18 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
                   type: Type.OBJECT,
                   properties: {
                     title: { type: Type.STRING },
-                    imageHint: { type: Type.STRING, nullable: true }
+                    imageHint: { type: Type.STRING, nullable: true },
                   },
-                  required: ["title"]
-                }
-              }
+                  required: ["title"],
+                },
+              },
             })
         : undefined,
     });
     const json = JSON.parse(cleanJson(text));
     return {
       title: json.title,
-      imageHint: json.imageHint
+      imageHint: json.imageHint,
     };
   } catch (e) {
     // console.warn("AI title lookup failed", e);
@@ -927,7 +1243,9 @@ export const findWikipediaTitle = async (name: string, description?: string): Pr
 
 // Optional: grounded lookup for org leadership using Google Search tool.
 // NOTE: This cannot use responseSchema/responseMimeType; we parse JSON from text.
-export const fetchOrgKeyPeopleBlockViaSearch = async (orgName: string): Promise<string | null> => {
+export const fetchOrgKeyPeopleBlockViaSearch = async (
+  orgName: string,
+): Promise<string | null> => {
   if (shouldProxy()) {
     return callAiProxy("/api/ai/search-org", { orgName });
   }
@@ -966,15 +1284,16 @@ Rules:
             model: getGeminiModel(),
             contents: prompt,
             config: {
-              systemInstruction: "You are a careful research assistant. Use Google Search for grounding and do not invent facts.",
-              tools: [{ googleSearch: {} }]
-            }
+              systemInstruction:
+                "You are a careful research assistant. Use Google Search for grounding and do not invent facts.",
+              tools: [{ googleSearch: {} }],
+            },
           }),
           20000,
-          "Org key-people search timed out"
+          "Org key-people search timed out",
         ),
       4,
-      1000
+      1000,
     );
 
     const text = cleanJson(getResponseText(response));
@@ -990,7 +1309,7 @@ Rules:
         name: String(x.name).trim(),
         evidence: x?.evidence ? String(x.evidence).trim() : "",
         sourceTitle: x?.sourceTitle ? String(x.sourceTitle).trim() : "",
-        sourceUrl: x?.sourceUrl ? String(x.sourceUrl).trim() : ""
+        sourceUrl: x?.sourceUrl ? String(x.sourceUrl).trim() : "",
       }))
       .filter((x: any) => x.name);
 
@@ -1002,7 +1321,7 @@ Rules:
         role: x?.role ? String(x.role).trim() : "",
         evidence: x?.evidence ? String(x.evidence).trim() : "",
         sourceTitle: x?.sourceTitle ? String(x.sourceTitle).trim() : "",
-        sourceUrl: x?.sourceUrl ? String(x.sourceUrl).trim() : ""
+        sourceUrl: x?.sourceUrl ? String(x.sourceUrl).trim() : "",
       }))
       .filter((x: any) => x.name);
 
@@ -1010,24 +1329,28 @@ Rules:
 
     const lines: string[] = [];
     if (f.length) {
-      lines.push(`Founders: ${f.map(x => x.name).join(", ")}`);
+      lines.push(`Founders: ${f.map((x) => x.name).join(", ")}`);
     }
     if (kp.length) {
       lines.push(
         `Key People: ${kp
-          .map(x => (x.role ? `${x.name} (${x.role})` : x.name))
-          .join(", ")}`
+          .map((x) => (x.role ? `${x.name} (${x.role})` : x.name))
+          .join(", ")}`,
       );
     }
     const sources = [...f, ...kp]
-      .map(x => (x.sourceUrl ? `${x.sourceTitle || "Source"} — ${x.sourceUrl}` : ""))
+      .map((x) =>
+        x.sourceUrl ? `${x.sourceTitle || "Source"} — ${x.sourceUrl}` : "",
+      )
       .filter(Boolean);
     const uniqueSources = Array.from(new Set(sources)).slice(0, 8);
 
     return [
       `GOOGLE_SEARCH_GROUNDED (for "${name}")`,
-      ...lines.map(l => `- ${l}`),
-      ...(uniqueSources.length ? ["Sources:", ...uniqueSources.map(s => `- ${s}`)] : [])
+      ...lines.map((l) => `- ${l}`),
+      ...(uniqueSources.length
+        ? ["Sources:", ...uniqueSources.map((s) => `- ${s}`)]
+        : []),
     ].join("\n");
   } catch (e) {
     // console.warn("Org key-people search failed:", name, e);

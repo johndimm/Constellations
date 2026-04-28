@@ -62,30 +62,8 @@ export const useNodeClickHandler = ({
         onRetryImage?.(node);
         onConnectSelect?.(node);
 
-        const isSecondClick = lastSelectedIdRef.current !== null && String(lastSelectedIdRef.current) === String(node.id);
         const now = Date.now();
-        const isRepeatSameNode = lastClickRef.current !== null && String(lastClickRef.current.id) === String(node.id);
-        const lastClickAge = lastClickRef.current ? (now - lastClickRef.current.at) : null;
-        const isRapidSameNode = isRepeatSameNode && !!lastClickAge && lastClickAge < 800;
-        const isSelectedAgain = selectedNode !== null && String(selectedNode.id) === String(node.id);
         const isDoubleClick = !!event && typeof event.detail === 'number' && event.detail >= 2;
-        if (isSecondClick || isRapidSameNode || isDoubleClick || isSelectedAgain || isRepeatSameNode) {
-            const pos = getMenuPosition
-                ? getMenuPosition(node, event)
-                : {
-                    x: event?.clientX ?? window.innerWidth / 2,
-                    y: event?.clientY ?? window.innerHeight / 2
-                };
-            setContextMenu({ node, x: pos.x, y: pos.y });
-            onDebug?.(
-                `click: ${node.title} -> menu` +
-                ` (second:${isSecondClick} rapid:${isRapidSameNode} dbl:${isDoubleClick}` +
-                ` selected:${isSelectedAgain} repeat:${isRepeatSameNode}` +
-                `${lastClickAge !== null ? ` age:${lastClickAge}` : ""})`
-            );
-            lastClickRef.current = { id: node.id, at: now };
-            return;
-        }
 
         setContextMenu(null);
         onClearSecondarySelection?.();
@@ -117,8 +95,23 @@ export const useNodeClickHandler = ({
                 onDebug?.(`highlight: ${node.title} + ${connectedNodeIds.length} connected nodes`);
             }
 
+            /** Double-click on an already-expanded node opens the context menu (was unreachable next block). */
+            if (isDoubleClick && node.expanded && !node.isLoading) {
+                const pos = getMenuPosition
+                    ? getMenuPosition(node, event)
+                    : { x: event?.clientX ?? window.innerWidth / 2, y: event?.clientY ?? window.innerHeight / 2 };
+                setContextMenu({ node, x: pos.x, y: pos.y });
+                onDebug?.(`click: ${node.title} -> menu (double-click)`);
+                lastClickRef.current = { id: node.id, at: now };
+            }
+
             return;
         }
+
+        /**
+         * Unexpanded leaf: both single-click and double-click expand.
+         * A lone programmatic/synthetic click with detail>=2 used to branch to the menu-only path and skip onExpand.
+         */
 
         if (selectOnFirstClick) {
             setSelectedNode(node);

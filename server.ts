@@ -7,7 +7,11 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, defaultStartPairResult, getLlmProvider } from "./services/geminiService";
+import { registerServerRequestLlmReader } from "./services/aiUtils";
+import { withRequestLlm, readRequestLlm } from "./serverRequestLlm";
 import { fetchWikipediaSummary } from "./services/wikipediaService";
+
+registerServerRequestLlmReader(readRequestLlm);
 
 // Load env from .env.local if present
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -168,10 +172,14 @@ app.options("*", cors({ origin: "*", methods: ["GET", "POST", "DELETE", "OPTIONS
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
-// Log requests for debugging
+// Log requests for debugging (POST always; GET for hot paths — otherwise expansion reads look "silent")
 app.use((req, res, next) => {
-  if (req.method === 'POST') {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - ${req.get('content-length') || 0} bytes`);
+  const pathOnly = req.url.split("?")[0] || req.url;
+  const logThisGet =
+    req.method === "GET" && (pathOnly === "/expansion" || pathOnly === "/path" || pathOnly.startsWith("/graphs"));
+  if (req.method === "POST" || logThisGet) {
+    const extra = req.method === "POST" ? ` - ${req.get("content-length") || 0} bytes` : "";
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}${extra}`);
   }
   next();
 });
@@ -1337,102 +1345,116 @@ function sendAiJson(res: express.Response, payload: unknown, fallbackBody: strin
 }
 
 app.post("/api/ai/classify-start", async (req, res) => {
-  const { term, wikiContext } = req.body;
+  const { term, wikiContext, llmProvider } = req.body;
   if (!term) return res.status(400).json({ error: "term is required" });
   console.log(`📡 [Proxy] Classify-Start: "${term}"`);
   const fallback = defaultStartPairResult(
     "Classification service error; defaulting to Person↔Event."
   );
-  try {
-    const result = await classifyStartPair(term, wikiContext);
-    console.log(`✅ [Proxy] Classify-Start result for "${term}":`, result);
-    sendAiJson(res, result, JSON.stringify(fallback));
-  } catch (e: any) {
-    console.error(`[Proxy] Classify-Start error for "${term}":`, e);
-    sendAiJson(res, fallback, JSON.stringify(fallback));
-  }
+  await withRequestLlm(llmProvider, async () => {
+    try {
+      const result = await classifyStartPair(term, wikiContext);
+      console.log(`✅ [Proxy] Classify-Start result for "${term}":`, result);
+      sendAiJson(res, result, JSON.stringify(fallback));
+    } catch (e: any) {
+      console.error(`[Proxy] Classify-Start error for "${term}":`, e);
+      sendAiJson(res, fallback, JSON.stringify(fallback));
+    }
+  });
 });
 
 app.post("/api/ai/classify", async (req, res) => {
-  const { term, wikiContext } = req.body;
+  const { term, wikiContext, llmProvider } = req.body;
   if (!term) return res.status(400).json({ error: "term is required" });
   console.log(`📡 [Proxy] Classify: "${term}"`);
   const fallback = { type: "Event", description: "", isAtomic: false };
-  try {
-    const result = await classifyEntity(term, wikiContext);
-    console.log(`✅ [Proxy] Classify internal result for "${term}":`, result);
-    sendAiJson(res, result, JSON.stringify(fallback));
-  } catch (e: any) {
-    console.error(`[Proxy] Classify error for "${term}":`, e);
-    sendAiJson(res, fallback, JSON.stringify(fallback));
-  }
+  await withRequestLlm(llmProvider, async () => {
+    try {
+      const result = await classifyEntity(term, wikiContext);
+      console.log(`✅ [Proxy] Classify internal result for "${term}":`, result);
+      sendAiJson(res, result, JSON.stringify(fallback));
+    } catch (e: any) {
+      console.error(`[Proxy] Classify error for "${term}":`, e);
+      sendAiJson(res, fallback, JSON.stringify(fallback));
+    }
+  });
 });
 
 app.post("/api/ai/connections", async (req, res) => {
-  const { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
+  const { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles, llmProvider } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
   console.log(`📡 [Proxy] Connections: "${nodeName}" (Type: ${compositeType})`);
   const empty = { people: [] };
-  try {
-    const result = await fetchConnections(nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
-    console.log(`✅ [Proxy] Connections internal result for "${nodeName}":`, result.people?.length || 0, "people found");
-    sendAiJson(res, result, '{"people":[]}');
-  } catch (e: any) {
-    console.error(`[Proxy] Connections error for "${nodeName}":`, e);
-    sendAiJson(res, empty, '{"people":[]}');
-  }
+  await withRequestLlm(llmProvider, async () => {
+    try {
+      const result = await fetchConnections(nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
+      console.log(`✅ [Proxy] Connections internal result for "${nodeName}":`, result.people?.length || 0, "people found");
+      sendAiJson(res, result, '{"people":[]}');
+    } catch (e: any) {
+      console.error(`[Proxy] Connections error for "${nodeName}":`, e);
+      sendAiJson(res, empty, '{"people":[]}');
+    }
+  });
 });
 
 app.post("/api/ai/works", async (req, res) => {
-  const { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
+  const { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles, llmProvider } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
   console.log(`📡 [Proxy] Works: "${nodeName}" (Type: ${atomicType})`);
   const empty = { works: [] };
-  try {
-    const result = await fetchPersonWorks(nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
-    console.log(`✅ [Proxy] Works result for "${nodeName}":`, result.works?.length || 0, "works found");
-    sendAiJson(res, result, '{"works":[]}');
-  } catch (e: any) {
-    console.error(`[Proxy] Works error for "${nodeName}":`, e);
-    sendAiJson(res, empty, '{"works":[]}');
-  }
+  await withRequestLlm(llmProvider, async () => {
+    try {
+      const result = await fetchPersonWorks(nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
+      console.log(`✅ [Proxy] Works result for "${nodeName}":`, result.works?.length || 0, "works found");
+      sendAiJson(res, result, '{"works":[]}');
+    } catch (e: any) {
+      console.error(`[Proxy] Works error for "${nodeName}":`, e);
+      sendAiJson(res, empty, '{"works":[]}');
+    }
+  });
 });
 
 app.post("/api/ai/path", async (req, res) => {
-  const { start, end, context } = req.body;
+  const { start, end, context, llmProvider } = req.body;
   if (!start || !end) return res.status(400).json({ error: "start and end are required" });
   const empty = { path: [], found: false };
-  try {
-    const result = await fetchConnectionPath(start, end, context);
-    sendAiJson(res, result, '{"path":[],"found":false}');
-  } catch (e: any) {
-    console.error(`[Proxy] Path error:`, e);
-    sendAiJson(res, empty, '{"path":[],"found":false}');
-  }
+  await withRequestLlm(llmProvider, async () => {
+    try {
+      const result = await fetchConnectionPath(start, end, context);
+      sendAiJson(res, result, '{"path":[],"found":false}');
+    } catch (e: any) {
+      console.error(`[Proxy] Path error:`, e);
+      sendAiJson(res, empty, '{"path":[],"found":false}');
+    }
+  });
 });
 
 app.post("/api/ai/title", async (req, res) => {
-  const { name, description } = req.body;
+  const { name, description, llmProvider } = req.body;
   if (!name) return res.status(400).json({ error: "name is required" });
-  try {
-    const result = await findWikipediaTitle(name, description);
-    sendAiJson(res, result, "null");
-  } catch (e: any) {
-    console.error(`[Proxy] Title error for "${name}":`, e);
-    sendAiJson(res, null, "null");
-  }
+  await withRequestLlm(llmProvider, async () => {
+    try {
+      const result = await findWikipediaTitle(name, description);
+      sendAiJson(res, result, "null");
+    } catch (e: any) {
+      console.error(`[Proxy] Title error for "${name}":`, e);
+      sendAiJson(res, null, "null");
+    }
+  });
 });
 
 app.post("/api/ai/search-org", async (req, res) => {
-  const { orgName } = req.body;
+  const { orgName, llmProvider } = req.body;
   if (!orgName) return res.status(400).json({ error: "orgName is required" });
-  try {
-    const result = await fetchOrgKeyPeopleBlockViaSearch(orgName);
-    sendAiJson(res, result, "null");
-  } catch (e: any) {
-    console.error(`[Proxy] search-org error:`, e);
-    sendAiJson(res, null, "null");
-  }
+  await withRequestLlm(llmProvider, async () => {
+    try {
+      const result = await fetchOrgKeyPeopleBlockViaSearch(orgName);
+      sendAiJson(res, result, "null");
+    } catch (e: any) {
+      console.error(`[Proxy] search-org error:`, e);
+      sendAiJson(res, null, "null");
+    }
+  });
 });
 
 const port = process.env.PORT || 4000;

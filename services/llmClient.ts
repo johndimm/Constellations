@@ -1,4 +1,5 @@
 import {
+  clipForLlmLog,
   getEnvVar,
   getLlmProvider,
   getLlmApiKey,
@@ -124,6 +125,14 @@ export async function runJsonCompletion(options: RunJsonOptions): Promise<string
   const p = getLlmProvider();
   const attempts = options.attempts ?? 4;
 
+  console.info("[LLM] runJsonCompletion REQUEST", {
+    provider: p,
+    system: clipForLlmLog(options.system ?? ""),
+    user: clipForLlmLog(options.user),
+  });
+
+  let text: string;
+
   if (p === "gemini") {
     if (!options.gemini) {
       throw new Error("runJsonCompletion: gemini callback is required when LLM_PROVIDER is gemini");
@@ -134,7 +143,7 @@ export async function runJsonCompletion(options: RunJsonOptions): Promise<string
         attempts,
         1000
       );
-      return getResponseText(out);
+      text = getResponseText(out);
     } catch (e: any) {
       if (isRateLimitError(e)) {
         const openaiKey = getEnvVar("OPENAI_API_KEY") || getEnvVar("VITE_OPENAI_API_KEY");
@@ -142,36 +151,44 @@ export async function runJsonCompletion(options: RunJsonOptions): Promise<string
           console.warn(
             "[LLM] Gemini rate/quota exhausted; retrying this request with OpenAI (OPENAI_API_KEY)."
           );
-          return await withTimeout(
+          text = await withTimeout(
             openAiCompatibleJson("openai", options.system, options.user, { apiKey: openaiKey }),
             options.timeoutMs,
             "OpenAI fallback timed out"
           );
-        }
-        const deepseekKey = getEnvVar("DEEPSEEK_API_KEY") || getEnvVar("VITE_DEEPSEEK_API_KEY");
-        if (deepseekKey) {
+        } else if (getEnvVar("DEEPSEEK_API_KEY") || getEnvVar("VITE_DEEPSEEK_API_KEY")) {
+          const deepseekKey = getEnvVar("DEEPSEEK_API_KEY") || getEnvVar("VITE_DEEPSEEK_API_KEY")!;
           console.warn(
             "[LLM] Gemini rate/quota exhausted; retrying this request with DeepSeek (DEEPSEEK_API_KEY)."
           );
-          return await withTimeout(
+          text = await withTimeout(
             openAiCompatibleJson("deepseek", options.system, options.user, { apiKey: deepseekKey }),
             options.timeoutMs,
             "DeepSeek fallback timed out"
           );
+        } else {
+          throw e;
         }
+      } else {
+        throw e;
       }
-      throw e;
     }
+  } else {
+    text = await withRetry(
+      () =>
+        withTimeout(
+          runAltProvider(p, options.system, options.user),
+          options.timeoutMs,
+          "LLM request timed out"
+        ),
+      attempts,
+      1000
+    );
   }
 
-  return await withRetry(
-    () =>
-      withTimeout(
-        runAltProvider(p, options.system, options.user),
-        options.timeoutMs,
-        "LLM request timed out"
-      ),
-    attempts,
-    1000
-  );
+  console.info("[LLM] runJsonCompletion RESPONSE", {
+    chars: text.length,
+    text: clipForLlmLog(text),
+  });
+  return text;
 }

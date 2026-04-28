@@ -68,8 +68,52 @@ export const getEnvGeminiModelClassify = (): string => {
 
 export type LlmProviderId = "gemini" | "openai" | "deepseek" | "anthropic";
 
-/** Set LLM_PROVIDER (preferred on servers) or VITE_LLM_PROVIDER to openai | deepseek | anthropic | gemini (default). */
+/** Node cache server only: per-request override from JSON body `llmProvider`. */
+let readServerRequestLlm: () => LlmProviderId | null = () => null;
+
+/** Register reader from server.ts (uses AsyncLocalStorage). No-op in the browser bundle. */
+export function registerServerRequestLlmReader(reader: () => LlmProviderId | null): void {
+  readServerRequestLlm = reader;
+}
+
+const BROWSER_LLM_KEY = "constellations_llm_provider";
+
+/** In-browser override (ControlPanel); ignored on the Node cache server. */
+export function getBrowserLlmOverride(): LlmProviderId | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = window.localStorage.getItem(BROWSER_LLM_KEY)?.trim().toLowerCase();
+    if (v === "openai" || v === "deepseek" || v === "anthropic" || v === "gemini") {
+      return v;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/** Persist or clear browser LLM choice. Pass null to follow .env / VITE_LLM_PROVIDER again. */
+export function setBrowserLlmOverride(provider: LlmProviderId | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (provider === null) {
+      window.localStorage.removeItem(BROWSER_LLM_KEY);
+    } else {
+      window.localStorage.setItem(BROWSER_LLM_KEY, provider);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Set LLM_PROVIDER (preferred on servers) or VITE_LLM_PROVIDER to openai | deepseek | anthropic | gemini (default). In the browser, a ControlPanel choice overrides via localStorage. On the cache server, an optional JSON field llmProvider overrides for that request only. */
 export function getLlmProvider(): LlmProviderId {
+  const req = readServerRequestLlm();
+  if (req) return req;
+
+  const browser = getBrowserLlmOverride();
+  if (browser) return browser;
+
   // LLM_PROVIDER first: Render/Heroku/etc. set this; VITE_* must not override it if both exist.
   const raw = (getEnvVar("LLM_PROVIDER") || getEnvVar("VITE_LLM_PROVIDER") || "gemini")
     .trim()
@@ -182,6 +226,31 @@ export async function getApiKey() {
   }
 
   return key;
+}
+
+/**
+ * `fetch` with a hard timeout so a hung cache/LLM endpoint cannot leave expansions spinning forever.
+ * Do not pass `signal` in init unless you compose with this controller (not supported here).
+ */
+export async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = 45000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+/** Truncate for console; LLM prompts/contexts can be huge. */
+export function clipForLlmLog(text: string, maxChars = 16000): string {
+  const s = String(text ?? "");
+  if (s.length <= maxChars) return s;
+  return `${s.slice(0, maxChars)}\n… [truncated ${s.length - maxChars} more chars]`;
 }
 
 // Wrap promise with timeout

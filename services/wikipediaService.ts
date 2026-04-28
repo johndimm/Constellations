@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "./aiUtils";
 
 type WikiImageCacheEntry = { url: string | null; pageId?: number; pageTitle?: string; misses?: number };
 
@@ -935,7 +936,8 @@ export const fetchWikipediaExtract = async (
     // when exchars is set (returns fewer chars than the article actually contains). We fetch
     // the full extract and truncate client-side instead.
     const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&explaintext&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
-    const res = await fetch(url);
+    // Hard cap: a hung Wikipedia response must not strand graph expansion spinners indefinitely.
+    const res = await fetchWithTimeout(url, {}, 25_000);
     const data = await res.json();
     const pages = data.query?.pages;
     if (!pages) return { extract: null, pageid: null, title: null };

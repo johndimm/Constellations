@@ -167,7 +167,8 @@ const App: React.FC<AppProps> = ({
         cacheEnabled, cacheBaseUrl, ENABLE_ACADEMIC_CORPORA, ENABLE_WEB_SEARCH,
         loadNodeImage, saveCacheNodeMeta,
         setNewlyExpandedNodeIds, setExpandingNodeId, setNewChildNodeIds,
-        setSelectedNode, setSelectedLink, exploreTerm: '', isTextOnly, graphRef
+        setSelectedNode, setSelectedLink, exploreTerm: '', isTextOnly, graphRef,
+        setNotification,
     });
 
     const [showHelp, setShowHelp] = useState(false);
@@ -200,6 +201,8 @@ const App: React.FC<AppProps> = ({
         graphData,
         setExpandingNodeId,
         setNewChildNodeIds,
+        /** DevTools: see why a click opened the menu vs expanded (Vite terminal will not show this). */
+        onDebug: (message) => console.info("[Constellations]", message),
         onNavigate: onNodeNavigate ? (node) => {
             onNodeNavigate(node);
         } : undefined,

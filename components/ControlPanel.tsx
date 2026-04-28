@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, ChevronDown, Download, Upload, Share2, Copy, Users } from 'lucide-react';
+import { Search, Github, HelpCircle, Minimize2, Maximize2, Maximize, Plus, AlertCircle, Scissors, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, Trash2, ChevronLeft, ChevronRight, ChevronDown, Download, Upload, Share2, Copy, Users, Cpu } from 'lucide-react';
+import type { LlmProviderId } from '../services/aiUtils';
+import { getBrowserLlmOverride, setBrowserLlmOverride, getEnvCacheUrl } from '../services/aiUtils';
 import { DEFAULT_KIOSK_DOMAINS, saveKioskDomains, saveSelectedKioskDomainId } from '../kioskDomains';
 import type { KioskDomain } from '../kioskDomains';
 
@@ -100,6 +102,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
   // Collapsible sections state - combined toggle for examples section
   const [showExamples, setShowExamples] = useState(false);
+
+  const [llmSelectValue, setLlmSelectValue] = useState<"env" | LlmProviderId>(() =>
+    getBrowserLlmOverride() ?? "env"
+  );
 
   // Save/Load/Share State
   const [showSave, setShowSave] = useState(false);
@@ -321,6 +327,50 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     TEXT ONLY
                   </button>
                 </div>
+              </div>
+
+              {/* Group: LLM — browser override; with cache proxy, sent as llmProvider on each request */}
+              <div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                  <Cpu size={10} /> LLM
+                </div>
+                <select
+                  value={llmSelectValue}
+                  onChange={(e) => {
+                    const v = e.target.value as "env" | LlmProviderId;
+                    if (v === "env") {
+                      setBrowserLlmOverride(null);
+                      setLlmSelectValue("env");
+                    } else {
+                      setBrowserLlmOverride(v);
+                      setLlmSelectValue(v);
+                    }
+                  }}
+                  className="w-full bg-slate-900 border border-slate-600 text-slate-100 text-xs rounded-md px-2 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  title="Model provider for AI calls from this tab"
+                >
+                  <option value="env">Default (from .env)</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="anthropic">Anthropic</option>
+                </select>
+                <p className="text-[9px] text-slate-500 mt-1 leading-snug">
+                  {getEnvCacheUrl() ? (
+                    <>
+                      Proxied requests include <span className="text-slate-400">llmProvider</span> when you pick a provider
+                      (Default uses the cache server&apos;s <span className="text-slate-400">LLM_PROVIDER</span>). Keys live on
+                      the server (e.g. Render).
+                    </>
+                  ) : (
+                    <>
+                      Overrides <span className="text-slate-400">VITE_LLM_PROVIDER</span> for this tab. Keys:{" "}
+                      <span className="text-slate-400">VITE_GEMINI_API_KEY</span>,{" "}
+                      <span className="text-slate-400">VITE_OPENAI_API_KEY</span>, etc. in{" "}
+                      <span className="text-slate-400">.env.local</span>.
+                    </>
+                  )}
+                </p>
               </div>
 
               {/* Group: Actions */}
