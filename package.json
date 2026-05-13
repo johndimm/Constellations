@@ -1,8 +1,34 @@
 {
-  "name": "constellations",
-  "private": true,
-  "version": "0.0.0",
+  "name": "@johndimm/constellations",
+  "version": "1.0.0",
   "type": "module",
+  "main": "./index.tsx",
+  "exports": {
+    ".": "./index.tsx",
+    "./App": "./App.tsx",
+    "./FullPageConstellations": "./FullPageConstellations.tsx",
+    "./host": "./host.ts",
+    "./index.css": "./index.css",
+    "./sessionHandoff": "./sessionHandoff.ts",
+    "./graphNodeToChannelNotes": "./utils/graphNodeToChannelNotes.ts",
+    "./types": "./types.ts"
+  },
+  "files": [
+    "App.tsx",
+    "FullPageConstellations.tsx",
+    "FullPageConstellationsHostShell.tsx",
+    "host.ts",
+    "index.css",
+    "index.tsx",
+    "kioskDomains.ts",
+    "sessionHandoff.ts",
+    "types.ts",
+    "useFullPageConstellationsHost.ts",
+    "components/",
+    "hooks/",
+    "services/",
+    "utils/"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -18,19 +44,15 @@
     "build:ext": "vite build -c vite.config.ext.ts && cp chrome-extension/manifest.json dist-extension/ && cp -r chrome-extension/icons dist-extension/ && rm -f dist-extension/*.mp4",
     "bundle:ext": "npm run build:ext && rm -f constellations-extension.zip && zip -r constellations-extension.zip dist-extension/*"
   },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
   "dependencies": {
     "@google/genai": "^1.33.0",
-    "body-parser": "^2.2.1",
-    "chrome-extension": "^0.0.1",
-    "cors": "^2.8.5",
     "d3": "^7.9.0",
     "dotenv": "^16.4.5",
-    "express": "^4.22.1",
-    "lucide-react": "^0.560.0",
-    "node-fetch": "^3.3.2",
-    "pg": "^8.16.3",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1"
+    "lucide-react": "^0.560.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
@@ -39,7 +61,15 @@
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.23",
+    "body-parser": "^2.2.1",
+    "chrome-extension": "^0.0.1",
+    "cors": "^2.8.5",
+    "express": "^4.22.1",
+    "node-fetch": "^3.3.2",
+    "pg": "^8.16.3",
     "postcss": "^8.5.6",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
     "tailwindcss": "^4.1.18",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
