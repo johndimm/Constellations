@@ -1,3 +1,4 @@
+"use client";
 export const getLinkKey = (a: number | string, b: number | string) => {
     const s = String(a);
     const t = String(b);

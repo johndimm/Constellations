@@ -1,3 +1,4 @@
+"use client";
 export async function fetchWikipediaImage(title: string): Promise<string | null> {
     if (!title) return null;
     try {

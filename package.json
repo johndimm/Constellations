@@ -1,6 +1,6 @@
 {
   "name": "@johndimm/constellations",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "main": "./index.tsx",
   "exports": {
@@ -60,6 +60,7 @@
     "@tailwindcss/postcss": "^4.1.18",
     "@tailwindcss/vite": "^4.1.18",
     "@types/chrome": "^0.1.36",
+    "@types/d3": "^7.4.3",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.23",

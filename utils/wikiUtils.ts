@@ -1,3 +1,4 @@
+"use client";
 import { fetchWikipediaExtract } from '../services/wikipediaService';
 
 export const buildWikiUrl = (title: string, wikipediaId?: string | number) => {
@@ -21,10 +22,21 @@ export const looksLikeWikipediaTitle = (t: unknown) => {
     return true;
 };
 
-const extractCache: Map<string, string | null> =
-    ((window as any).__wikiExtractCache ||= new Map<string, string | null>());
+const serverExtractCache = new Map<string, string | null>();
+
+function getExtractCacheMap(): Map<string, string | null> {
+    if (typeof window === 'undefined') {
+        return serverExtractCache;
+    }
+    const w = window as unknown as { __wikiExtractCache?: Map<string, string | null> };
+    if (!w.__wikiExtractCache) {
+        w.__wikiExtractCache = new Map();
+    }
+    return w.__wikiExtractCache;
+}
 
 export const getExtractCached = async (title: string) => {
+    const extractCache = getExtractCacheMap();
     const key = String(title || '').trim();
     if (!key) return null;
     if (extractCache.has(key)) return extractCache.get(key) || null;

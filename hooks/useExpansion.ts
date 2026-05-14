@@ -1,6 +1,7 @@
-import React, { useCallback, useRef } from 'react';
+"use client";
+import React, { useState, useCallback } from 'react';
 import { GraphNode, GraphLink } from '../types';
-import { fetchConnections, fetchPersonWorks, classifyEntity, fetchOrgKeyPeopleBlockViaSearch, LockedPair } from '../services/geminiService';
+import { fetchConnections, fetchPersonWorks, classifyEntity, fetchOrgKeyPeopleBlockViaSearch, LockedPair } from '../services/aiService';
 import { fetchWikipediaSummary, fetchWikipediaExtract, fetchWikidataKeyPeopleForTitle, fetchWikidataCastForTitle } from '../services/wikipediaService';
 import {
     searchOpenAlexAuthor,
@@ -24,13 +25,6 @@ import {
     roleLooksLikeJobTitle
 } from '../utils/evidenceUtils';
 import { getLinkKey, looksLikeScreenWork, isBadListPage } from '../utils/graphLogicUtils';
-import { fetchWithTimeout, withTimeout } from '../services/aiUtils';
-import { clipForLlmLog } from '../services/aiUtils';
-
-const WIKI_SUMMARY_TIMEOUT_MS = 15000;
-/** Hung cache PostgreSQL / slow disk should not strand node spinners indefinitely. */
-const CACHE_GET_TIMEOUT_MS = 25_000;
-const CACHE_POST_TIMEOUT_MS = 90_000;
 
 interface UseExpansionOptions {
     graphDataRef: React.MutableRefObject<{ nodes: GraphNode[], links: GraphLink[] }>;
@@ -41,12 +35,12 @@ interface UseExpansionOptions {
     lockedPairRef: React.MutableRefObject<LockedPair>;
     nodesRef: React.MutableRefObject<GraphNode[]>;
     selectedNodeRef: React.MutableRefObject<GraphNode | null>;
-    autoExpandMoreDoneRef: React.MutableRefObject<Set<number>>;
+    autoExpandMoreDoneRef: React.MutableRefObject<Set<string | number>>;
     cacheEnabled: boolean;
     cacheBaseUrl: string;
     ENABLE_ACADEMIC_CORPORA: boolean;
     ENABLE_WEB_SEARCH: boolean;
-    loadNodeImage: (nodeId: number, title: string, context?: string, fallbackNode?: any, opts?: any) => Promise<void>;
+    loadNodeImage: (nodeId: number | string, title: string, context?: string, fallbackNode?: any, opts?: any) => Promise<void>;
     saveCacheNodeMeta: (nodeId: number | string, meta: any, fallbackNode?: any) => Promise<void>;
     setNewlyExpandedNodeIds: (ids: (number | string)[]) => void;
     setExpandingNodeId: (id: number | string | null) => void;
@@ -56,27 +50,24 @@ interface UseExpansionOptions {
     exploreTerm: string;
     isTextOnly: boolean;
     graphRef: React.RefObject<any>;
-    setNotification?: (n: { message: string; type: 'success' | 'error' }) => void;
 }
 
 export function useExpansion(options: UseExpansionOptions) {
-    const expansionInflightRef = useRef(0);
     const {
         graphDataRef, setGraphData, setIsProcessing, setError,
         searchIdRef, lockedPairRef, nodesRef, selectedNodeRef,
         autoExpandMoreDoneRef, cacheEnabled, cacheBaseUrl,
         ENABLE_ACADEMIC_CORPORA, ENABLE_WEB_SEARCH, loadNodeImage, saveCacheNodeMeta,
         setNewlyExpandedNodeIds, setExpandingNodeId, setNewChildNodeIds,
-        setSelectedNode, setSelectedLink, exploreTerm, isTextOnly, graphRef,
-        setNotification,
+        setSelectedNode, setSelectedLink, exploreTerm, isTextOnly, graphRef
     } = options;
 
-    const fetchCacheExpansion = useCallback(async (sourceId: number) => {
+    const fetchCacheExpansion = useCallback(async (sourceId: number | string) => {
         if (!cacheEnabled) return null;
         const url = new URL("/expansion", cacheBaseUrl);
         url.searchParams.set("sourceId", sourceId.toString());
         try {
-            const res = await fetchWithTimeout(url.toString(), {}, CACHE_GET_TIMEOUT_MS);
+            const res = await fetch(url.toString());
             if (!res.ok) return null;
             return res.json();
         } catch (e) {
@@ -88,15 +79,11 @@ export function useExpansion(options: UseExpansionOptions) {
     const saveCacheExpansion = useCallback(async (sourceId: number | string, nodes: any[]) => {
         if (!cacheEnabled) return null;
         try {
-            const res = await fetchWithTimeout(
-                new URL("/expansion", cacheBaseUrl).toString(),
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ sourceId, nodes }),
-                },
-                CACHE_POST_TIMEOUT_MS,
-            );
+            const res = await fetch(new URL("/expansion", cacheBaseUrl).toString(), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sourceId, nodes })
+            });
             if (res.ok) {
                 const data = await res.json();
                 return data.idMap as Record<string, number> | undefined;
@@ -121,21 +108,7 @@ export function useExpansion(options: UseExpansionOptions) {
         const guardId = searchIdRef.current;
         const isStale = () => searchIdRef.current !== guardId;
 
-        /** Avoid infinite spinner when isStale() returns mid-flight or setTimeout never completes. */
-        const clearThisNodeLoading = () => {
-            setGraphData((prev) => ({
-                ...prev,
-                nodes: prev.nodes.map((n) =>
-                    String(n.id) === String(node.id) ? { ...n, isLoading: false } : n,
-                ),
-            }));
-        };
-
-        // Do not block on isLoading: a crashed/stale expansion would strand the node forever.
-        if (!forceMore && node.expanded) {
-            console.info("[Expansion] skip (already expanded)", { title: node.title, id: node.id });
-            return;
-        }
+        if (!forceMore && (node.expanded || node.isLoading)) return;
 
 
 
@@ -143,67 +116,36 @@ export function useExpansion(options: UseExpansionOptions) {
         if (isStale()) return;
         setGraphData(prev => ({
             ...prev,
-            nodes: prev.nodes.map(n => (String(n.id) === String(node.id) ? { ...n, isLoading: true } : n))
+            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
         }));
 
         const loadingGuard = setTimeout(() => {
             if (isStale()) return;
             setGraphData(prev => ({
                 ...prev,
-                nodes: prev.nodes.map(n => (String(n.id) === String(node.id) ? { ...n, isLoading: true } : n))
+                nodes: prev.nodes.map(n => n.id === node.id ? { ...n, isLoading: true } : n)
             }));
         }, 0);
 
-        expansionInflightRef.current += 1;
         setIsProcessing(true);
         setError(null);
 
         try {
-            console.info("[Expansion] start", {
-                title: node.title,
-                id: node.id,
-                expanded: !!node.expanded,
-                isLoading: !!node.isLoading,
-                cacheEnabled,
-                forceMore,
-                isInitial,
-            });
-            const nodeKey = String(node.id);
-            const nodeUpdates = new Map<string, Partial<GraphNode>>();
+            const nodeUpdates = new Map<string | number, Partial<GraphNode>>();
             const maybeAutoExpandMore = (neighborCount: number) => {
                 if (forceMore) return;
                 if (neighborCount > 3) return;
-                if (autoExpandMoreDoneRef.current.has(nodeKey)) return;
-                autoExpandMoreDoneRef.current.add(nodeKey);
+                if (autoExpandMoreDoneRef.current.has(String(node.id))) return;
+                autoExpandMoreDoneRef.current.add(String(node.id));
                 setTimeout(() => {
-                    if (String(selectedNodeRef.current?.id) !== nodeKey) return;
+                    if (selectedNodeRef.current?.id !== node.id) return;
 
                     fetchAndExpandNode(node, false, true);
                 }, 900);
             };
 
-            const getLinkIdEarly = (thing: any) => {
-                if (typeof thing === 'object' && thing !== null) return String((thing as any).id);
-                return String(thing);
-            };
-            /** Must read links after awaits (cache fetch); stale `currentLinks` from expand start misses edges and falsely skips duplicate detection. */
-            const edgeExistsBetweenFresh = (a: string, b: string) => {
-                const links = graphDataRef.current.links;
-                return links.some((l) => {
-                    const s = getLinkIdEarly(l.source);
-                    const t = getLinkIdEarly(l.target);
-                    return (s === a && t === b) || (s === b && t === a);
-                });
-            };
-
             if (cacheEnabled && !forceMore) {
                 const cacheHit = await fetchCacheExpansion(node.id);
-                const cacheCount = cacheHit?.nodes?.length ?? 0;
-                console.info("[Expansion] cache GET", {
-                    title: node.title,
-                    hit: cacheHit?.hit,
-                    neighbors: cacheCount,
-                });
                 if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
                     let validCached: any[] = cacheHit.nodes.filter((cn: any) => String(cn.id) !== String(node.id));
                     // Concurrent upgrade of Wikipedia summaries if needed
@@ -214,11 +156,7 @@ export function useExpansion(options: UseExpansionOptions) {
                                 ...prev,
                                 nodes: prev.nodes.map(n => String(n.id) === String(cn.id) ? { ...n, wikiChecked: true } : n)
                             }));
-                            const wiki = await withTimeout(
-                                fetchWikipediaSummary(cn.title),
-                                WIKI_SUMMARY_TIMEOUT_MS,
-                                'Wikipedia summary timeout',
-                            ).catch(() => ({ extract: null, pageid: null, title: null } as const));
+                            const wiki = await fetchWikipediaSummary(cn.title);
                             if (!wiki.extract && !wiki.pageid) return cn; // Return original if no new wiki data
                             setGraphData(prev => ({
                                 ...prev,
@@ -246,33 +184,13 @@ export function useExpansion(options: UseExpansionOptions) {
                     const expectedChildIsAtomic = !parentIsAtomic;
                     validCached = upgraded.map((cn: any) => ({ ...cn, is_atomic: expectedChildIsAtomic }));
 
-                    // Any cached neighbors are usable (old threshold >=5 skipped most DB rows and forced LLM every time).
-                    if (validCached.length >= 1) {
+                    if (validCached.length >= 5) {
                         const existingNodeIdsBefore = new Set(graphDataRef.current.nodes.map(n => String(n.id)));
-                        const parentIdStr = nodeKey;
-
-                        /** If DB only echoes edges already drawn (typical leaf actor → one film that's on screen), a cache-only merge adds no new bubbles — skip to AI so expansion actually shows filmography nodes. */
-                        const cacheDuplicatesVisibleGraph =
-                            validCached.every(
-                                (cn: any) =>
-                                    existingNodeIdsBefore.has(String(cn.id)) &&
-                                    edgeExistsBetweenFresh(parentIdStr, String(cn.id)),
-                            );
-
-                        if (cacheDuplicatesVisibleGraph) {
-                            console.info("[Expansion] exact cache overlaps graph — skipping shortcut, fetching AI expansion", {
-                                title: node.title,
-                                neighborsInCache: validCached.length,
-                            });
-                        } else {
                         const newChildIds: (string | number)[] = validCached.filter(cn => !existingNodeIdsBefore.has(String(cn.id))).map(cn => cn.id);
                         // Include ALL connected nodes for highlighting, not just new ones
                         const allConnectedNodeIds = validCached.map(cn => cn.id);
 
-                        if (isStale()) {
-                            clearThisNodeLoading();
-                            return;
-                        }
+                        if (isStale()) return;
 
                         setGraphData(prev => mergeExpansionGraph({
                             nodes: prev.nodes,
@@ -293,16 +211,17 @@ export function useExpansion(options: UseExpansionOptions) {
 
                         validCached.forEach((cn, idx) => {
                             if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
-                                setTimeout(() => loadNodeImage(cn.id, cn.title), 50 * idx);
+                                setTimeout(() => loadNodeImage(cn.id, cn.title), 200 + 220 * idx);
                             }
                         });
 
+
+                        setIsProcessing(false);
                         setGraphData(prev => ({
                             ...prev,
-                            nodes: prev.nodes.map(n => (String(n.id) === nodeKey ? { ...n, expanded: true, isLoading: false } : n))
+                            nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false } : n)
                         }));
                         return;
-                        }
                     }
                 }
             }
@@ -318,27 +237,12 @@ export function useExpansion(options: UseExpansionOptions) {
                 getLinkId(l.target) === String(node.id)
             );
 
-            const neighborNodes = neighborLinks.map(l => {
+            const neighborNames = neighborLinks.map(l => {
                 const sid = getLinkId(l.source);
                 const tid = getLinkId(l.target);
                 const neighborId = sid === String(node.id) ? tid : sid;
-                return currentNodes.find(n => String(n.id) === String(neighborId));
-            }).filter((n): n is GraphNode => !!n);
-
-            const neighborNames = neighborNodes.map(n => n.title || '').filter(Boolean);
-
-            /** Only composite-side titles (films, orgs, works). Do not pass fellow cast members — the works prompt asks for NEW films, and listing other actors as "excludes" often yields an empty model response. */
-            const worksExcludeTitles = neighborNodes
-                .filter((n) => {
-                    if (n.is_atomic === true || (n as any).is_person === true) return false;
-                    if (n.is_atomic === false) return true;
-                    const t = (n.type || '').toLowerCase();
-                    if (/\b(actor|person|author|character|composer|scientist|philosopher)\b/.test(t)) return false;
-                    if (/\b(movie|film|novel|book|album|series|event|organization|museum|institution|battle|war|movement)\b/.test(t)) return true;
-                    return false;
-                })
-                .map(n => n.title || '')
-                .filter(Boolean);
+                return currentNodes.find(n => String(n.id) === String(neighborId))?.title || '';
+            }).filter(Boolean);
 
 
             let wiki: any = {
@@ -347,16 +251,12 @@ export function useExpansion(options: UseExpansionOptions) {
                 mentioningPageTitles: node.mentioningPageTitles || null
             };
             if ((!wiki.extract && !wiki.pageid) || (wiki.extract && !wiki.pageid && !wiki.mentioningPageTitles)) {
-                wiki = await withTimeout(
-                    fetchWikipediaSummary(node.title, neighborNames.join(' ')),
-                    WIKI_SUMMARY_TIMEOUT_MS,
-                    'Wikipedia summary timeout',
-                ).catch(() => ({ extract: null, pageid: null, title: null, mentioningPageTitles: null }));
+                wiki = await fetchWikipediaSummary(node.title, neighborNames.join(' '));
             }
 
             if (wiki.extract) {
                 const isPerson = node.is_atomic === true || node.is_person === true || node.type?.toLowerCase() === 'person';
-                nodeUpdates.set(nodeKey, {
+                nodeUpdates.set(node.id, {
                     wikiSummary: wiki.extract,
                     wikipedia_id: wiki.pageid?.toString(),
                     mentioningPageTitles: wiki.mentioningPageTitles || undefined,
@@ -374,7 +274,7 @@ export function useExpansion(options: UseExpansionOptions) {
             const isAcademicPair = ENABLE_ACADEMIC_CORPORA && (pair.atomicType.toLowerCase() === 'author' || pair.compositeType.toLowerCase() === 'paper');
 
             if (!node.classification_reasoning) {
-                nodeUpdates.set(nodeKey, {
+                nodeUpdates.set(node.id, {
                     classification_reasoning: `Locked pair: ${pair.atomicType} ↔ ${pair.compositeType}.`,
                     atomic_type: pair.atomicType,
                     composite_type: pair.compositeType
@@ -390,11 +290,11 @@ export function useExpansion(options: UseExpansionOptions) {
 
                 if (typeof inferred === 'boolean') {
                     currentIsAtomic = inferred;
-                    nodeUpdates.set(nodeKey, { is_atomic: inferred });
+                    nodeUpdates.set(node.id, { is_atomic: inferred });
                 } else {
                     const classification = await classifyEntity(node.title);
                     currentIsAtomic = classification.isAtomic;
-                    nodeUpdates.set(nodeKey, {
+                    nodeUpdates.set(node.id, {
                         ...(typeof (node.is_atomic ?? (node as any).is_person) === 'boolean' ? {} : { is_atomic: classification.isAtomic }),
                         type: classification.type
                     });
@@ -446,7 +346,7 @@ export function useExpansion(options: UseExpansionOptions) {
                             edge_label: 'Authored',
                             edge_meta: { evidence: makeOpenAlexAuthorshipEvidence(w, node.title) }
                         }));
-                        if (!meta.openAlexAuthorId && author.id) nodeUpdates.set(nodeKey, { meta: { ...meta, openAlexAuthorId: author.id, openAlexUrl: author.id, source: 'openalex' } });
+                        if (!meta.openAlexAuthorId && author.id) nodeUpdates.set(node.id, { meta: { ...meta, openAlexAuthorId: author.id, openAlexUrl: author.id, source: 'openalex' } });
                     }
                 } else {
                     // Check if this is "Work (Author)" pattern - if so, skip OpenAlex (it returns modern editions/translators)
@@ -466,7 +366,7 @@ export function useExpansion(options: UseExpansionOptions) {
                         }));
                         if (!meta.openAlexWorkId && work.id) {
                             const paperNode = openAlexWorkToPaperNode(work);
-                            nodeUpdates.set(nodeKey, {
+                            nodeUpdates.set(node.id, {
                                 meta: { ...meta, openAlexWorkId: work.id, doi: work.doi || undefined, openAlexUrl: work.id, source: 'openalex' },
                                 ...((node.description || '').trim() ? {} : { description: paperNode.description, year: paperNode.year })
                             });
@@ -483,7 +383,7 @@ export function useExpansion(options: UseExpansionOptions) {
                                     edge_meta: { evidence: makeCrossrefAuthorshipEvidence(cw, name) }
                                 }));
                                 const paperNode = crossrefWorkToPaperNode(cw);
-                                nodeUpdates.set(nodeKey, {
+                                nodeUpdates.set(node.id, {
                                     meta: { ...meta, doi: cw.DOI || doi, crossrefUrl: paperNode.meta?.crossrefUrl, source: 'crossref' },
                                     ...((node.description || '').trim() ? {} : { description: paperNode.description, year: paperNode.year })
                                 });
@@ -496,23 +396,10 @@ export function useExpansion(options: UseExpansionOptions) {
             // Fallback: If academic results were empty, proceed to standard expansion
             if (results.length === 0) {
                 if (isPerson) {
-                    let data = await fetchPersonWorks(node.title, worksExcludeTitles, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
-                    if ((!data.works || data.works.length === 0) && worksExcludeTitles.length > 0) {
+                    let data = await fetchPersonWorks(node.title, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
+                    if ((!data.works || data.works.length === 0) && neighborNames.length > 0) {
                         data = await fetchPersonWorks(node.title, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
                     }
-                    console.info("[Expansion] works raw", {
-                        title: node.title,
-                        worksExcludeTitles: worksExcludeTitles.length,
-                        works: (data as any)?.works?.length ?? 0,
-                        sample: clipForLlmLog(
-                            JSON.stringify(((data as any)?.works || []).slice(0, 4).map((w: any) => ({
-                                entity: w.entity,
-                                wikipediaTitle: w.wikipediaTitle,
-                                type: w.type,
-                                year: w.year,
-                            })))
-                        ),
-                    });
                     results = (data.works || []).filter(w => typeof (w as any).entity === 'string' && (w as any).entity.trim().length > 0).map(w => ({
                         title: (w as any).wikipediaTitle || w.entity,
                         type: (w as any).type || currentCompositeType,
@@ -537,7 +424,7 @@ export function useExpansion(options: UseExpansionOptions) {
                     if ((!data.people || data.people.length === 0) && neighborNames.length > 0) {
                         data = await fetchConnections(node.title, undefined, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
                     }
-                    if (data.sourceYear) nodeUpdates.set(nodeKey, { year: data.sourceYear });
+                    if (data.sourceYear) nodeUpdates.set(node.id, { year: data.sourceYear });
                     const atomicTypeToUse = currentAtomicType || 'Person';
                     results = (data.people || []).map(p => ({
                         title: (p as any).wikipediaTitle || p.name,
@@ -614,14 +501,7 @@ export function useExpansion(options: UseExpansionOptions) {
                     setExpandingNodeId(null);
                     setNewChildNodeIds(new Set());
                 } else {
-                    setNotification?.({
-                        message:
-                            cacheEnabled
-                                ? `No new connections for "${node.title}". Often the AI returned none or only links you already had. If failures repeat, check the cache terminal for quota/API errors.`
-                                : `No new connections for "${node.title}". The model returned nothing usable—check API keys in .env.local.`,
-                        type: 'error',
-                    });
-                    setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => String(n.id) === String(node.id) ? { ...n, expanded: false, isLoading: false } : n) }));
+                    setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => String(n.id) === String(node.id) ? { ...n, expanded: true, isLoading: false } : n) }));
                     setExpandingNodeId(null);
                     setNewChildNodeIds(new Set());
                 }
@@ -629,13 +509,7 @@ export function useExpansion(options: UseExpansionOptions) {
                 const resultsWithWiki = await Promise.all(results.map(async r => {
                     const contextHint = [node.title, r.type, r.edge_label || r.role, r.description, r.edge_meta?.evidence?.snippet].filter(Boolean).join(' · ').slice(0, 280);
                     const skipWiki = isAcademicPair || String(r.edge_meta?.evidence?.kind || '') === 'openalex';
-                    const rWiki = skipWiki
-                        ? ({ title: r.title, extract: '', pageid: undefined } as any)
-                        : await withTimeout(
-                              fetchWikipediaSummary(r.title, contextHint),
-                              WIKI_SUMMARY_TIMEOUT_MS,
-                              'Wikipedia summary timeout',
-                          ).catch(() => ({ title: r.title, extract: '', pageid: undefined } as any));
+                    const rWiki = skipWiki ? ({ title: r.title, extract: '', pageid: undefined } as any) : await fetchWikipediaSummary(r.title, contextHint);
                     let evidence: any = r.edge_meta?.evidence || { kind: 'none' as const };
                     const pageTitle = String(evidence?.pageTitle || '');
                     const snippet = String(evidence?.snippet || '');
@@ -663,12 +537,6 @@ export function useExpansion(options: UseExpansionOptions) {
 
                 let nodesToUse = resultsWithWiki;
                 if (!exploreTerm.toLowerCase().startsWith('list of ')) nodesToUse = nodesToUse.filter((n: any) => !isBadListPage(n.title));
-                console.info("[Expansion] post-wiki", {
-                    title: node.title,
-                    results: results.length,
-                    resultsWithWiki: resultsWithWiki.length,
-                    nodesToUseAfterListFilter: nodesToUse.length,
-                });
 
                 let finalIDMap: Record<string, number> | undefined;
                 if (cacheEnabled) {
@@ -686,11 +554,9 @@ export function useExpansion(options: UseExpansionOptions) {
                         });
                         combinedNodes = Array.from(byTitle.values());
                     }
-                    finalIDMap = await saveCacheExpansion(node.id, combinedNodes);
+                    finalIDMap = (await saveCacheExpansion(node.id, combinedNodes)) ?? undefined;
                     const cacheHit = await fetchCacheExpansion(node.id);
-                    if (cacheHit && Array.isArray(cacheHit.nodes) && cacheHit.nodes.length > 0) {
-                        nodesToUse = cacheHit.nodes;
-                    }
+                    if (cacheHit && cacheHit.nodes) nodesToUse = cacheHit.nodes;
                 }
 
                 const currentNodesForDedupe = graphDataRef.current.nodes;
@@ -704,11 +570,6 @@ export function useExpansion(options: UseExpansionOptions) {
                         return looksLikeSpecificPersonName(cn?.title);
                     }
                     return true; // Allow all non-person nodes
-                });
-                console.info("[Expansion] nodesToUse after sanitize/type-filter", {
-                    title: node.title,
-                    nodesToUse: nodesToUse.length,
-                    existingByNorm: existingByNorm.size,
                 });
 
 
@@ -737,30 +598,11 @@ export function useExpansion(options: UseExpansionOptions) {
                 // Include ALL connected nodes for highlighting, not just new ones
                 const allConnectedNodeIds = processedNodes.map(cn => cn.id);
 
-                if (processedNodes.length > 0 && newChildIds.length === 0) {
-                    console.info("[Expansion] all processed nodes already present (by id)", {
-                        title: node.title,
-                        processedNodes: processedNodes.length,
-                        existingNodeIdsBefore: existingNodeIdsBefore.size,
-                        sampleTitles: processedNodes.slice(0, 8).map(n => n.title),
-                    });
-                } else {
-                    console.info("[Expansion] new child ids", {
-                        title: node.title,
-                        processedNodes: processedNodes.length,
-                        newChildIds: newChildIds.length,
-                    });
-                }
 
 
-
-                if (isStale()) {
-                    clearThisNodeLoading();
-                    return;
-                }
+                if (isStale()) return;
                 setGraphData(prev => {
                     const nodeMap = new Map<string, GraphNode>(prev.nodes.map(n => [String(n.id), n]));
-                    const existingNodeIds = new Set(prev.nodes.map(n => String(n.id)));
                     const expectedChildIsAtomic = !currentIsAtomic;
                     processedNodes.forEach(cn => {
                         const meta = cn.meta || {};
@@ -777,14 +619,7 @@ export function useExpansion(options: UseExpansionOptions) {
                             expanded: existing?.expanded || false, isLoading: false
                         });
                     });
-                    if (nodeMap.has(String(node.id))) {
-                        nodeMap.set(String(node.id), {
-                            ...nodeMap.get(String(node.id))!,
-                            expanded: true,
-                            isLoading: false,
-                            ...nodeUpdates.get(nodeKey),
-                        });
-                    }
+                    if (nodeMap.has(String(node.id))) nodeMap.set(String(node.id), { ...nodeMap.get(String(node.id))!, expanded: true, isLoading: true, ...nodeUpdates.get(node.id) });
 
                     const getLinkId = (thing: any) => String(typeof thing === 'object' ? thing?.id : thing);
                     const linkMap = new Map<string, GraphLink>(prev.links.map(l => [`${getLinkId(l.source)}↔${getLinkId(l.target)}`, l]));
@@ -836,12 +671,10 @@ export function useExpansion(options: UseExpansionOptions) {
                         degree.set(t, (degree.get(t) || 0) + 1);
                     });
                     const finalNodes = Array.from(nodeMap.values()).filter(n => {
-                        const isOriginal = String(n.id) === String(node.id);
-                        const isExisting = existingNodeIds.has(String(n.id));
+                        const isExpandingRoot = String(n.id) === String(node.id);
                         const hasDegree = (degree.get(String(n.id)) || 0) > 0;
-                        const ok = isOriginal || isExisting || hasDegree;
-                        if (!ok) { /* removed log */ }
-                        return ok;
+                        if (n.isLoading) return true;
+                        return isExpandingRoot || hasDegree;
                     });
 
                     return dedupeGraph(finalNodes, combinedLinks);
@@ -851,18 +684,19 @@ export function useExpansion(options: UseExpansionOptions) {
 
                 // Highlight ALL connected nodes, not just new ones
                 if (!skipExpandingHighlight) setNewChildNodeIds(new Set(allConnectedNodeIds.map(id => String(id))));
-                processedNodes.forEach((cn, idx) => { if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) setTimeout(() => loadNodeImage(cn.id, cn.title), 300 * (idx + 1)); });
+                processedNodes.forEach((cn, idx) => {
+                    if (!cn.imageUrl && !cn.imageChecked && !isTextOnly) {
+                        setTimeout(() => loadNodeImage(cn.id, cn.title), 350 + 380 * idx);
+                    }
+                });
 
                 setTimeout(() => {
-                    if (isStale()) {
-                        clearThisNodeLoading();
-                        return;
-                    }
-                    setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => String(n.id) === String(node.id) ? { ...n, expanded: true, isLoading: false, ...nodeUpdates.get(nodeKey) } : n) }));
-                    const updates = nodeUpdates.get(nodeKey);
+                    if (isStale()) return;
+                    setGraphData(prev => ({ ...prev, nodes: prev.nodes.map(n => String(n.id) === String(node.id) ? { ...n, expanded: true, isLoading: false, ...nodeUpdates.get(node.id) } : n) }));
+                    const updates = nodeUpdates.get(node.id);
                     if (updates) saveCacheNodeMeta(node.id, updates, node);
                     setTimeout(() => {
-                        graphRef.current?.centerOnNode(node.id);
+                        graphRef.current?.fitGraphInView();
                         if (!skipExpandingHighlight) {
                             setExpandingNodeId(null);
                             // Keep newChildNodeIds so they remain highlighted
@@ -879,11 +713,9 @@ export function useExpansion(options: UseExpansionOptions) {
             setSelectedNode(null); setSelectedLink(null); setExpandingNodeId(null); setNewChildNodeIds(new Set());
         } finally {
             clearTimeout(loadingGuard);
-            expansionInflightRef.current = Math.max(0, expansionInflightRef.current - 1);
-            if (expansionInflightRef.current === 0) setIsProcessing(false);
-            clearThisNodeLoading();
+            if (!isStale()) setIsProcessing(false);
         }
-    }, [loadNodeImage, cacheEnabled, fetchCacheExpansion, saveCacheExpansion, cacheBaseUrl, saveCacheNodeMeta, setGraphData, setIsProcessing, setError, searchIdRef, lockedPairRef, nodesRef, selectedNodeRef, autoExpandMoreDoneRef, ENABLE_ACADEMIC_CORPORA, ENABLE_WEB_SEARCH, setNewlyExpandedNodeIds, setExpandingNodeId, setNewChildNodeIds, setSelectedNode, setSelectedLink, exploreTerm, isTextOnly, graphRef, setNotification]);
+    }, [loadNodeImage, cacheEnabled, fetchCacheExpansion, saveCacheExpansion, cacheBaseUrl, saveCacheNodeMeta, setGraphData, setIsProcessing, setError, searchIdRef, lockedPairRef, nodesRef, selectedNodeRef, autoExpandMoreDoneRef, ENABLE_ACADEMIC_CORPORA, ENABLE_WEB_SEARCH, setNewlyExpandedNodeIds, setExpandingNodeId, setNewChildNodeIds, setSelectedNode, setSelectedLink, exploreTerm, isTextOnly, graphRef]);
 
     return { fetchAndExpandNode, fetchCacheExpansion, saveCacheExpansion };
 }

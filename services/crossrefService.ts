@@ -1,3 +1,4 @@
+"use client";
 type CrossrefWork = {
   DOI?: string;
   title?: string[];

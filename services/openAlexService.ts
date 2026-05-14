@@ -1,3 +1,4 @@
+"use client";
 type OpenAlexWork = {
   id: string; // e.g. https://openalex.org/W...
   title?: string;

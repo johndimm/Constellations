@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Single import surface for full-page constellations inside host apps (Soundings, Trailer Vision, …).
+ * Single import surface for full-page constellations inside Next hosts (Soundings, Trailer, …).
  * — `FullPageConstellations` (layout + App wiring)
  * — `useFullPageConstellationsHost` (URL + optional player bridge)
  * — `newChannelFromGraphNode` (sessionStorage + navigate)

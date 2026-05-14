@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { GraphNode, GraphLink } from '../types';
 import { X, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -11,11 +12,23 @@ interface SidebarProps {
   externalToggleSignal?: number;
   isAdminMode?: boolean;
   forceExpanded?: boolean;
+  /**
+   * Top offset: with `useAbsoluteLayout`, this is from the constellations `main` (use `top-14`).
+   * With `position: fixed`, use viewport space (e.g. `top-14` standalone or `top-[6.25rem]` over a host).
+   */
+  offsetTopClass?: string;
+  /**
+   * When true (e.g. embedded in Trailer), use `position: absolute` in the constellations root so
+   * the panel is not `fixed` to the wrong viewport/clip. Must match the control bar (`top-14` in `main`).
+   */
+  useAbsoluteLayout?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, onCollapseChange, externalToggleSignal, isAdminMode, forceExpanded }) => {
+const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, onCollapseChange, externalToggleSignal, isAdminMode, forceExpanded, offsetTopClass = "top-14", useAbsoluteLayout = false }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 768
+  );
   const [showFullSummary, setShowFullSummary] = useState(false);
   const userManuallyCollapsedRef = useRef(false);
   const lastToggleSignalRef = useRef<number | undefined>(undefined);
@@ -60,7 +73,7 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
     setShowFullSummary(false);
   }, [selectedNode, selectedLink, isMobile, forceExpanded]);
 
-  // External toggle (from header button)
+  // External toggle (from header) — use functional setState (effect must not call a stale handler)
   useEffect(() => {
     if (externalToggleSignal === undefined) return;
     if (lastToggleSignalRef.current === undefined) {
@@ -69,15 +82,20 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
     }
     if (externalToggleSignal !== lastToggleSignalRef.current) {
       lastToggleSignalRef.current = externalToggleSignal;
-      handleToggleCollapse();
+      setIsCollapsed((c) => {
+        const next = !c;
+        userManuallyCollapsedRef.current = next;
+        return next;
+      });
     }
   }, [externalToggleSignal]);
 
   const handleToggleCollapse = () => {
-    const newCollapsed = !isCollapsed;
-    setIsCollapsed(newCollapsed);
-    // Track that user manually collapsed it
-    userManuallyCollapsedRef.current = newCollapsed;
+    setIsCollapsed((c) => {
+      const next = !c;
+      userManuallyCollapsedRef.current = next;
+      return next;
+    });
   };
 
   if (!selectedNode && !selectedLink) return null;
@@ -86,35 +104,44 @@ const Sidebar: React.FC<SidebarProps> = ({ selectedNode, selectedLink, onClose, 
   const isPerson = selectedNode ? (selectedNode.is_atomic === true || selectedNode.is_person === true || (selectedNode.type.toLowerCase() === 'person' || selectedNode.type.toLowerCase() === 'actor')) : false;
 
   // Unified side panel styling - slides right on both mobile and desktop
-  // Side panel styling - always slides right.
-  // When collapsed, we translate most of it away but leave 24px (1.5rem-ish) for the handle.
+  // When embedded, `absolute` + same `top` as control bar avoids `fixed` viewport/clip bugs in hosts.
   const effectiveMobile = forceExpanded ? false : isMobile;
-  const panelWidth = effectiveMobile ? 'calc(100vw - 1.5rem)' : '26rem';
-  const panelClasses = `fixed top-16 right-0 z-50 transition-transform duration-300 ease-in-out ${isCollapsed ? 'translate-x-[calc(100%-24px)]' : 'translate-x-0'}`;
-  const panelStyle = { width: panelWidth, maxWidth: '28rem', paddingRight: effectiveMobile ? '0.75rem' : '1rem' };
+  const panelWidth = effectiveMobile
+    ? useAbsoluteLayout
+      ? "calc(100% - 1.5rem)"
+      : "calc(100vw - 1.5rem)"
+    : "26rem";
+  const pos = useAbsoluteLayout ? "absolute" : "fixed";
+  const panelClasses = `${pos} bottom-0 right-0 z-[55] transition-transform duration-300 ease-in-out ${isCollapsed ? "translate-x-[calc(100%-24px)]" : "translate-x-0"} ${offsetTopClass}`;
+  const panelStyle: React.CSSProperties = {
+    width: panelWidth,
+    maxWidth: "28rem",
+    paddingRight: effectiveMobile ? "0.75rem" : "1rem",
+  };
 
   return (
     <>
       <div className={panelClasses} style={panelStyle}>
-        <div className="bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex flex-col p-6 h-[calc(100vh-6rem)] overflow-visible">
+        <div className="bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex h-full min-h-0 flex-col overflow-hidden p-4 sm:p-6">
           {/* Persistent Toggle Handle */}
           <button
+            type="button"
             onClick={handleToggleCollapse}
             className={`absolute top-1/2 -translate-y-1/2 -left-8 w-8 h-24 bg-slate-800 border border-slate-700 border-r-0 rounded-l-xl flex flex-col items-center justify-center text-slate-400 hover:text-white transition-all group shadow-xl ${isCollapsed ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={isCollapsed ? "Expand details panel" : "Collapse details panel"}
           >
             {isCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
             <div className="[writing-mode:vertical-lr] text-[9px] uppercase tracking-tighter mt-1 font-bold">Details</div>
           </button>
 
-          <div className="flex-1 overflow-visible">
-            <div className="flex justify-between items-start mb-4">
-              <h2 className="text-xl font-bold text-white leading-tight">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1 custom-scrollbar">
+            <div className="mb-3 shrink-0">
+              <h2 className="text-xl font-bold leading-tight text-white">
                 {selectedNode ? selectedNode.title : "Connection Details"}
               </h2>
             </div>
 
-            <div className="space-y-4 overflow-y-auto pr-1">
+            <div className="min-h-0 space-y-4 pb-1">
               {/* Selected Edge Evidence (when user clicks an edge) */}
               {selectedLink && (
                 <div className="p-3 bg-slate-800/40 rounded-lg border border-slate-600/40">

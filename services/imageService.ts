@@ -1,3 +1,4 @@
+"use client";
 import { getEffectiveCacheBaseUrl } from './cacheService';
 
 export type ServerImageResult = {
@@ -5,6 +6,23 @@ export type ServerImageResult = {
     source?: string;
     pageId?: number;
     pageTitle?: string;
+};
+
+/**
+ * Base URL for `GET /api/image` in the browser.
+ * Prefer the current page (e.g. Next.js Soundings implements this route). The graph
+ * cache server is for expansions / persistence; image lookup should not depend on it
+ * when the host app can resolve Wikipedia images itself.
+ */
+export const getImageApiBaseUrl = (cacheBaseUrl: string | undefined): string => {
+    if (typeof window !== 'undefined') {
+        return window.location.origin;
+    }
+    return (
+        (cacheBaseUrl && cacheBaseUrl.replace(/\/$/, '')) ||
+        getEffectiveCacheBaseUrl() ||
+        ''
+    );
 };
 
 export const fetchServerImage = async (

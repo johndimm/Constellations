@@ -1,44 +1,9 @@
+"use client";
 import { GoogleGenAI, Type } from "@google/genai";
-import { GeminiResponse, PersonWork, PersonWorksResponse, PathResponse } from "../types";
-import {
-  clipForLlmLog,
-  getApiKey,
-  getResponseText,
-  cleanJson,
-  fetchWithTimeout,
-  withTimeout,
-  withRetry,
-  getEnvCacheUrl,
-  getEnvGeminiModel,
-  getEnvGeminiModelClassify,
-  getLlmApiKey,
-  getLlmProvider,
-  getBrowserLlmOverride,
-  setBrowserLlmOverride,
-} from "./aiUtils";
-import { runJsonCompletion } from "./llmClient";
+import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
+import { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, sanitizeSearchTerm } from "./aiUtils";
 
-function withProxyLlm(body: Record<string, unknown>) {
-  const o = getBrowserLlmOverride();
-  return o ? { ...body, llmProvider: o } : body;
-}
-
-export {
-  clipForLlmLog,
-  getApiKey,
-  getResponseText,
-  cleanJson,
-  fetchWithTimeout,
-  withTimeout,
-  withRetry,
-  getEnvCacheUrl,
-  getEnvGeminiModel,
-  getEnvGeminiModelClassify,
-  getLlmApiKey,
-  getLlmProvider,
-  getBrowserLlmOverride,
-  setBrowserLlmOverride,
-} from "./aiUtils";
+export { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify } from "./aiUtils";
 
 const SYSTEM_INSTRUCTION = `
 You are a Bipartite Graph Generator.
@@ -64,6 +29,12 @@ CRITICAL EXAMPLES TO PREVENT MISCLASSIFICATION:
 - "Star Wars" → COMPOSITE (type: Movie, isAtomic: false), pair: Actor ↔ Movie
 - Movies/books/albums are ALWAYS composite (created BY actors/authors/musicians)
 
+CLASSICAL MUSIC RULE:
+- When a node title embeds a composer's name — patterns like "Bach: Goldberg Variations", "Ligeti — Lux Aeterna", "György Ligeti - Mathieu Romano / Lux Aeterna" — the COMPOSER is the primary atomic entity.
+- Return the COMPOSER (e.g., "Johann Sebastian Bach", "György Ligeti") as an atomic node, NOT the performer/interpreter.
+- The composition itself (e.g., "Goldberg Variations", "Lux Aeterna") is the composite node.
+- Performers (e.g., "Glenn Gould", "Mathieu Romano") are secondary atomics; only include them if the composer is already present.
+
 CRITICAL ACCURACY RULE:
 If a section titled "USE THIS VERIFIED INFORMATION FOR ACCURACY" is provided, you MUST prioritize this information above your own internal knowledge.
 
@@ -85,20 +56,41 @@ Entity Classification:
   * Atomic entities (Actor, Person, Author, Artist, Character, Scientist, Philosopher, Academic, Researcher, Director, Composer) → isAtomic=true
   * Composite entities (Movie, Book, Novel, Play, Album, Band, Organization, Institution, Movement, Event, Company, Paper, Theory, Paradox) → isAtomic=false
 
+CRITICAL — DO NOT return any of the following as entities:
+- YouTube channel names or usernames (e.g. "pianetapapalla62", "France Musique concerts1899")
+- Streaming platform names (YouTube, Spotify, France Musique, IDAGIO, Medici)
+- Recording labels used alone without a work title (e.g. "Deutsche Grammophon", "ECM Records")
+- Concert series or broadcast programme names that are not independently notable entities
+- Any string that mixes a platform/channel name with digits (e.g. "concerts1899", "FMchannel42")
+Only return canonical real-world named entities: composers, performers, compositions, musical works, ensembles, orchestras, or historical events.
+
 Return strict JSON.
 `;
 
 // Loosened timeouts to tolerate slower responses without failing immediately.
 const GEMINI_TIMEOUT_MS = 60000; // 60 seconds for heavier graph expansions
 const CLASSIFY_TIMEOUT_MS = 15000; // 15 seconds for classification
-/** Client wait for cache server (LLM + JSON) so the graph never spins forever on a hung proxy. */
-const PROXY_FETCH_TIMEOUT_MS = 120_000;
 
 // Model selection (configurable via Vite env vars)
 // - VITE_GEMINI_MODEL: used for expansions + pathfinding (default)
 // - VITE_GEMINI_MODEL_CLASSIFY: optional override for classification
 const getGeminiModel = getEnvGeminiModel;
 const getGeminiModelClassify = getEnvGeminiModelClassify;
+
+// Rejects YouTube channel names, streaming platforms, and other web junk.
+function isValidEntityName(name: string): boolean {
+  if (!name || typeof name !== "string") return false;
+  const t = name.trim();
+  // Reject username pattern: no spaces, lowercase + digits, length > 4
+  if (!/\s/.test(t) && /[a-z]/.test(t) && /\d/.test(t) && t.length > 4) return false;
+  // Reject "! " separator common in YouTube video titles
+  if (t.includes("! ")) return false;
+  // Reject known streaming/platform keywords followed by digits
+  if (/\b(concerts?|channel|musique|archive|records?)\d+/i.test(t)) return false;
+  // Reject very long single-word strings
+  if (!/\s/.test(t) && t.length > 20) return false;
+  return true;
+}
 
 export type LockedPair = {
   atomicType: string;
@@ -110,99 +102,42 @@ async function callAiProxy(endpoint: string, body: any) {
   const baseUrl = getEnvCacheUrl();
   let resolvedBase = baseUrl;
 
-  const url = new URL(
-    endpoint,
-    resolvedBase ||
-      (typeof window !== "undefined" ? window.location.origin : ""),
-  ).toString();
-  const payload = withProxyLlm(body && typeof body === "object" && !Array.isArray(body) ? body : {});
+  const url = new URL(endpoint, resolvedBase || (typeof window !== 'undefined' ? window.location.origin : '')).toString();
+  if (
+    typeof window !== "undefined" &&
+    typeof process !== "undefined" &&
+    process.env.NODE_ENV === "development"
+  ) {
+    let uHost = "";
+    try {
+      uHost = new URL(url).host;
+    } catch {
+      uHost = "(bad url)";
+    }
+    console.log("[Constellations]", "AI proxy fetch", { endpoint, urlHost: uHost });
+  }
   try {
-    console.info("[LLM] proxy REQUEST", endpoint, clipForLlmLog(JSON.stringify(payload)));
-
-    const resp = await fetchWithTimeout(
-      url,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-      PROXY_FETCH_TIMEOUT_MS,
-    );
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
 
     if (resp.status === 404 && endpoint === "/api/ai/classify-start") {
       // console.warn(`⚠️ [Proxy] ${endpoint} not found, falling back to /api/ai/classify`);
-      return callAiProxy("/api/ai/classify", payload);
+      return callAiProxy("/api/ai/classify", body);
     }
 
     if (!resp.ok) {
       const err = await resp.text();
-      const degraded =
-        resp.status === 500 ||
-        resp.status === 502 ||
-        resp.status === 503 ||
-        resp.status === 429;
-      // Degrade gracefully when the cache server errors (quota, old deploy, etc.) so the UI keeps working.
-      if (degraded && endpoint === "/api/ai/connections") {
-        console.warn(
-          `[Proxy] ${endpoint} ${resp.status}; returning empty people.`,
-          err.slice(0, 300),
-        );
-        return { people: [] };
-      }
-      if (degraded && endpoint === "/api/ai/works") {
-        console.warn(
-          `[Proxy] ${endpoint} ${resp.status}; returning empty works.`,
-          err.slice(0, 300),
-        );
-        return { works: [] };
-      }
-      if (degraded && endpoint === "/api/ai/path") {
-        console.warn(
-          `[Proxy] ${endpoint} ${resp.status}; returning empty path.`,
-          err.slice(0, 300),
-        );
-        return { path: [], found: false };
-      }
-      if (degraded && endpoint === "/api/ai/classify-start") {
-        console.warn(
-          `[Proxy] ${endpoint} ${resp.status}; defaulting start pair.`,
-          err.slice(0, 300),
-        );
-        return defaultStartPairResult(
-          "Classification proxy error (quota or server); defaulting to Person↔Event.",
-        );
-      }
-      if (degraded && endpoint === "/api/ai/classify") {
-        console.warn(
-          `[Proxy] ${endpoint} ${resp.status}; defaulting classify.`,
-          err.slice(0, 300),
-        );
-        return { type: "Event", description: "", isAtomic: false };
-      }
       throw new Error(`AI Proxy Error (${resp.status}): ${err}`);
     }
-    const data = await resp.json();
-    console.info("[LLM] proxy RESPONSE", endpoint, clipForLlmLog(JSON.stringify(data)));
-    return data;
+    return resp.json();
   } catch (e: any) {
-    const aborted = e?.name === "AbortError";
-    if (aborted) {
-      console.warn(`[Proxy] ${endpoint} timed out after ${PROXY_FETCH_TIMEOUT_MS}ms; degrading or rethrowing.`);
-      if (endpoint === "/api/ai/connections") return { people: [] };
-      if (endpoint === "/api/ai/works") return { works: [] };
-      if (endpoint === "/api/ai/path") return { path: [], found: false };
-      if (endpoint === "/api/ai/classify-start") {
-        return defaultStartPairResult("Classification request timed out; defaulting to Person↔Event.");
-      }
-      if (endpoint === "/api/ai/classify") return { type: "Event", description: "", isAtomic: false };
-    }
-    if (
-      endpoint === "/api/ai/classify-start" &&
-      !e.message?.includes("AI Proxy Error")
-    ) {
+    if (endpoint === "/api/ai/classify-start" && !e.message?.includes("AI Proxy Error")) {
       // Network error or fetch failure, try fallback anyway if it's the start pair
       // console.warn(`⚠️ [Proxy] ${endpoint} failed, trying fallback /api/ai/classify`, e);
-      return callAiProxy("/api/ai/classify", payload);
+      return callAiProxy("/api/ai/classify", body);
     }
     throw e;
   }
@@ -212,7 +147,7 @@ async function callAiProxy(endpoint: string, body: any) {
  * Helper to determine if we should use the proxy (browser + proxy URL available).
  */
 function shouldProxy(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === 'undefined') return false;
   if ((window as any).__PRERENDER_INJECTED) return false;
 
   const baseUrl = getEnvCacheUrl();
@@ -237,9 +172,94 @@ export function defaultStartPairResult(reason: string): {
   };
 }
 
+/** Messy pasted now-playing / YouTube text; short single-line queries skip the extra Gemini call. */
+function rawTermNeedsMusicEntityExtract(raw: string): boolean {
+  const t = raw.trim();
+  if (!t) return false;
+  if (t.length > 220) return true;
+  if (t.includes("\n")) return true;
+  if (/https?:\/\/(www\.)?(youtube\.com|youtu\.be)\b/i.test(t)) return true;
+  if (/\b(feat\.|ft\.|official\s+video|official\s+audio)\b/i.test(t)) return true;
+  return false;
+}
+
+/**
+ * Given raw pasted text (YouTube title, channel name, multi-line description),
+ * ask the LLM to pick the best graph starting node — using world knowledge to
+ * disambiguate and choose the most meaningful hub entity. Falls back to raw input on failure.
+ */
+export const extractMusicEntity = async (raw: string): Promise<string> => {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+
+  const apiKey = await getApiKey();
+  if (!apiKey) return trimmed;
+
+  const ai = new GoogleGenAI({ apiKey });
+  const prompt = `You are given raw text from a music context (YouTube title, track listing, now-playing display, or search query). It may include one or more track titles, an artist name, a composer, a YouTube channel username, a year, or other metadata.
+
+Return the single best name to use as a music knowledge-graph starting node — one that will connect meaningfully to related works, composers, performers, and styles. Use your world knowledge of music to pick an unambiguous, well-known entity.
+
+Guidelines:
+- When an artist/composer is present alongside a single track title, always prefer "Artist: Track" (e.g. "Daft Punk: One More Time"). A bare track title is rarely enough — the artist makes it unambiguous.
+- When multiple track titles by the same artist are listed (e.g. separated by "/" or newlines), return just the artist name — it makes a better hub node.
+- For classical music, prefer composer over performer; include the work title (e.g. "Fauré: Sicilienne").
+- Use world knowledge to disambiguate ambiguous titles: if the artist clarifies the meaning, include them. "Around the World" alone could be Jules Verne; "Daft Punk: Around the World" is unambiguous.
+- Ignore YouTube channel usernames (random strings, channel handles), record labels, streaming platform names, and bare years.
+
+Examples:
+- "Gautier Capuçon plays Fauré: Sicilienne, Op. 78\\nWarner Classics" → "Fauré: Sicilienne, Op. 78"
+- "Alban Berg- Lyric Suite Part 3\\nplayingmusiconmars1926" → "Alban Berg: Lyric Suite"
+- "György Ligeti - Mathieu Romano\\nLux Aeterna1966" → "György Ligeti: Lux Aeterna"
+- "Ravel : Pavane (Orchestre national de France / Dalia Stasevska)\\nFrance Musique concerts1899" → "Ravel: Pavane pour une infante défunte"
+- "Vaughan Williams ~ The Lark Ascending" → "Vaughan Williams: The Lark Ascending"
+- "Hildegard von Bingen, O rubor sanguinis (with score)\\nhuakinthoi" → "Hildegard von Bingen: O rubor sanguinis"
+- "Around the World / Harder, Better, Faster, Stronger\\nDaft Punk" → "Daft Punk"
+- "One More Time\\nDaft Punk" → "Daft Punk: One More Time"
+- "The Ends\\nSeth David2024" → "Seth David: The Ends"
+- "10% (feat. Kali Uchis)\\nKAYTRANADA, Kali Uchis2019" → "KAYTRANADA: 10% (feat. Kali Uchis)"
+- "Glenn Gould" → "Glenn Gould"
+- "Bach: Goldberg Variations" → "Bach: Goldberg Variations"
+
+Raw text:
+"""
+${trimmed}
+"""
+
+Return JSON: { "entity": "<extracted entity name>" }`;
+
+  try {
+    const response = await withTimeout(
+      ai.models.generateContent({
+        model: getGeminiModelClassify(),
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: { entity: { type: Type.STRING } },
+            required: ["entity"]
+          }
+        }
+      }),
+      8000,
+      "extractMusicEntity timed out"
+    );
+    const parsed = parseJsonFromModelText(getResponseText(response)) as { entity?: string } | null;
+    const entity = parsed?.entity?.trim();
+    if (entity && entity.length > 1) {
+      if (entity !== trimmed) console.log(`[extractMusicEntity] "${trimmed}" → "${entity}"`);
+      return entity;
+    }
+  } catch (e) {
+    console.warn("[extractMusicEntity] failed, using raw input:", String(e).slice(0, 120));
+  }
+  return trimmed;
+};
+
 export const classifyStartPair = async (
-  term: string,
-  wikiContext?: string,
+  rawTerm: string,
+  wikiContext?: string
 ): Promise<{
   type: string;
   description: string;
@@ -248,55 +268,70 @@ export const classifyStartPair = async (
   compositeType: string;
   reasoning: string;
 }> => {
-  if (shouldProxy()) {
-    return callAiProxy("/api/ai/classify-start", { term, wikiContext });
+  // With `VITE_CACHE_URL`, classification hits the cache server first. Skip client-side
+  // `extractMusicEntity` (music/YouTube-specific Gemini call) — it adds a full round-trip and
+  // the wrong prompt for films / general graph seeds like "The Godfather".
+  const cacheUrl = getEnvCacheUrl();
+  const proxy =
+    typeof window !== "undefined" &&
+    !(window as any).__PRERENDER_INJECTED &&
+    !!cacheUrl;
+  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+    let cacheHost = "";
+    try {
+      if (cacheUrl) cacheHost = new URL(cacheUrl).host;
+    } catch {
+      cacheHost = "(invalid)";
+    }
+    console.log("[Constellations]", "classifyStartPair", {
+      term: rawTerm.trim().slice(0, 80),
+      hasWikiContext: !!wikiContext,
+      useProxy: proxy,
+      cacheHost: cacheHost || null,
+    });
+  }
+  if (proxy) {
+    return callAiProxy("/api/ai/classify-start", { term: rawTerm.trim(), wikiContext });
   }
 
-  const apiKey = await getLlmApiKey();
+  const needsMusic = rawTermNeedsMusicEntityExtract(rawTerm);
+  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+    console.log("[Constellations]", "classifyStartPair local Gemini path", { needsMusicExtract: needsMusic });
+  }
+  const term = needsMusic ? await extractMusicEntity(rawTerm) : rawTerm.trim();
+
+  const apiKey = await getApiKey();
   // String-level safety heuristic (no Wikipedia required):
   // Disambiguated titles like "Discover (Daft Punk album)" must never be treated as Person.
   // Treat common work/media parentheticals as Composite/Event in the temporary Person↔Event model.
   const t = term.trim();
   // Academic heuristics (no model required):
   // If the seed looks like a paper/DOI/arXiv query, default to Author↔Paper so the system can use an academic corpus.
-  if (
-    /\b10\.\d{4,9}\/\S+\b/i.test(t) ||
-    /\barxiv\b|arxiv:\s*\d{4}\.\d{4,5}/i.test(t)
-  ) {
+  if (/\b10\.\d{4,9}\/\S+\b/i.test(t) || /\barxiv\b|arxiv:\s*\d{4}\.\d{4,5}/i.test(t)) {
     return {
       type: "Paper",
       description: "",
       isAtomic: false,
       atomicType: "Author",
       compositeType: "Paper",
-      reasoning:
-        "Seed looks like an academic paper identifier (DOI/arXiv); selecting Author↔Paper.",
+      reasoning: "Seed looks like an academic paper identifier (DOI/arXiv); selecting Author↔Paper."
     };
   }
-  if (
-    /\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(
-      t,
-    )
-  ) {
+  if (/\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(t)) {
     return {
       type: "Event",
       description: "",
       isAtomic: false,
       atomicType: "Person",
       compositeType: "Event",
-      reasoning:
-        "Title contains an explicit work/media disambiguator (e.g., '(album)'); treating it as Composite in Person↔Event.",
+      reasoning: "Title contains an explicit work/media disambiguator (e.g., '(album)'); treating it as Composite in Person↔Event."
     };
   }
 
-  if (!apiKey) {
-    return defaultStartPairResult(
-      "No API key available; defaulting to Person↔Event.",
-    );
-  }
 
-  const useGemini = getLlmProvider() === "gemini";
-  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
+  if (!apiKey) {
+    return defaultStartPairResult("No API key available; defaulting to Person↔Event.");
+  }
 
   const prompt = `Choose the most appropriate bipartite pair for this session based on the input: "${term}".
 
@@ -308,64 +343,60 @@ Rules:
 - If "${term}" is an organization/institution/band, it is ALWAYS COMPOSITE.
 - If "${term}" looks like an academic paper or DOI/arXiv, it is COMPOSITE (use Author ↔ Paper).
 - If "${term}" is a very famous person, it is ATOMIC even if they have works.
+- CLASSICAL MUSIC PERFORMANCE: If "${term}" matches the pattern "Performer plays/performs Composer: Work" or "Composer - Work (Performer)" or "Performer - Composer: Work", classify it as COMPOSITE (type: Performance or Composition) with pair Performer ↔ Composition. When expanded, this node should yield BOTH the composer AND the performer as atomic connections.
 `;
 
   try {
-    const rawText = await runJsonCompletion({
-      user: prompt,
-      timeoutMs: CLASSIFY_TIMEOUT_MS,
-      attempts: 3,
-      gemini: gemini
-        ? () =>
-            gemini.models.generateContent({
-              model: getGeminiModelClassify(),
-              contents: prompt,
-              config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                  type: Type.OBJECT,
-                  properties: {
-                    type: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    isAtomic: { type: Type.BOOLEAN },
-                    atomicType: { type: Type.STRING },
-                    compositeType: { type: Type.STRING },
-                    reasoning: { type: Type.STRING },
-                  },
-                  required: ["type", "isAtomic", "atomicType", "compositeType"],
-                },
-              },
-            })
-        : undefined,
-    });
-    // console.log(`🤖 [Gemini] Raw Classify-Start response for "${term}":`, rawText);
-    const text = cleanJson(rawText);
-    const json = text ? JSON.parse(text) : {};
+    const ai = new GoogleGenAI({ apiKey });
 
+    const makeApiCall = () => ai.models.generateContent({
+      model: getGeminiModelClassify(),
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            type: { type: Type.STRING },
+            description: { type: Type.STRING },
+            isAtomic: { type: Type.BOOLEAN },
+            atomicType: { type: Type.STRING },
+            compositeType: { type: Type.STRING },
+            reasoning: { type: Type.STRING }
+          },
+          required: ["type", "isAtomic", "atomicType", "compositeType"]
+        }
+      }
+    });
+
+    const response = await withRetry(
+      () => withTimeout(makeApiCall(), CLASSIFY_TIMEOUT_MS, "Start-pair classification timed out"),
+      3,
+      1000
+    );
+
+    const rawText = getResponseText(response);
+    const parsed = parseJsonFromModelText(rawText);
+    const json = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+
+    const s = (v: unknown, fallback: string) => (typeof v === "string" && v ? v : fallback);
     return {
-      type: json.type || "Event",
-      description: json.description || "",
+      type: s(json.type, "Event"),
+      description: s(json.description, ""),
       isAtomic: !!json.isAtomic,
-      atomicType: json.atomicType || "Person",
-      compositeType: json.compositeType || "Event",
-      reasoning: json.reasoning || "",
+      atomicType: s(json.atomicType, "Person"),
+      compositeType: s(json.compositeType, "Event"),
+      reasoning: s(json.reasoning, "")
     };
   } catch (e: any) {
-    const msg = String(e?.message || e || "");
-    console.warn(
-      `[classifyStartPair] failed for "${term}":`,
-      msg.slice(0, 200),
-    );
+    console.warn("[classifyStartPair]", term, String(e?.message || e).slice(0, 200));
     return defaultStartPairResult(
-      "Classification API unavailable (quota, rate limit, or error); defaulting to Person↔Event.",
+      "Classification API unavailable (quota/rate limit or error); defaulting to Person↔Event."
     );
   }
 };
 
-export const classifyEntity = async (
-  term: string,
-  wikiContext?: string,
-): Promise<{
+export const classifyEntity = async (term: string, wikiContext?: string): Promise<{
   type: string;
   description: string;
   isAtomic: boolean;
@@ -377,33 +408,29 @@ export const classifyEntity = async (
     return callAiProxy("/api/ai/classify", { term, wikiContext });
   }
 
-  const apiKey = await getLlmApiKey();
+  const apiKey = await getApiKey();
   const normalized = term.trim().toLowerCase();
 
   // String-level safety heuristic (no Wikipedia required):
   // Disambiguated titles like "... (album)" must never be treated as Person.
-  if (
-    /\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(
-      term.trim(),
-    )
-  ) {
+  if (/\((album|song|single|film|movie|tv series|television series|book|novel|painting|sculpture|artwork|opera|symphony)\)/i.test(term.trim())) {
     return {
       type: "Event",
       description: "",
       isAtomic: false,
       atomicType: "Person",
       compositeType: "Event",
-      reasoning:
-        "Title contains an explicit work/media disambiguator (e.g., '(album)'); treating it as Composite in Person↔Event.",
+      reasoning: "Title contains an explicit work/media disambiguator (e.g., '(album)'); treating it as Composite in Person↔Event."
     };
   }
 
+
   if (!apiKey) {
     console.error("❌ [Gemini] classifyEntity: No API key found");
-    return { type: "Event", description: "", isAtomic: false };
+    return { type: 'Event', description: '', isAtomic: false };
   }
-  const useGemini = getLlmProvider() === "gemini";
-  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
+  // console.log(`🧪 [Gemini] classify start`, { term, timeoutMs: CLASSIFY_TIMEOUT_MS });
+  const ai = new GoogleGenAI({ apiKey });
 
   const wikiPrompt = wikiContext
     ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
@@ -437,52 +464,51 @@ export const classifyEntity = async (
 
     // console.log("🤖 [Gemini] Classify Prompt:", prompt);
 
-    const rawText = await runJsonCompletion({
-      user: prompt,
-      timeoutMs: CLASSIFY_TIMEOUT_MS,
-      attempts: 3,
-      gemini: gemini
-        ? () =>
-            gemini.models.generateContent({
-              model: getGeminiModelClassify(),
-              contents: prompt,
-              config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                  type: Type.OBJECT,
-                  properties: {
-                    type: { type: Type.STRING },
-                    description: {
-                      type: Type.STRING,
-                      description: "Short 1-sentence description",
-                    },
-                    isAtomic: { type: Type.BOOLEAN },
-                    atomicType: { type: Type.STRING },
-                    compositeType: { type: Type.STRING },
-                    reasoning: { type: Type.STRING },
-                  },
-                  required: ["type", "isAtomic", "atomicType", "compositeType"],
-                },
-              },
-            })
-        : undefined,
+    const makeApiCall = () => ai.models.generateContent({
+      model: getGeminiModelClassify(),
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            type: { type: Type.STRING },
+            description: { type: Type.STRING, description: "Short 1-sentence description" },
+            isAtomic: { type: Type.BOOLEAN },
+            atomicType: { type: Type.STRING },
+            compositeType: { type: Type.STRING },
+            reasoning: { type: Type.STRING }
+          },
+          required: ["type", "isAtomic", "atomicType", "compositeType"]
+        }
+      }
     });
+
+    const response = await withRetry(
+      () => withTimeout(makeApiCall(), CLASSIFY_TIMEOUT_MS, "Classification timed out"),
+      3,
+      1000
+    );
+
+    const rawText = getResponseText(response);
     // console.log(`🤖 [Gemini] Raw Classify response for "${term}":`, rawText);
-    const text = cleanJson(rawText);
+    const json = parseJsonFromModelText(rawText);
     // console.log("Classify response text:", text);
-    if (!text) return { type: "Event", description: "", isAtomic: false };
-    const json = JSON.parse(text);
+    if (!json || typeof json !== "object" || Array.isArray(json)) {
+      return { type: 'Event', description: '', isAtomic: false };
+    }
+    const o = json as Record<string, unknown>;
     return {
-      type: json.type || "Event",
-      description: json.description || "",
-      isAtomic: !!json.isAtomic,
-      atomicType: json.atomicType,
-      compositeType: json.compositeType,
-      reasoning: json.reasoning,
+      type: (o.type as string) || 'Event',
+      description: (o.description as string) || '',
+      isAtomic: !!o.isAtomic,
+      atomicType: o.atomicType as string | undefined,
+      compositeType: o.compositeType as string | undefined,
+      reasoning: o.reasoning as string | undefined
     };
   } catch (error) {
     // console.warn("Classification failed, defaulting to Event:", error);
-    return { type: "Event", description: "", isAtomic: false };
+    return { type: 'Event', description: '', isAtomic: false };
   }
 };
 
@@ -494,95 +520,84 @@ export const fetchConnections = async (
   wikipediaId?: string,
   atomicType?: string,
   compositeType?: string,
-  mentioningPageTitles?: string[],
+  mentioningPageTitles?: string[]
 ): Promise<GeminiResponse> => {
   if (shouldProxy()) {
-    return callAiProxy("/api/ai/connections", {
-      nodeName,
-      context,
-      excludeNodes,
-      wikiContext,
-      wikipediaId,
-      atomicType,
-      compositeType,
-      mentioningPageTitles,
-    });
+    return callAiProxy("/api/ai/connections", { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles });
   }
 
-  try {
-    const apiKey = await getLlmApiKey();
-    if (!apiKey) {
-      console.error("❌ [Gemini] fetchConnections: No API key found");
-      return { people: [] };
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[Gemini] fetchConnections: No API key — returning empty graph expansion");
     }
+    return { people: [] };
+  }
 
-    const useGemini = getLlmProvider() === "gemini";
-    const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
+  const ai = new GoogleGenAI({ apiKey });
 
-    const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
-    const contextualPrompt = context
-      ? `Analyze: "${nodeName}"${wikiIdStr} specifically in the context of "${context}".`
-      : `Analyze: "${nodeName}"${wikiIdStr}.`;
+  const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
+  const contextualPrompt = context
+    ? `Analyze: "${nodeName}"${wikiIdStr} specifically in the context of "${context}".`
+    : `Analyze: "${nodeName}"${wikiIdStr}.`;
 
-    const wikiPrompt = wikiContext
-      ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
-      : "";
+  const wikiPrompt = wikiContext
+    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
+    : "";
 
-    const excludePrompt =
-      excludeNodes.length > 0
-        ? `\nDO NOT include the following already known connections: ${JSON.stringify(excludeNodes)}. Find NEW high-impact connections.`
-        : "";
+  const excludePrompt = excludeNodes.length > 0
+    ? `\nDO NOT include the following already known connections: ${JSON.stringify(excludeNodes)}. Find NEW high-impact connections.`
+    : "";
 
-    const mentionPrompt =
-      mentioningPageTitles && mentioningPageTitles.length > 0
-        ? `\nIMPORTANT: This entity does not have a dedicated Wikipedia article, but it is explicitly mentioned in the following Wikipedia articles: ${mentioningPageTitles.join(", ")}. You MUST investigate these contexts and include relevant connections found there.`
-        : "";
+  const mentionPrompt = mentioningPageTitles && mentioningPageTitles.length > 0
+    ? `\nIMPORTANT: This entity does not have a dedicated Wikipedia article, but it is explicitly mentioned in the following Wikipedia articles: ${mentioningPageTitles.join(', ')}. You MUST investigate these contexts and include relevant connections found there.`
+    : "";
 
-    const atomicLabel = atomicType || "ATOMIC entity";
-    const compositeLabel = compositeType || "COMPOSITE entity";
-    const personOnlyRule =
-      (atomicType || "").trim().toLowerCase() === "person"
-        ? `\nCRITICAL: The atomic side is "Person" meaning INDIVIDUAL HUMAN BEINGS ONLY.
+  const atomicLabel = atomicType || "ATOMIC entity";
+  const compositeLabel = compositeType || "COMPOSITE entity";
+  const personOnlyRule =
+    (atomicType || "").trim().toLowerCase() === "person"
+      ? `\nCRITICAL: The atomic side is "Person" meaning INDIVIDUAL HUMAN BEINGS ONLY.
 - Return ONLY specific individual people with proper names (e.g., "Leonardo da Vinci"), not categories, groups, or locations.
 - DO NOT return organizations, institutions, committees, councils, companies, museums, foundations, agencies, or any group entities (e.g., do NOT return "Republic of Florence" as a person).
 - DO NOT return locations, places, buildings, or geographical entities (e.g., do NOT return "Florence" or "Italy").
 - DO NOT return generic or collective phrases like "Various Local Artists", "Local Artists", "Staff", "Visitors", "Students", "Members", "Volunteers", "Team", "The Public", "Curators".
 - If you cannot find enough specific individual humans, return fewer.`
-        : "";
-    const workSourceHint =
-      (compositeType || "").trim().toLowerCase() === "event"
-        ? `\nIf the Source is a named work (e.g., artwork/painting/sculpture/album/book/novel/film), you MUST return the primary creator(s) (author, artist, director, etc.) as the first few results. DO NOT omit the creator even if they are already widely known. Return people directly connected to the work (creator, depicted subject/model if distinct, commissioners/patrons, notable collectors/owners, curators/restorers/biographers explicitly associated). 
+      : "";
+  const workSourceHint =
+    (compositeType || "").trim().toLowerCase() === "event"
+      ? `\nIf the Source is a named work (e.g., artwork/painting/sculpture/album/book/novel/film), you MUST return the primary creator(s) (author, artist, director, etc.) as the first few results. DO NOT omit the creator even if they are already widely known. Return people directly connected to the work (creator, depicted subject/model if distinct, commissioners/patrons, notable collectors/owners, curators/restorers/biographers explicitly associated). 
 - Do NOT invent names; if only the creator is reliably connected, return only that person.`
-        : "";
-    const theorySourceHint =
-      /\b(theory|concept|discovery|law|principle|formula|field|science|physics|mathematics|biology|chemistry|mechanics|evolution|relativity)\b/i.test(
-        compositeType || "",
-      ) ||
-      /\b(theory|physics|mathematics|discovery|principle|mechanics|evolution|relativity)\b/i.test(
-        nodeName,
-      )
-        ? `\nSPECIAL CASE (theory/concept/discovery): If the Source is a scientific theory, concept, or discovery, return the primary scientists, authors, or discoverers who established or significantly developed it.`
-        : "";
+      : "";
+  const theorySourceHint =
+    /\b(theory|concept|discovery|law|principle|formula|field|science|physics|mathematics|biology|chemistry|mechanics|evolution|relativity)\b/i.test(compositeType || "") ||
+      /\b(theory|physics|mathematics|discovery|principle|mechanics|evolution|relativity)\b/i.test(nodeName)
+      ? `\nSPECIAL CASE (theory/concept/discovery): If the Source is a scientific theory, concept, or discovery, return the primary scientists, authors, or discoverers who established or significantly developed it.`
+      : "";
 
+
+  try {
     const prompt = `${contextualPrompt}${wikiPrompt}${mentionPrompt}${excludePrompt}
       Source Node: ${nodeName} (Type: ${compositeLabel})
       
-      Return ${excludeNodes.length > 0 ? "12-15 NEW" : "10-12 key"} ${atomicLabel} entities (participants, creators, major figures, stars, ingredients, its most famous writers/editors for magazines, etc.) that are fundamental components of this ${compositeLabel}.
+      Return ${excludeNodes.length > 0 ? '6-8 NEW' : '5-6 key'} ${atomicLabel} entities (participants, creators, major figures, stars, ingredients, its most famous writers/editors for magazines, etc.) that are fundamental components of this ${compositeLabel}.
       
       Straying Guardrails:
       ${personOnlyRule}
       ${workSourceHint}
       ${theorySourceHint}
-      ${(compositeType || "").match(/^(Movie|Film|Book|Novel|Play|Opera)$/i) ? "\nSPECIAL CASE (Fiction): For works of fiction, prioritize returning CHARACTERS as the atomic entities." : ""}
-      ${(compositeType || "").match(/^(Magazine|Newspaper|Journal|Periodical|Publication)$/i) ? "\nSPECIAL CASE (Magazine): For periodicals/magazines, prioritize returning its most FAMOUS AND LONG-TIME WRITERS, columnists, and editors-in-chief. If some of these are already in the graph, find other significant figures." : ""}
+      ${(compositeType || "").match(/^(Movie|Film|Book|Novel|Play|Opera)$/i) ? '\nSPECIAL CASE (Fiction): For works of fiction, prioritize returning CHARACTERS as the atomic entities.' : ''}
+      ${(compositeType || "").match(/^(Magazine|Newspaper|Journal|Periodical|Publication)$/i) ? '\nSPECIAL CASE (Magazine): For periodicals/magazines, prioritize returning its most FAMOUS AND LONG-TIME WRITERS, columnists, and editors-in-chief. If some of these are already in the graph, find other significant figures.' : ''}
       
+      SPECIAL CASE (classical music recording): If the Source Node title contains a composer's name — patterns like "Bach: Goldberg Variations", "Ligeti — Lux Aeterna", "Composer - Performer / Work Title" — you MUST return the COMPOSER as the first atomic entity. Do NOT return the performer/interpreter as the primary result. The composer whose name appears in the title is the most important connection.
+
       CRITICAL BIPARTITE RULE:
       - The Source Node is a COMPOSITE entity.
       - Therefore, ALL returned entities MUST be ATOMIC entities (${atomicLabel}).
       - DO NOT return other ${compositeLabel} entities.
       - If you find connections to other ${compositeLabel} entities, you MUST find the ${atomicLabel} entities (people, characters, etc.) that link them.
 
-      ${excludeNodes.length > 0 ? `\nEXPAND MORE: Since you have already provided some connections, please dig deeper into the "next tier" of significant entities. Avoid the obvious names already in the graph: ${JSON.stringify(excludeNodes)}.` : ""}
+      ${excludeNodes.length > 0 ? `\nEXPAND MORE: Since you have already provided some connections, please dig deeper into the "next tier" of significant entities. Avoid the obvious names already in the graph: ${JSON.stringify(excludeNodes)}.` : ''}
 
       IMPORTANT: For each entity specify its type (${atomicLabel}) and whether it follows the classification rules defined in the system instruction.
       
@@ -597,89 +612,56 @@ export const fetchConnections = async (
 
     // console.log(`🤖 [Gemini] fetchConnections Prompt for "${nodeName}":`, prompt);
 
-    const rawText = await runJsonCompletion({
-      system: SYSTEM_INSTRUCTION,
-      user: prompt,
-      timeoutMs: GEMINI_TIMEOUT_MS,
-      attempts: 4,
-      gemini: gemini
-        ? () =>
-            gemini.models.generateContent({
-              model: getGeminiModel(),
-              contents: prompt,
-              config: {
-                systemInstruction: SYSTEM_INSTRUCTION,
-                responseMimeType: "application/json",
-                responseSchema: {
-                  type: Type.OBJECT,
-                  properties: {
-                    sourceYear: {
-                      type: Type.INTEGER,
-                      description: "Year of the source node",
-                    },
-                    people: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          name: { type: Type.STRING },
-                          isAtomic: {
-                            type: Type.BOOLEAN,
-                            nullable: true,
-                            description: "True if atomic, false if composite",
-                          },
-                          wikipediaTitle: {
-                            type: Type.STRING,
-                            nullable: true,
-                            description:
-                              "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)",
-                          },
-                          role: {
-                            type: Type.STRING,
-                            nullable: true,
-                            description: "Role in the requested Source Node",
-                          },
-                          description: {
-                            type: Type.STRING,
-                            nullable: true,
-                            description: "Short 1-sentence bio",
-                          },
-                          evidenceSnippet: {
-                            type: Type.STRING,
-                            description:
-                              "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it",
-                          },
-                          evidencePageTitle: {
-                            type: Type.STRING,
-                            description:
-                              "Wikipedia page title where the snippet came from (usually the source)",
-                          },
-                        },
-                        required: [
-                          "name",
-                          "evidenceSnippet",
-                          "evidencePageTitle",
-                        ],
-                      },
-                    },
-                  },
-                  required: ["people"],
+    const makeApiCall = () => ai.models.generateContent({
+      model: getGeminiModel(),
+      contents: prompt,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            sourceYear: { type: Type.INTEGER, description: "Year of the source node" },
+            people: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  isAtomic: { type: Type.BOOLEAN, nullable: true, description: "True if atomic, false if composite" },
+                  wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
+                  role: { type: Type.STRING, nullable: true, description: "Role in the requested Source Node" },
+                  description: { type: Type.STRING, nullable: true, description: "Short 1-sentence bio" },
+                  evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
+                  evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
                 },
-              },
-            })
-        : undefined,
+                required: ["name", "evidenceSnippet", "evidencePageTitle"]
+              }
+            }
+          },
+          required: ["people"]
+        }
+      }
     });
-    // console.log(`🤖 [Gemini] Raw response for "${nodeName}":`, rawText);
-    const text = cleanJson(rawText);
-    if (!text) return { people: [] };
 
-    const parsed = JSON.parse(text) as GeminiResponse;
-    const list = Array.isArray(parsed.people) ? parsed.people : [];
-    // Force correct bipartite type regardless of LLM slip-ups
-    parsed.people = list.map((p) => ({
-      ...p,
-      isAtomic: true, // In fetchConnections, the source is COMPOSITE, so all results MUST be ATOMIC (true)
-    }));
+    const response = await withRetry(
+      () => withTimeout(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
+      4,
+      1000
+    );
+
+    const rawText = getResponseText(response);
+    // console.log(`🤖 [Gemini] Raw response for "${nodeName}":`, rawText);
+    const parsed = parseJsonFromModelText(rawText) as GeminiResponse | null;
+    if (!parsed || !Array.isArray(parsed.people)) return { people: [] };
+
+    // Force correct bipartite type regardless of LLM slip-ups; drop junk entity names
+    parsed.people = parsed.people
+      .filter(p => isValidEntityName(p.name))
+      .map(p => ({
+        ...p,
+        isAtomic: true // In fetchConnections, the source is COMPOSITE, so all results MUST be ATOMIC (true)
+      }));
 
     return parsed;
   } catch (error) {
@@ -695,99 +677,47 @@ export const fetchPersonWorks = async (
   wikipediaId?: string,
   atomicType?: string,
   compositeType?: string,
-  mentioningPageTitles?: string[],
+  mentioningPageTitles?: string[]
 ): Promise<PersonWorksResponse> => {
   if (shouldProxy()) {
-    const resp: any = await callAiProxy("/api/ai/works", {
-      nodeName,
-      excludeNodes,
-      wikiContext,
-      wikipediaId,
-      atomicType,
-      compositeType,
-      mentioningPageTitles,
-    });
-
-    // Compatibility: older/newer proxy servers (and some providers) return `{ entities: [...] }` instead of `{ works: [...] }`.
-    // Normalize here so the UI can use the data even if the cache server hasn't been updated.
-    if (resp && (!Array.isArray(resp.works) || resp.works.length === 0) && Array.isArray(resp.entities)) {
-      const entities = resp.entities as any[];
-      const works = entities
-        .map((e) => {
-          const wikiTitle =
-            typeof e?.wikipediaTitle === "string" ? e.wikipediaTitle.trim() : "";
-          const entity =
-            typeof e?.entity === "string" && e.entity.trim()
-              ? e.entity.trim()
-              : wikiTitle;
-          if (!entity) return null;
-          return {
-            entity,
-            wikipediaTitle: wikiTitle || undefined,
-            type:
-              typeof e?.type === "string" && e.type.trim()
-                ? e.type.trim()
-                : compositeType || "Event",
-            description: typeof e?.description === "string" ? e.description : "",
-            role: typeof e?.role === "string" ? e.role : "",
-            year:
-              e?.year === null || e?.year === undefined || isNaN(Number(e.year))
-                ? (undefined as any)
-                : Number(e.year),
-            isAtomic: false,
-            evidenceSnippet: typeof e?.evidenceSnippet === "string" ? e.evidenceSnippet : "",
-            evidencePageTitle:
-              typeof e?.evidencePageTitle === "string" ? e.evidencePageTitle : nodeName,
-          } as PersonWork;
-        })
-        .filter(Boolean) as PersonWork[];
-      return { ...resp, works };
-    }
-
-    return resp as PersonWorksResponse;
+    return callAiProxy("/api/ai/works", { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles });
   }
 
-  try {
-    const apiKey = await getLlmApiKey();
-    if (!apiKey) {
-      console.error("❌ [Gemini] fetchPersonWorks: No API key found");
-      return { works: [] };
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[Gemini] fetchPersonWorks: No API key — returning empty works");
     }
+    return { works: [] };
+  }
 
-    const useGemini = getLlmProvider() === "gemini";
-    const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
+  const ai = new GoogleGenAI({ apiKey });
 
-    const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
-    const wikiPrompt = wikiContext
-      ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
-      : "";
+  const wikiIdStr = wikipediaId ? ` (Wikipedia ID: ${wikipediaId})` : "";
+  const wikiPrompt = wikiContext
+    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${wikiContext}\n`
+    : "";
 
-    const atomicLabel = atomicType || "ATOMIC entity";
-    const compositeLabel = compositeType || "COMPOSITE entity";
+  const atomicLabel = atomicType || "ATOMIC entity";
+  const compositeLabel = compositeType || "COMPOSITE entity";
 
-    const mentionPrompt =
-      mentioningPageTitles && mentioningPageTitles.length > 0
-        ? `\nIMPORTANT: This person does not have a dedicated Wikipedia article, but they are explicitly mentioned in these Wikipedia articles: ${mentioningPageTitles.join(", ")}. Prioritize these as the primary ${compositeLabel} connections for this person.`
-        : "";
+  const mentionPrompt = mentioningPageTitles && mentioningPageTitles.length > 0
+    ? `\nIMPORTANT: This person does not have a dedicated Wikipedia article, but they are explicitly mentioned in these Wikipedia articles: ${mentioningPageTitles.join(', ')}. Prioritize these as the primary ${compositeLabel} connections for this person.`
+    : "";
 
-    const dateRequired =
-      (compositeType || "").match(
-        /^(Event|Paper|Work|Movie|Film|Book|Novel|Album|Song|Composition|Artwork|Painting|Sculpture)$/i,
-      ) ||
-      compositeLabel.toLowerCase().includes("event") ||
-      compositeLabel.toLowerCase().includes("work");
+  const dateRequired = (compositeType || "").match(/^(Event|Paper|Work|Movie|Film|Book|Novel|Album|Song|Composition|Artwork|Painting|Sculpture)$/i) ||
+    (compositeLabel.toLowerCase().includes('event') || compositeLabel.toLowerCase().includes('work'));
 
-    const dateRequirementPrompt = dateRequired
-      ? `\nDATE REQUIREMENT:
+  const dateRequirementPrompt = dateRequired
+    ? `\nDATE REQUIREMENT:
        - Every ${compositeLabel} MUST have a valid year (creation, publication, start date, or occurrence).
        - If you do not know the year, DO NOT include the entity.`
-      : "";
+    : "";
 
-    const contextPrompt =
-      excludeNodes.length > 0
-        ? `The user graph already contains these nodes connected to ${nodeName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}.
-       Return 12-15 NEW significant ${compositeLabel} entities.`
-        : `List 10-12 DISTINCT, significant ${compositeLabel} entities that this ${atomicLabel} "${nodeName}"${wikiIdStr} belongs to or is part of.
+  const contextPrompt = excludeNodes.length > 0
+    ? `The user graph already contains these nodes connected to ${nodeName}${wikiIdStr}: ${JSON.stringify(excludeNodes)}.
+       Return 6-8 NEW significant ${compositeLabel} entities.`
+    : `List 5-6 DISTINCT, significant ${compositeLabel} entities that this ${atomicLabel} "${nodeName}"${wikiIdStr} belongs to or is part of.
        
        CRITICAL: A ${compositeLabel} must be a named organization, team, project, work, recipe, disease, location, or specific historical event/incident.
        DO NOT return descriptive phrases, facts, or achievements.
@@ -828,6 +758,11 @@ export const fetchPersonWorks = async (
        - Set the returned item's "type" to "Album" (or "Composition" / "Symphony" / "Song" when clearly applicable).
        - QUOTA: For a musician, return AT LEAST 6-8 specific major albums or compositions.
 
+       SPECIAL CASE (classical performer/conductor): If "${nodeName}" is primarily a performer or conductor (not a composer), name every returned composition as "Composer: Work Title" — e.g., "Ravel: Pavane pour une infante défunte", "Beethoven: Symphony No. 9".
+       - DO NOT include the performer's name, orchestra name, label, or recording info in the composition title.
+       - DO NOT return YouTube channel names, concert series names, or recording platforms (e.g., "France Musique concerts1899", "DG Archive") as entities.
+       - This naming convention ensures the composer's name travels with the node and can be extracted when the node is later expanded.
+
        SPECIAL CASE (ingredient/food): If "${nodeName}" is an ingredient or food item, return 8-10 specific recipes that prominently feature this ingredient.
        - Set the returned item's "type" field to "Recipe".
        - Return well-known, named recipes (e.g., for "Beef": "Beef Wellington", "Beef Bourguignon", "Steak Tartare", "Korean Bulgogi", "Beef Stroganoff", "Pho", "Beef Rendang", "Chili con Carne").
@@ -852,7 +787,6 @@ export const fetchPersonWorks = async (
        - For a Person involved in a recent event: Return the named Event or Incident (e.g. "Killing of Renee Good", "2026 Minneapolis Protests").
        - For an Ingredient (e.g. "Chicken"): Return specific Recipes.
        - For an Actor: Return specific Movies.
-       - For a film director, producer, or screenwriter: Return their best-known directed (or written) films and major series; each entry MUST include a 4-digit release or first-air year in the "year" field whenever known.
        - For an Artist: Return specific major Artworks (e.g., "Mona Lisa", "The Last Supper") and optionally a few key Exhibitions/Movements.
        - For a Mathematician: Return specific named Papers (often coauthored).
         
@@ -862,157 +796,66 @@ export const fetchPersonWorks = async (
         - DO NOT return other ${atomicLabel} entities (other people, actors, or characters).
         - If "Bugs Bunny" has a rivalry with "Daffy Duck", DO NOT return "Daffy Duck". Instead, return the specific MOVIES or SERIES they appear in together.`;
 
+  try {
     const prompt = `${wikiPrompt}${mentionPrompt}${contextPrompt}
-      Ensure each entry is a different entity. ${dateRequired ? "Sort by year. STRICTLY avoid entities without a known year." : "Sort by year if applicable."}`;
+      Ensure each entry is a different entity. ${dateRequired ? 'Sort by year. STRICTLY avoid entities without a known year.' : 'Sort by year if applicable.'}`;
 
     // console.log(`🤖 [Gemini] fetchPersonWorks Prompt for "${nodeName}":`, prompt);
 
-    const rawText = await runJsonCompletion({
-      system: SYSTEM_INSTRUCTION,
-      user: prompt,
-      timeoutMs: GEMINI_TIMEOUT_MS,
-      attempts: 4,
-      gemini: gemini
-        ? () =>
-            gemini.models.generateContent({
-              model: getGeminiModel(),
-              contents: prompt,
-              config: {
-                systemInstruction: SYSTEM_INSTRUCTION,
-                responseMimeType: "application/json",
-                responseSchema: {
-                  type: Type.OBJECT,
-                  properties: {
-                    works: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          entity: { type: Type.STRING },
-                          isAtomic: {
-                            type: Type.BOOLEAN,
-                            nullable: true,
-                            description: "True if atomic, false if composite",
-                          },
-                          wikipediaTitle: {
-                            type: Type.STRING,
-                            nullable: true,
-                            description:
-                              "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)",
-                          },
-                          type: { type: Type.STRING },
-                          description: {
-                            type: Type.STRING,
-                            nullable: true,
-                            description: "Short 1-sentence description",
-                          },
-                          role: { type: Type.STRING, nullable: true },
-                          year: {
-                            type: Type.INTEGER,
-                            nullable: true,
-                            description:
-                              "4-digit year (YYYY), required for events/works",
-                          },
-                          evidenceSnippet: {
-                            type: Type.STRING,
-                            description:
-                              "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it",
-                          },
-                          evidencePageTitle: {
-                            type: Type.STRING,
-                            description:
-                              "Wikipedia page title where the snippet came from (usually the source)",
-                          },
-                        },
-                        required: [
-                          "entity",
-                          "type",
-                          "evidenceSnippet",
-                          "evidencePageTitle",
-                        ],
-                      },
-                    },
-                  },
-                  required: ["works"],
+    const makeApiCall = () => ai.models.generateContent({
+      model: getGeminiModel(),
+      contents: prompt,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            works: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  entity: { type: Type.STRING },
+                  isAtomic: { type: Type.BOOLEAN, nullable: true, description: "True if atomic, false if composite" },
+                  wikipediaTitle: { type: Type.STRING, nullable: true, description: "Canonical English Wikipedia article title for this entity (use disambiguation parentheses when needed)" },
+                  type: { type: Type.STRING },
+                  description: { type: Type.STRING, nullable: true, description: "Short 1-sentence description" },
+                  role: { type: Type.STRING, nullable: true },
+                  year: { type: Type.INTEGER, nullable: true, description: "4-digit year (YYYY), required for events/works" },
+                  evidenceSnippet: { type: Type.STRING, description: "1 sentence evidence; if VERIFIED INFORMATION is provided, prefer verbatim from it" },
+                  evidencePageTitle: { type: Type.STRING, description: "Wikipedia page title where the snippet came from (usually the source)" }
                 },
-              },
-            })
-        : undefined,
-    });
-    // console.log(`🤖 [Gemini] Raw response for "${nodeName}" (works):`, rawText);
-    const text = cleanJson(rawText);
-    if (!text) return { works: [] };
-    const parsed = JSON.parse(text) as PersonWorksResponse;
-    if (!Array.isArray(parsed.works)) parsed.works = [];
-
-    // Some providers (notably Anthropic in this app) sometimes return an `entities` array for this endpoint
-    // instead of `works`. Map it into the canonical `works` shape so the UI can actually render nodes.
-    if (parsed.works.length === 0 && Array.isArray((parsed as any).entities)) {
-      const entities = (parsed as any).entities as any[];
-      parsed.works = entities
-        .map((e) => {
-          const wikiTitle =
-            typeof e?.wikipediaTitle === "string" ? e.wikipediaTitle.trim() : "";
-          const entity =
-            typeof e?.entity === "string" && e.entity.trim()
-              ? e.entity.trim()
-              : wikiTitle;
-          if (!entity) return null;
-          return {
-            entity,
-            wikipediaTitle: wikiTitle || undefined,
-            type: typeof e?.type === "string" && e.type.trim() ? e.type.trim() : (compositeType || "Event"),
-            description:
-              typeof e?.description === "string" ? e.description : "",
-            role: typeof e?.role === "string" ? e.role : "",
-            year:
-              e?.year === null || e?.year === undefined || isNaN(Number(e.year))
-                ? (undefined as any)
-                : Number(e.year),
-            isAtomic: false,
-            evidenceSnippet:
-              typeof e?.evidenceSnippet === "string" ? e.evidenceSnippet : "",
-            evidencePageTitle:
-              typeof e?.evidencePageTitle === "string"
-                ? e.evidencePageTitle
-                : nodeName,
-          } as PersonWork;
-        })
-        .filter(Boolean) as PersonWork[];
-    }
-
-    const hasValidYear = (w: PersonWork) =>
-      w.year !== null && w.year !== undefined && !isNaN(Number(w.year));
-
-    // OpenAI-style models sometimes use "name" instead of "entity"; keep downstream filters working.
-    parsed.works = parsed.works.map((w: any) => {
-      const entity =
-        typeof w.entity === "string" && w.entity.trim()
-          ? w.entity.trim()
-          : typeof w.wikipediaTitle === "string" && w.wikipediaTitle.trim()
-            ? w.wikipediaTitle.trim()
-            : typeof w.name === "string" && w.name.trim()
-              ? w.name.trim()
-              : "";
-      return { ...w, entity };
-    });
-
-    // Force correct bipartite type regardless of LLM slip-ups
-    if (dateRequired) {
-      const withYear = parsed.works.filter(hasValidYear);
-      // Strict year filter avoids junk, but models often omit years — then everyone fails (e.g. "Martin Scorsese" → empty graph).
-      if (withYear.length > 0) {
-        parsed.works = withYear;
-      } else if (parsed.works.length > 0) {
-        console.warn(
-          `[fetchPersonWorks] "${nodeName}": no entries with valid year; keeping ${parsed.works.length} without year filter`,
-        );
+                required: ["entity", "type", "evidenceSnippet", "evidencePageTitle"]
+              }
+            }
+          },
+          required: ["works"]
+        }
       }
+    });
+
+    const response = await withRetry(
+      () => withTimeout(makeApiCall(), GEMINI_TIMEOUT_MS, "Gemini API request timed out"),
+      4,
+      1000
+    );
+
+    const rawText = getResponseText(response);
+    // console.log(`🤖 [Gemini] Raw response for "${nodeName}" (works):`, rawText);
+    const parsed = parseJsonFromModelText(rawText) as PersonWorksResponse | null;
+    if (!parsed || !Array.isArray(parsed.works)) return { works: [] };
+    // Force correct bipartite type regardless of LLM slip-ups; drop junk entity names
+    if (parsed.works) {
+      parsed.works = parsed.works.filter(w => isValidEntityName(w.entity));
+      if (dateRequired) {
+        parsed.works = parsed.works.filter(w => w.year !== null && w.year !== undefined && !isNaN(Number(w.year)));
+      }
+      parsed.works = parsed.works.map(w => ({
+        ...w,
+        isAtomic: false // In fetchPersonWorks, the source is ATOMIC, so all results MUST be COMPOSITE (false)
+      }));
     }
-    parsed.works = parsed.works.map((w) => ({
-      ...w,
-      isAtomic: false, // In fetchPersonWorks, the source is ATOMIC, so all results MUST be COMPOSITE (false)
-    }));
     return parsed;
   } catch (error) {
     console.error("Gemini API Error (Person Works):", error);
@@ -1020,31 +863,26 @@ export const fetchPersonWorks = async (
   }
 };
 
-export const fetchConnectionPath = async (
-  start: string,
-  end: string,
-  context?: { startWiki?: string; endWiki?: string },
-): Promise<PathResponse> => {
+export const fetchConnectionPath = async (start: string, end: string, context?: { startWiki?: string; endWiki?: string }): Promise<PathResponse> => {
   if (shouldProxy()) {
     return callAiProxy("/api/ai/path", { start, end, context });
   }
 
-  try {
-    const apiKey = await getLlmApiKey();
-    if (!apiKey) {
-      console.error("❌ [Gemini] fetchConnectionPath: No API key found");
-      return { path: [], found: false };
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[Gemini] fetchConnectionPath: No API key — returning empty path");
     }
+    return { path: [], found: false };
+  }
 
-    const useGemini = getLlmProvider() === "gemini";
-    const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
+  const ai = new GoogleGenAI({ apiKey });
 
-    const wikiPrompt =
-      context?.startWiki || context?.endWiki
-        ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${context?.startWiki ? `[${start}]: ${context.startWiki}\n` : ""}${context?.endWiki ? `[${end}]: ${context.endWiki}\n` : ""}`
-        : "";
+  const wikiPrompt = (context?.startWiki || context?.endWiki)
+    ? `\n\nUSE THIS VERIFIED INFORMATION FOR ACCURACY:\n${context?.startWiki ? `[${start}]: ${context.startWiki}\n` : ''}${context?.endWiki ? `[${end}]: ${context.endWiki}\n` : ''}`
+    : "";
 
-    const prompt = `Find a connection path between "${start}" and "${end}".
+  const prompt = `Find a connection path between "${start}" and "${end}".
     ${wikiPrompt}
     
     Your goal is to find the most direct and historically significant connection path.
@@ -1096,61 +934,44 @@ export const fetchConnectionPath = async (
       ]
     }`;
 
-    const text = await runJsonCompletion({
-      system: SYSTEM_INSTRUCTION,
-      user: prompt,
-      timeoutMs: 45000,
-      attempts: 4,
-      gemini: gemini
-        ? () =>
-            gemini.models.generateContent({
-              model: getGeminiModel(),
-              contents: prompt,
-              config: {
-                systemInstruction: SYSTEM_INSTRUCTION,
-                responseMimeType: "application/json",
-                responseSchema: {
-                  type: Type.OBJECT,
-                  properties: {
-                    path: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          id: { type: Type.STRING },
-                          type: { type: Type.STRING },
-                          description: { type: Type.STRING },
-                          justification: {
-                            type: Type.STRING,
-                            description:
-                              "Relationship to the PREVIOUS node in the chain",
-                          },
-                          year: {
-                            type: Type.INTEGER,
-                            nullable: true,
-                            description:
-                              "Year of occurrence/creation (Required for Events)",
-                          },
-                        },
-                        required: [
-                          "id",
-                          "type",
-                          "description",
-                          "justification",
-                        ],
-                      },
-                    },
-                  },
-                  required: ["path"],
+  try {
+    const response = await withTimeout(ai.models.generateContent({
+      model: getGeminiModel(),
+      contents: prompt,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            path: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  type: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  justification: { type: Type.STRING, description: "Relationship to the PREVIOUS node in the chain" },
+                  year: { type: Type.INTEGER, nullable: true, description: "Year of occurrence/creation (Required for Events)" }
                 },
-              },
-            })
-        : undefined,
-    });
-    const json = JSON.parse(cleanJson(text));
+                required: ["id", "type", "description", "justification"]
+              }
+            }
+          },
+          required: ["path"]
+        }
+      }
+    }), 45000, "Pathfinding timed out");
+
+    const text = getResponseText(response);
+    const json = parseJsonFromModelText(text) as { path?: PathResponse["path"] } | null;
+    if (!json || !Array.isArray(json.path)) {
+      return { path: [], found: false };
+    }
 
     // Ensure the path starts with the start node and ends with the end node
-    if (json.path && json.path.length > 0) {
+    if (json.path.length > 0) {
       const first = json.path[0].id.toLowerCase();
       const last = json.path[json.path.length - 1].id.toLowerCase();
       const startLow = start.toLowerCase();
@@ -1162,8 +983,7 @@ export const fetchConnectionPath = async (
           id: start,
           type: "Start",
           description: context?.startWiki?.substring(0, 100) || "Start node",
-          justification: "Start of path",
-          year: null,
+          justification: "Start of path"
         });
       }
       if (!last.includes(endLow) && !endLow.includes(last)) {
@@ -1171,33 +991,28 @@ export const fetchConnectionPath = async (
           id: end,
           type: "End",
           description: context?.endWiki?.substring(0, 100) || "End node",
-          justification: "Destination",
-          year: null,
+          justification: "Destination"
         });
       }
     }
 
-    return json as PathResponse;
+    return { path: json.path, found: json.path.length > 0 };
   } catch (error) {
     console.error("Gemini Pathfinding Error:", error);
     return { path: [], found: false };
   }
 };
 
-export const findWikipediaTitle = async (
-  name: string,
-  description?: string,
-): Promise<{ title: string; imageHint?: string } | null> => {
+export const findWikipediaTitle = async (name: string, description?: string): Promise<{ title: string; imageHint?: string } | null> => {
   if (shouldProxy()) {
     return callAiProxy("/api/ai/title", { name, description });
   }
 
-  const apiKey = await getLlmApiKey();
+  const apiKey = await getApiKey();
   if (!apiKey) return null;
-  const useGemini = getLlmProvider() === "gemini";
-  const gemini = useGemini ? new GoogleGenAI({ apiKey }) : null;
+  const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `Find the exact English Wikipedia article title for "${name}"${description ? ` described as "${description}"` : ""}.
+  const prompt = `Find the exact English Wikipedia article title for "${name}"${description ? ` described as "${description}"` : ''}.
     Also, if you know a specific Wikimedia Commons filename for a good portrait of this person/thing, include it.
     
     Return JSON:
@@ -1207,33 +1022,28 @@ export const findWikipediaTitle = async (
     }`;
 
   try {
-    const text = await runJsonCompletion({
-      user: prompt,
-      timeoutMs: 10000,
-      attempts: 2,
-      gemini: gemini
-        ? () =>
-            gemini.models.generateContent({
-              model: getGeminiModel(),
-              contents: prompt,
-              config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                  type: Type.OBJECT,
-                  properties: {
-                    title: { type: Type.STRING },
-                    imageHint: { type: Type.STRING, nullable: true },
-                  },
-                  required: ["title"],
-                },
-              },
-            })
-        : undefined,
-    });
-    const json = JSON.parse(cleanJson(text));
+    const response = await withTimeout(ai.models.generateContent({
+      model: getGeminiModel(),
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            imageHint: { type: Type.STRING, nullable: true }
+          },
+          required: ["title"]
+        }
+      }
+    }), 10000, "Title lookup timed out");
+
+    const text = getResponseText(response);
+    const json = parseJsonFromModelText(text) as { title?: string; imageHint?: string } | null;
+    if (!json || typeof json.title !== "string" || !json.title.trim()) return null;
     return {
       title: json.title,
-      imageHint: json.imageHint,
+      imageHint: json.imageHint
     };
   } catch (e) {
     // console.warn("AI title lookup failed", e);
@@ -1243,17 +1053,12 @@ export const findWikipediaTitle = async (
 
 // Optional: grounded lookup for org leadership using Google Search tool.
 // NOTE: This cannot use responseSchema/responseMimeType; we parse JSON from text.
-export const fetchOrgKeyPeopleBlockViaSearch = async (
-  orgName: string,
-): Promise<string | null> => {
+export const fetchOrgKeyPeopleBlockViaSearch = async (orgName: string): Promise<string | null> => {
   if (shouldProxy()) {
     return callAiProxy("/api/ai/search-org", { orgName });
   }
 
-  // Google Search grounding is Gemini-only in this codebase.
-  if (getLlmProvider() !== "gemini") return null;
-
-  const apiKey = await getLlmApiKey();
+  const apiKey = await getApiKey();
   if (!apiKey) return null;
 
   const name = String(orgName || "").trim();
@@ -1284,21 +1089,19 @@ Rules:
             model: getGeminiModel(),
             contents: prompt,
             config: {
-              systemInstruction:
-                "You are a careful research assistant. Use Google Search for grounding and do not invent facts.",
-              tools: [{ googleSearch: {} }],
-            },
+              systemInstruction: "You are a careful research assistant. Use Google Search for grounding and do not invent facts.",
+              tools: [{ googleSearch: {} }]
+            }
           }),
           20000,
-          "Org key-people search timed out",
+          "Org key-people search timed out"
         ),
       4,
-      1000,
+      1000
     );
 
-    const text = cleanJson(getResponseText(response));
-    if (!text) return null;
-    const json = JSON.parse(text) as any;
+    const json = parseJsonFromModelText(getResponseText(response)) as { founders?: unknown; keyPeople?: unknown } | null;
+    if (!json || typeof json !== "object" || Array.isArray(json)) return null;
     const founders = Array.isArray(json?.founders) ? json.founders : [];
     const keyPeople = Array.isArray(json?.keyPeople) ? json.keyPeople : [];
 
@@ -1309,7 +1112,7 @@ Rules:
         name: String(x.name).trim(),
         evidence: x?.evidence ? String(x.evidence).trim() : "",
         sourceTitle: x?.sourceTitle ? String(x.sourceTitle).trim() : "",
-        sourceUrl: x?.sourceUrl ? String(x.sourceUrl).trim() : "",
+        sourceUrl: x?.sourceUrl ? String(x.sourceUrl).trim() : ""
       }))
       .filter((x: any) => x.name);
 
@@ -1321,7 +1124,7 @@ Rules:
         role: x?.role ? String(x.role).trim() : "",
         evidence: x?.evidence ? String(x.evidence).trim() : "",
         sourceTitle: x?.sourceTitle ? String(x.sourceTitle).trim() : "",
-        sourceUrl: x?.sourceUrl ? String(x.sourceUrl).trim() : "",
+        sourceUrl: x?.sourceUrl ? String(x.sourceUrl).trim() : ""
       }))
       .filter((x: any) => x.name);
 
@@ -1329,28 +1132,24 @@ Rules:
 
     const lines: string[] = [];
     if (f.length) {
-      lines.push(`Founders: ${f.map((x) => x.name).join(", ")}`);
+      lines.push(`Founders: ${f.map((x: { name: string }) => x.name).join(", ")}`);
     }
     if (kp.length) {
       lines.push(
         `Key People: ${kp
-          .map((x) => (x.role ? `${x.name} (${x.role})` : x.name))
-          .join(", ")}`,
+          .map((x: { name: string; role: string }) => (x.role ? `${x.name} (${x.role})` : x.name))
+          .join(", ")}`
       );
     }
     const sources = [...f, ...kp]
-      .map((x) =>
-        x.sourceUrl ? `${x.sourceTitle || "Source"} — ${x.sourceUrl}` : "",
-      )
+      .map((x: { sourceUrl?: string; sourceTitle?: string }) => (x.sourceUrl ? `${x.sourceTitle || "Source"} — ${x.sourceUrl}` : ""))
       .filter(Boolean);
     const uniqueSources = Array.from(new Set(sources)).slice(0, 8);
 
     return [
       `GOOGLE_SEARCH_GROUNDED (for "${name}")`,
-      ...lines.map((l) => `- ${l}`),
-      ...(uniqueSources.length
-        ? ["Sources:", ...uniqueSources.map((s) => `- ${s}`)]
-        : []),
+      ...lines.map(l => `- ${l}`),
+      ...(uniqueSources.length ? ["Sources:", ...uniqueSources.map(s => `- ${s}`)] : [])
     ].join("\n");
   } catch (e) {
     // console.warn("Org key-people search failed:", name, e);

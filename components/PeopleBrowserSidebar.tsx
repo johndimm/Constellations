@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, X, Filter, ChevronRight } from 'lucide-react';
 
@@ -36,6 +37,10 @@ interface PeopleBrowserSidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectPerson: (personName: string) => void;
+  /** With `useAbsoluteLayout`, use `top-14` in the constellations `main`; with `fixed`, use viewport top. */
+  offsetTopClass?: string;
+  /** When true, position inside the graph `main` (embedded hosts); avoids broken `fixed` in iframes/clipped roots. */
+  useAbsoluteLayout?: boolean;
 }
 
 const sumPageViews = (pageviews: Record<string, number> | undefined) => {
@@ -49,7 +54,7 @@ const sumPageViews = (pageviews: Record<string, number> | undefined) => {
 const cleanCategoryLabel = (category: string) =>
   category.replace(/^Category:/i, '').replace(/_/g, ' ');
 
-const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onClose, onSelectPerson }) => {
+const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onClose, onSelectPerson, offsetTopClass = "top-16", useAbsoluteLayout = false }) => {
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -456,15 +461,19 @@ const PeopleBrowserSidebar: React.FC<PeopleBrowserSidebarProps> = ({ isOpen, onC
 
   if (!isOpen) return null;
 
-  // Position at the same location as regular sidebar, but with higher z-index when open
-  const panelClasses = `fixed top-16 right-3 sm:right-4 z-[60] transition-transform duration-300 ease-in-out ${isCollapsed ? 'translate-x-[calc(100%+2rem)]' : 'translate-x-0'}`;
+  const pos = useAbsoluteLayout ? "absolute bottom-0" : "fixed";
+  const panelClasses = `${pos} right-3 sm:right-4 z-[60] transition-transform duration-300 ease-in-out ${isCollapsed ? "translate-x-[calc(100%+2rem)]" : "translate-x-0"} ${offsetTopClass}`;
   const panelStyle = isMobile
-    ? { width: 'calc(100% - 1.5rem)', maxWidth: '28rem' }
-    : { width: '28rem' };
+    ? { width: "calc(100% - 1.5rem)", maxWidth: "28rem" }
+    : { width: "28rem" };
 
   return (
     <div className={panelClasses} style={panelStyle}>
-      <div className="bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex flex-col max-h-[calc(100vh-2rem)]">
+      <div
+        className={`bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700 shadow-2xl relative pointer-events-auto flex flex-col ${
+          useAbsoluteLayout ? "max-h-[calc(100%-1.5rem)]" : "max-h-[calc(100vh-2rem)]"
+        }`}
+      >
         {/* Header */}
         <div className="p-4 border-b border-slate-700 flex-shrink-0">
           <div className="flex items-center justify-between mb-3">

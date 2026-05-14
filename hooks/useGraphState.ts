@@ -1,19 +1,32 @@
+"use client";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GraphNode, GraphLink } from '../types';
 import { LockedPair, findWikipediaTitle } from '../services/geminiService';
-import { fetchServerImage } from '../services/imageService';
+import { fetchServerImage, getImageApiBaseUrl } from '../services/imageService';
 import { dedupeGraph } from '../services/graphUtils';
 import { GraphHandle } from '../components/Graph';
+import type { ConstellationsSessionHandoffV1 } from '../sessionHandoff';
+import { graphFromHandoff } from '../sessionHandoff';
 
 interface UseGraphStateOptions {
     cacheEnabled: boolean;
     cacheBaseUrl: string;
+    /** Restored session from player embed → full screen (no re-query). */
+    initialSession?: ConstellationsSessionHandoffV1 | null;
+    /**
+     * - `undefined` — measure the browser viewport (default standalone layout).
+     * - `null` — embedded: container not mounted yet; use a placeholder size until the ref attaches.
+     * - `HTMLElement` — embedded: size the graph to this element (ResizeObserver).
+     */
+    boundElement?: HTMLElement | null;
 }
 
 export function useGraphState(options: UseGraphStateOptions) {
-    const { cacheEnabled, cacheBaseUrl } = options;
+    const { cacheEnabled, cacheBaseUrl, boundElement, initialSession: initialSessionOpt } = options;
+    const initialSession = initialSessionOpt && initialSessionOpt.graph?.nodes?.length ? initialSessionOpt : null;
+    const initialGraph = initialSession ? graphFromHandoff(initialSession) : { nodes: [] as GraphNode[], links: [] as GraphLink[] };
 
-    const [graphData, setGraphData] = useState<{ nodes: GraphNode[], links: GraphLink[] }>({ nodes: [], links: [] });
+    const [graphData, setGraphData] = useState<{ nodes: GraphNode[], links: GraphLink[] }>(initialGraph);
     const { nodes, links } = graphData;
     const graphDataRef = useRef(graphData);
 
@@ -25,20 +38,22 @@ export function useGraphState(options: UseGraphStateOptions) {
     const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
     const [selectedLink, setSelectedLink] = useState<GraphLink | null>(null);
 
-    const [isCompact, setIsCompact] = useState(false);
-    const [isTimelineMode, setIsTimelineMode] = useState(false);
-    const [isTextOnly, setIsTextOnly] = useState(false);
-    const [searchMode, setSearchMode] = useState<'explore' | 'connect'>('explore');
+    const [isCompact, setIsCompact] = useState(!!initialSession?.isCompact);
+    const [isTimelineMode, setIsTimelineMode] = useState(!!initialSession?.isTimelineMode);
+    const [isTextOnly, setIsTextOnly] = useState(!!initialSession?.isTextOnly);
+    const [searchMode, setSearchMode] = useState<'explore' | 'connect'>(initialSession?.searchMode ?? 'explore');
     const [error, setError] = useState<string | null>(null);
     const [isKeyReady, setIsKeyReady] = useState(false);
-    const [searchId, setSearchId] = useState(0);
-    const searchIdRef = useRef(0);
+    const [searchId, setSearchId] = useState(initialSession?.searchId ?? 0);
+    const searchIdRef = useRef(initialSession?.searchId ?? 0);
 
     useEffect(() => {
         searchIdRef.current = searchId;
     }, [searchId]);
 
-    const [lockedPair, setLockedPair] = useState<LockedPair>({ atomicType: "Person", compositeType: "Event" });
+    const [lockedPair, setLockedPair] = useState<LockedPair>(
+        initialSession?.lockedPair ?? { atomicType: "Person", compositeType: "Event" }
+    );
     const lockedPairRef = useRef<LockedPair>(lockedPair);
     useEffect(() => { lockedPairRef.current = lockedPair; }, [lockedPair]);
 
@@ -55,7 +70,7 @@ export function useGraphState(options: UseGraphStateOptions) {
     const autoExpandMoreDoneRef = useRef<Set<string | number>>(new Set());
 
     const [deletePreview, setDeletePreview] = useState<{ keepIds: (number | string)[], dropIds: (number | string)[] } | null>(null);
-    const [pathNodeIds, setPathNodeIds] = useState<(number | string)[]>([]);
+    const [pathNodeIds, setPathNodeIds] = useState<(number | string)[]>(initialSession?.pathNodeIds ?? []);
     const [newlyExpandedNodeIds, setNewlyExpandedNodeIds] = useState<(number | string)[]>([]);
     const [expandingNodeId, setExpandingNodeId] = useState<number | string | null>(null);
     const [newChildNodeIds, setNewChildNodeIds] = useState<Set<number | string>>(new Set());
@@ -77,12 +92,44 @@ export function useGraphState(options: UseGraphStateOptions) {
     const [peopleBrowserOpen, setPeopleBrowserOpen] = useState(false);
     const [savedGraphs, setSavedGraphs] = useState<string[]>([]);
 
-    const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
+    const [dimensions, setDimensions] = useState(() => {
+        if (boundElement === undefined) {
+            if (typeof window === "undefined") return { width: 800, height: 600 };
+            return { width: window.innerWidth, height: window.innerHeight };
+        }
+        if (boundElement) {
+            const r = boundElement.getBoundingClientRect();
+            return { width: Math.max(1, r.width), height: Math.max(1, r.height) };
+        }
+        return { width: 800, height: 600 };
+    });
     useEffect(() => {
-        const handleResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
+        if (boundElement === undefined) {
+            const handleResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
+            handleResize();
+            window.addEventListener('resize', handleResize);
+            return () => window.removeEventListener('resize', handleResize);
+        }
+        if (boundElement === null) {
+            return;
+        }
+        const el = boundElement;
+        const ro = new ResizeObserver((entries) => {
+            for (const e of entries) {
+                const w = e.contentRect.width;
+                const h = e.contentRect.height;
+                if (w > 0 && h > 0) {
+                    setDimensions({ width: w, height: h });
+                }
+            }
+        });
+        ro.observe(el);
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+            setDimensions({ width: r.width, height: r.height });
+        }
+        return () => ro.disconnect();
+    }, [boundElement]);
 
     const graphRef = useRef<GraphHandle>(null);
 
@@ -155,7 +202,7 @@ export function useGraphState(options: UseGraphStateOptions) {
             nodes: prev.nodes.map(n => String(n.id) === String(nodeId) ? { ...n, fetchingImage: true, imageChecked: true } : n)
         }));
 
-        const imageBaseUrl = cacheEnabled ? cacheBaseUrl : window.location.origin;
+        const imageBaseUrl = getImageApiBaseUrl(cacheBaseUrl);
         const effectiveContext = context || current?.type || fallbackNode?.type;
         const imageResult = await fetchServerImage(title, effectiveContext, imageBaseUrl);
         if ((imageReqTokenRef.current.get(String(nodeId)) || 0) !== nextToken) return;
@@ -218,7 +265,7 @@ export function useGraphState(options: UseGraphStateOptions) {
                 } catch { }
 
                 if (imageHint) {
-                    const imageBaseUrl = cacheEnabled ? cacheBaseUrl : window.location.origin;
+                    const imageBaseUrl = getImageApiBaseUrl(cacheBaseUrl);
                     const imageResult = await fetchServerImage(imageHint, node.type, imageBaseUrl);
                     if (imageResult.url) {
                         setGraphData(prev => ({
@@ -255,7 +302,7 @@ export function useGraphState(options: UseGraphStateOptions) {
                 return;
             }
 
-            const imageBaseUrl = cacheEnabled ? cacheBaseUrl : window.location.origin;
+            const imageBaseUrl = getImageApiBaseUrl(cacheBaseUrl);
             const serverResult = await fetchServerImage(node.title, node.type, imageBaseUrl);
             if (serverResult.url) {
                 setGraphData(prev => ({
@@ -317,9 +364,15 @@ export function useGraphState(options: UseGraphStateOptions) {
                         // Endpoint returns array of { name, updated_at }
                         const serverGraphs = data.map((g: any) => g.name);
                         setSavedGraphs(serverGraphs.sort());
+                    } else {
+                        const body = await res.text();
+                        console.warn(
+                            `[constellations] GET /graphs failed: ${res.status}. Check cache server logs (e.g. DB connection / saved_graphs).`,
+                            body.slice(0, 500)
+                        );
                     }
                 } catch (e) {
-                    // console.warn("Failed to fetch saved graphs from server", e);
+                    console.warn("Failed to fetch saved graphs from server", e);
                 }
             }
         };

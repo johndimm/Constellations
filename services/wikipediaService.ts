@@ -1,4 +1,6 @@
-import { fetchWithTimeout } from "./aiUtils";
+"use client";
+
+import { jsonFromResponse } from "./aiUtils";
 
 type WikiImageCacheEntry = { url: string | null; pageId?: number; pageTitle?: string; misses?: number };
 
@@ -59,7 +61,8 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       try {
         const url = `${api}?action=query&format=json&prop=imageinfo&titles=${encodeURIComponent(fileTitle)}&iiprop=url&iiurlwidth=500&origin=*`;
         const res = await fetch(url, { signal });
-        const data = await res.json();
+        const data = (await jsonFromResponse(res)) as { query?: { pages?: Record<string, unknown> } } | null;
+        if (!data) continue;
         const pages = data.query?.pages;
         if (pages) {
           const page = Object.values(pages)[0] as any;
@@ -78,7 +81,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     try {
       const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${qid}&origin=*`;
       const wdRes = await fetch(wdUrl, { signal });
-      const wdData = await wdRes.json();
+      const wdData = (await jsonFromResponse(wdRes)) as { entities?: Record<string, { claims?: any }> } | null;
       const claims = wdData?.entities?.[qid]?.claims;
       const p18 = claims?.P18?.[0]?.mainsnak?.datavalue?.value as string | undefined;
       if (!p18) return null;
@@ -95,8 +98,8 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     try {
       const ppUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
       const ppRes = await fetch(ppUrl, { signal });
-      const ppData = await ppRes.json();
-      const pages = ppData?.query?.pages;
+      const ppData = await jsonFromResponse(ppRes);
+      const pages = (ppData as { query?: { pages?: unknown } } | null)?.query?.pages;
       const page = pages ? (Object.values(pages)[0] as any) : null;
       const qid = page?.pageprops?.wikibase_item;
       if (!qid || !/^Q\d+$/.test(qid)) return null;
@@ -112,7 +115,8 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       // 1. Get page info, thumbnail, and all images in one go
       const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages|pageprops|images&titles=${encodeURIComponent(title)}&pithumbsize=500&imlimit=50&redirects=1&origin=*`;
       const res = await fetch(url, { signal });
-      const data = await res.json();
+      const data = (await jsonFromResponse(res)) as { query?: { pages?: Record<string, unknown> } } | null;
+      if (!data) return { url: null };
 
       const pages = data.query?.pages;
       if (!pages) return { url: null };
@@ -146,7 +150,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       if (candidates.length === 0) return { url: null };
 
       const normalized = query.trim().toLowerCase();
-      const queryWords = normalized.split(/\s+/).filter(w => w.length > 1);
+      const queryWords = normalized.split(/\s+/).filter((w: string) => w.length > 1);
       const isPerson = context?.toLowerCase() === 'person';
 
       const scoredCandidates = candidates.map(c => {
@@ -198,7 +202,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         if (t.includes('.png')) s -= isPerson ? 20 : 50;
 
         // Prefer solo filenames
-        const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
+        const wordCount = t.split(/[^a-z]/).filter((w: string) => w.length > 2).length;
         s -= (wordCount * 15); // Stronger penalty for long, descriptive filenames
 
         return { ...c, score: s };
@@ -245,7 +249,8 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`;
       const res = await fetch(url, { signal });
       if (res.ok) {
-        const data = await res.json();
+        const data = (await jsonFromResponse(res)) as { items?: { volumeInfo?: { imageLinks?: { thumbnail?: string } } }[] } | null;
+        if (!data) return null;
         const img = data.items?.[0]?.volumeInfo?.imageLinks?.thumbnail;
         return img ? img.replace('http://', 'https://') : null;
       }
@@ -279,10 +284,10 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     // console.log(`🔍 [ImageSearch] Attempt 1 (Media-Aware): "${searchQuery}"`);
     const initialSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;
     const initialSearchRes = await fetch(initialSearchUrl, { signal: controller.signal });
-    const initialSearchData = await initialSearchRes.json();
+    const initialSearchData = (await jsonFromResponse(initialSearchRes)) as { query?: { search?: { title: string; snippet?: string }[] } } | null;
 
     let bestTitle = query;
-    if (initialSearchData.query?.search?.length) {
+    if (initialSearchData?.query?.search?.length) {
       const results = initialSearchData.query.search;
       const normalized = baseTitle.toLowerCase();
       const avoidMedia = false; // For images, we generally allow media if it's the right title
@@ -305,7 +310,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
 
         // 2. Context matching
         if (context) {
-          const words = context.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+          const words = context.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2);
           words.forEach(word => {
             if (title.includes(word)) s += 100;
             if (snippet.includes(word)) s += 50;
@@ -322,7 +327,9 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
         return s;
       };
 
-      const scored = results.map((r: any) => ({ r, score: scoreResult(r) })).sort((a, b) => b.score - a.score);
+      const scored = results
+        .map((r: any) => ({ r, score: scoreResult(r) }))
+        .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
       bestTitle = scored[0]?.r?.title || query;
       // console.log(`✅ [ImageSearch] Chosen result "${bestTitle}" with score ${scored[0]?.score ?? 'n/a'}`);
     }
@@ -336,9 +343,9 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       // console.log(`🔍 [ImageSearch] Attempt 2 (Commons for Person): "${baseTitle}"`);
       const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(baseTitle)}&srnamespace=6&srlimit=10&origin=*`;
       const commonsRes = await fetch(commonsUrl, { signal: controller.signal });
-      const commonsData = await commonsRes.json();
-      if (commonsData.query?.search?.length) {
-        const baseWords = baseTitle.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+      const commonsData = (await jsonFromResponse(commonsRes)) as { query?: { search?: any[] } } | null;
+      if (commonsData?.query?.search?.length) {
+        const baseWords = baseTitle.toLowerCase().split(/\s+/).filter((w: string) => w.length > 1);
         const scoredResults = commonsData.query.search.map((res: any) => {
           const t = res.title.toLowerCase();
           if (excludePatterns.some(p => t.includes(p))) return { res, score: -1000 };
@@ -356,7 +363,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
           if (t.includes('.png')) s -= 20; // Reduced penalty for Person
           if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
 
-          const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
+          const wordCount = t.split(/[^a-z]/).filter((w: string) => w.length > 2).length;
           s -= (wordCount * 15);
 
           return { res, score: s };
@@ -386,9 +393,9 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
       // console.log(`🔍 [ImageSearch] Attempt 4 (Commons): "${baseTitle}"`);
       const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(baseTitle)}&srnamespace=6&srlimit=10&origin=*`;
       const commonsRes = await fetch(commonsUrl, { signal: controller.signal });
-      const commonsData = await commonsRes.json();
-      if (commonsData.query?.search?.length) {
-        const baseWords = baseTitle.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+      const commonsData = (await jsonFromResponse(commonsRes)) as { query?: { search?: any[] } } | null;
+      if (commonsData?.query?.search?.length) {
+        const baseWords = baseTitle.toLowerCase().split(/\s+/).filter((w: string) => w.length > 1);
         const scoredResults = commonsData.query.search.map((res: any) => {
           const t = res.title.toLowerCase();
           if (excludePatterns.some(p => t.includes(p))) return { res, score: -1000 };
@@ -408,7 +415,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
           if (t.includes('.png')) s -= 50;
           if (t.includes('.svg') || t.includes('.webm') || t.includes('.gif')) s -= 300;
 
-          const wordCount = t.split(/[^a-z]/).filter(w => w.length > 2).length;
+          const wordCount = t.split(/[^a-z]/).filter((w: string) => w.length > 2).length;
           s -= (wordCount * 15);
 
           return { res, score: s };
@@ -426,8 +433,8 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
     // console.log(`🔍 [ImageSearch] Attempt 5 (Search): "${baseTitle}"`);
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(baseTitle)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl, { signal: controller.signal });
-    const searchData = await searchRes.json();
-    if (searchData.query?.search?.length) {
+    const searchData = (await jsonFromResponse(searchRes)) as { query?: { search?: { title: string }[] } } | null;
+    if (searchData?.query?.search?.length) {
       for (const result of searchData.query.search) {
         const img = await fetchPageImage(result.title, controller.signal);
         if (img.url) return img;
@@ -498,7 +505,8 @@ export const fetchWikipediaSummary = async (
       try {
         const directUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToFetch)}&redirects=1&origin=*`;
         const directRes = await fetch(directUrl);
-        const directData = await directRes.json();
+        const directData = (await jsonFromResponse(directRes)) as { query?: { pages?: unknown; redirects?: unknown } } | null;
+        if (!directData) return null;
         const directPages = directData.query?.pages;
 
         if (directPages) {
@@ -541,7 +549,7 @@ export const fetchWikipediaSummary = async (
     // for disambiguation (e.g., "Republic (book)" vs "Republic").
     const cleanQuery = query.trim();
     const normalized = cleanQuery.toLowerCase();
-    const queryNameParts = normalized.split(/[\s-]+/).filter(w => w.length > 2);
+    const queryNameParts = normalized.split(/[\s-]+/).filter((w: string) => w.length > 2);
     const looksLikePersonName = queryNameParts.length >= 2 && !/\d/.test(cleanQuery);
     const queryLastName = looksLikePersonName ? queryNameParts[queryNameParts.length - 1].toLowerCase() : null;
 
@@ -564,7 +572,7 @@ export const fetchWikipediaSummary = async (
     const directExact = await tryDirectLookup(cleanQuery);
     if (directExact?.extract) {
       if (queryLastName) {
-        const titleParts = String(directExact.title || "").toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
+        const titleParts = String(directExact.title || "").toLowerCase().split(/[\s-]+/).filter((w: string) => w.length > 2);
         // If it's a redirect, we are MUCH more lenient. Napoleon Bonaparte -> Napoleon is a classic case.
         if (!titleParts.includes(queryLastName) && !directExact.redirected) {
           // console.log(`⚠️ [Wiki] Ignoring direct match "${directExact.title}" for "${cleanQuery}" (missing last-name match and no redirect).`);
@@ -639,10 +647,10 @@ export const fetchWikipediaSummary = async (
     const avoidMedia = /\b(project|program|programme|operation|war|battle|campaign|treaty|scandal|scientist)\b/i.test(baseQuery);
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl);
-    const searchData = await searchRes.json();
+    const searchData = (await jsonFromResponse(searchRes)) as { query?: { search?: any[] } } | null;
 
     let bestTitle = query;
-    if (searchData.query?.search?.length) {
+    if (searchData?.query?.search?.length) {
       const results = searchData.query.search;
       const scoreResult = (r: any, index: number) => {
         const title = r.title.toLowerCase();
@@ -697,7 +705,7 @@ export const fetchWikipediaSummary = async (
 
         // 2. Context matching
         if (context) {
-          const words = context.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+          const words = context.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2);
           words.forEach(word => {
             if (title.includes(word)) s += 100;
             if (snippet.includes(word)) s += 50;
@@ -754,7 +762,7 @@ export const fetchWikipediaSummary = async (
       bestTitle = scored[0]?.r?.title || query;
 
 
-      const titleNameParts = bestTitle.toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
+      const titleNameParts = bestTitle.toLowerCase().split(/[\s-]+/).filter((w: string) => w.length > 2);
       // Require at least one full word match, not just a substring overlap
       const hasFullWordMatch = queryNameParts.some(q => titleNameParts.includes(q));
       const hasOverlap = queryNameParts.some(q => titleNameParts.some(t => t.includes(q) || q.includes(t)));
@@ -764,7 +772,7 @@ export const fetchWikipediaSummary = async (
 
       for (const titleToTry of candidates) {
         if (queryNameParts.length > 0) {
-          const candidateParts = titleToTry.toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
+          const candidateParts = titleToTry.toLowerCase().split(/[\s-]+/).filter((w: string) => w.length > 2);
 
           // STRICT PERSON MATCHING:
           // If we are looking for a person (query has 2+ name parts),
@@ -789,7 +797,8 @@ export const fetchWikipediaSummary = async (
         }
         const summaryUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToTry)}&redirects=1&origin=*`;
         const summaryRes = await fetch(summaryUrl);
-        const summaryData = await summaryRes.json();
+        const summaryData = (await jsonFromResponse(summaryRes)) as { query?: { pages?: unknown } } | null;
+        if (!summaryData) continue;
         const pages = summaryData.query?.pages;
 
         if (pages) {
@@ -831,14 +840,14 @@ export const fetchWikipediaSummary = async (
             }
 
             if (queryNameParts.length >= 2) {
-              const pageParts = String(page.title || "").toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
+              const pageParts = String(page.title || "").toLowerCase().split(/[\s-]+/).filter((w: string) => w.length > 2);
               const allMatch = queryNameParts.every(q => pageParts.includes(q));
               if (!allMatch) {
                 // console.log(`⚠️ [Wiki] Skipping resolved title "${page.title}" for "${cleanQuery}" (not all name parts match).`);
                 continue;
               }
             } else if (queryLastName) {
-              const pageParts = String(page.title || "").toLowerCase().split(/[\s-]+/).filter(w => w.length > 2);
+              const pageParts = String(page.title || "").toLowerCase().split(/[\s-]+/).filter((w: string) => w.length > 2);
               if (!pageParts.includes(queryLastName)) {
                 // console.log(`⚠️ [Wiki] Skipping resolved title "${page.title}" for "${cleanQuery}" (missing last-name match).`);
                 continue;
@@ -936,9 +945,9 @@ export const fetchWikipediaExtract = async (
     // when exchars is set (returns fewer chars than the article actually contains). We fetch
     // the full extract and truncate client-side instead.
     const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&explaintext&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
-    // Hard cap: a hung Wikipedia response must not strand graph expansion spinners indefinitely.
-    const res = await fetchWithTimeout(url, {}, 25_000);
-    const data = await res.json();
+    const res = await fetch(url);
+    const data = (await jsonFromResponse(res)) as { query?: { pages?: unknown } } | null;
+    if (!data) return { extract: null, pageid: null, title: null };
     const pages = data.query?.pages;
     if (!pages) return { extract: null, pageid: null, title: null };
     const page = Object.values(pages)[0] as any;
@@ -988,8 +997,8 @@ export const fetchWikidataCastForTitle = async (title: string, limit: number = 1
     try {
       const pagepropsUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
       const ppRes = await fetch(pagepropsUrl, { signal });
-      const ppData = await ppRes.json();
-      const pages = ppData?.query?.pages;
+      const ppData = await jsonFromResponse(ppRes);
+      const pages = (ppData as { query?: { pages?: unknown } } | null)?.query?.pages;
       if (pages) {
         const page = Object.values(pages)[0] as any;
         const candidate = page?.pageprops?.wikibase_item;
@@ -1008,8 +1017,8 @@ export const fetchWikidataCastForTitle = async (title: string, limit: number = 1
 
     const entityUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${encodeURIComponent(wikidataId)}&origin=*`;
     const entRes = await fetch(entityUrl, { signal });
-    const entData = await entRes.json();
-    const claims = entData?.entities?.[wikidataId]?.claims;
+    const entData = await jsonFromResponse(entRes);
+    const claims = (entData as { entities?: Record<string, { claims?: unknown }> } | null)?.entities?.[wikidataId]?.claims;
     if (!claims) return [];
 
     const castIds = extractWikidataItemIds(claims, "P161");
@@ -1036,7 +1045,8 @@ const fetchWikidataLabels = async (ids: string[], signal: AbortSignal): Promise<
     try {
       const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=labels&languages=en&ids=${encodeURIComponent(chunk.join("|"))}&origin=*`;
       const res = await fetch(url, { signal });
-      const data = await res.json();
+      const data = (await jsonFromResponse(res)) as { entities?: Record<string, { labels?: { en?: { value?: string } } }> } | null;
+      if (!data) continue;
       const entities = data?.entities || {};
       for (const [id, ent] of Object.entries<any>(entities)) {
         const label = ent?.labels?.en?.value;
@@ -1053,7 +1063,7 @@ const resolveWikidataIdBySearch = async (label: string, signal: AbortSignal): Pr
   try {
     const url = `https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&limit=8&search=${encodeURIComponent(label)}&origin=*`;
     const res = await fetch(url, { signal });
-    const data = await res.json();
+    const data = (await jsonFromResponse(res)) as { search?: any[] } | null;
     const results: any[] = data?.search || [];
     if (!results.length) return null;
 
@@ -1095,8 +1105,8 @@ export const fetchWikidataKeyPeopleForTitle = async (title: string): Promise<Wik
     try {
       const pagepropsUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
       const ppRes = await fetch(pagepropsUrl, { signal });
-      const ppData = await ppRes.json();
-      const pages = ppData?.query?.pages;
+      const ppData = await jsonFromResponse(ppRes);
+      const pages = (ppData as { query?: { pages?: unknown } } | null)?.query?.pages;
       if (pages) {
         const page = Object.values(pages)[0] as any;
         const resolvedTitle = String(page?.title || "");
@@ -1127,7 +1137,7 @@ export const fetchWikidataKeyPeopleForTitle = async (title: string): Promise<Wik
     // 2) Pull key-people claims.
     const entityUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${encodeURIComponent(wikidataId)}&origin=*`;
     const entRes = await fetch(entityUrl, { signal });
-    const entData = await entRes.json();
+    const entData = (await jsonFromResponse(entRes)) as { entities?: Record<string, { claims?: unknown }> } | null;
     const entity = entData?.entities?.[wikidataId];
     const claims = entity?.claims;
     if (!claims) {

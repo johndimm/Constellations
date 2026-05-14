@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, ChevronLeft, ChevronRight, X, Filter } from 'lucide-react';
 
@@ -123,6 +124,8 @@ const BrowsePeople: React.FC<BrowsePeopleProps> = ({ baseUrl = '', onSelect, exp
     'Dutch', 'Swedish', 'Norwegian', 'Danish', 'Finnish', 'Greek', 'Turkish', 'Egyptian', 'Nigerian',
     'South African', 'New Zealander', 'Israeli', 'Saudi Arabian', 'Korean', 'Thai', 'Vietnamese', 'Indonesian'
   ];
+
+  const isPureBrowse = useCallback(() => !searchTerm.trim() && !occupation && !nationality, [searchTerm, occupation, nationality]);
 
   const buildSearchQuery = useCallback(() => {
     const parts: string[] = [];

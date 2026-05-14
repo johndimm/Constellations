@@ -1,3 +1,4 @@
+"use client";
 import React from 'react';
 import { HelpCircle, X, Link as LinkIcon } from 'lucide-react';
 

@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { buildWikiUrl } from './utils/wikiUtils';
 import { Key, Search, HelpCircle, Minimize2, Maximize2, ExternalLink } from 'lucide-react';
@@ -10,7 +11,7 @@ import AppNotifications from './components/AppNotifications';
 import AppConfirmDialog from './components/AppConfirmDialog';
 import HelpOverlay from './components/HelpOverlay';
 import { GraphNode, GraphLink } from './types';
-import { getApiKey, getEnvCacheUrl } from './services/aiUtils';
+import { getApiKey, getEnvCacheUrl, readBundledEnv } from './services/aiUtils';
 import { useNodeClickHandler } from './hooks/useNodeClickHandler';
 
 import { useGraphState } from './hooks/useGraphState';
@@ -18,19 +19,59 @@ import { useKioskMode } from './hooks/useKioskMode';
 import { useExpansion } from './hooks/useExpansion';
 import { useSearchHandlers } from './hooks/useSearchHandlers';
 import { useGraphActions } from './hooks/useGraphActions';
+import { buildHandoffFromLiveState, type ConstellationsSessionHandoffV1 } from './sessionHandoff';
 
 const PeopleBrowserSidebar = lazy(() => import('./components/PeopleBrowserSidebar'));
 
 
 type AppProps = {
     mode?: 'standalone' | 'extension';
+    /** When true, fill the parent box and size the graph with ResizeObserver instead of the viewport. */
+    embedded?: boolean;
     hideHeader?: boolean;
     hideControlPanel?: boolean;
+    /**
+     * When `hideControlPanel` is true, the Chrome extension still shows `ExtensionControls`.
+     * Set to `false` for host-embedded “graph only” (e.g. Soundings player) — no left rail, no micro toolbar.
+     */
+    showExtensionWhenPanelHidden?: boolean;
     hideSidebar?: boolean;
-    externalSearch?: { term: string; id: number } | null;
-    onExternalSearchConsumed?: (id: number) => void;
+    externalSearch?: { term: string; id: string | number } | null;
+    onExternalSearchConsumed?: (id: string | number) => void;
     onNodeNavigate?: (node: GraphNode) => void;
     renderEvidencePopup?: (selectedLink: GraphLink | null, onClose: () => void) => React.ReactNode;
+    /** When these strings match a node title (substring, case-insensitive), that node is expanded once per search. */
+    autoExpandMatchTitles?: string[] | null;
+    /**
+     * When set (Soundings player / constellations page), the first match from `autoExpandMatchTitles`
+     * also **selects** the node, and we wait for `nowPlayingKey` to change before re-applying.
+     * String should change when album/track from the player updates.
+     */
+    nowPlayingKey?: string | null;
+    /** e.g. optional cleanup (e.g. document class) when leaving full-screen; use with `closeHref` for navigation. */
+    onClose?: () => void;
+    /** If set, close control is an `<a href>` (see `AppHeader`); e.g. `/` (Trailer Vision) or `/player` (Soundings). */
+    closeHref?: string;
+    /** Soundings: create a new DJ channel seeded from the right-clicked graph node. */
+    onNewChannelFromNode?: (node: GraphNode) => void;
+    /**
+     * Restored graph from player embed (session handoff) — avoids re-running searches.
+     * Only used on full-screen mount; not for embedded mode.
+     */
+    initialSession?: ConstellationsSessionHandoffV1 | null;
+    /**
+     * When embedded in an app that already shows a top nav (e.g. Trailer Vision ~44px), set to that
+     * height in px so fixed toolbars sit below the host nav and clicks reach the right layer.
+     */
+    hostNavOffsetPx?: number;
+    /**
+     * When `embedded`, panels default to `position:absolute` in the constellations root. Set
+     * `true` for full-viewport overlay hosts (e.g. Soundings) so the control rail and details use
+     * viewport-anchored layout + classic max-heights; keeps blur/shadows aligned to the window edge.
+     */
+    useViewportForPanels?: boolean;
+    /** When set, ControlPanel shows a link to the graph settings page. */
+    settingsHref?: string;
 };
 
 const ExtensionControls: React.FC<{
@@ -124,26 +165,57 @@ const ExtensionControls: React.FC<{
     };
 
 const App: React.FC<AppProps> = ({
+    embedded = false,
     hideHeader = false,
     hideControlPanel = false,
+    showExtensionWhenPanelHidden = true,
     hideSidebar = false,
     externalSearch = null,
     onExternalSearchConsumed,
     onNodeNavigate,
-    renderEvidencePopup
+    renderEvidencePopup,
+    autoExpandMatchTitles = null,
+    nowPlayingKey = null,
+    onClose,
+    closeHref,
+    onNewChannelFromNode,
+    initialSession: initialSessionProp = null,
+    hostNavOffsetPx = 0,
+    useViewportForPanels = false,
+    settingsHref,
 }) => {
-    const ENABLE_WEB_SEARCH = String((import.meta as any)?.env?.VITE_ENABLE_WEB_SEARCH || '').trim().toLowerCase() === 'true' || (import.meta as any)?.env?.VITE_ENABLE_WEB_SEARCH === '1';
-    const ENABLE_ACADEMIC_CORPORA = (import.meta as any)?.env?.VITE_ENABLE_ACADEMIC_CORPORA !== 'false' && (import.meta as any)?.env?.VITE_ENABLE_ACADEMIC_CORPORA !== '0';
+    const initialSession = initialSessionProp && initialSessionProp.graph?.nodes?.length
+        ? initialSessionProp
+        : null;
+    const skipPlayerBootstrapRef = useRef(!!initialSession);
+    const wsRaw = readBundledEnv('VITE_ENABLE_WEB_SEARCH');
+    const ENABLE_WEB_SEARCH = String(wsRaw).trim().toLowerCase() === 'true' || wsRaw === '1';
+    const acadRaw = readBundledEnv('VITE_ENABLE_ACADEMIC_CORPORA');
+    const ENABLE_ACADEMIC_CORPORA = acadRaw !== 'false' && acadRaw !== '0';
 
     const cacheBaseUrl = getEnvCacheUrl();
     const cacheEnabled = !!cacheBaseUrl;
+
+    const [graphHostEl, setGraphHostEl] = useState<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (embedded) return;
+        const root = document.documentElement;
+        root.classList.add("constellations-standalone");
+        return () => root.classList.remove("constellations-standalone");
+    }, [embedded]);
 
     const {
         isAdminMode, kioskDomains, setKioskDomains, selectedKioskDomainId, setSelectedKioskDomainId,
         selectedKioskDomain, kioskSeedTerms
     } = useKioskMode();
 
-    const state = useGraphState({ cacheEnabled, cacheBaseUrl });
+    const state = useGraphState({
+        cacheEnabled,
+        cacheBaseUrl,
+        boundElement: embedded ? graphHostEl : undefined,
+        initialSession
+    });
     const {
         graphData, setGraphData, nodes, links, graphDataRef,
         isProcessing, setIsProcessing, selectedNode, setSelectedNode,
@@ -158,7 +230,7 @@ const App: React.FC<AppProps> = ({
         contextMenu, setContextMenu, panelCollapsed, setPanelCollapsed,
         sidebarCollapsed, setSidebarCollapsed, sidebarToggleSignal, setSidebarToggleSignal,
         peopleBrowserOpen, setPeopleBrowserOpen, savedGraphs, setSavedGraphs,
-        searchMode, setSearchMode, loadNodeImage, handleFindBetterImage, saveCacheNodeMeta
+        searchMode, setSearchMode, lockedPair, loadNodeImage, handleFindBetterImage, saveCacheNodeMeta
     } = state;
 
     const { fetchAndExpandNode, saveCacheExpansion } = useExpansion({
@@ -167,8 +239,7 @@ const App: React.FC<AppProps> = ({
         cacheEnabled, cacheBaseUrl, ENABLE_ACADEMIC_CORPORA, ENABLE_WEB_SEARCH,
         loadNodeImage, saveCacheNodeMeta,
         setNewlyExpandedNodeIds, setExpandingNodeId, setNewChildNodeIds,
-        setSelectedNode, setSelectedLink, exploreTerm: '', isTextOnly, graphRef,
-        setNotification,
+        setSelectedNode, setSelectedLink, exploreTerm: '', isTextOnly, graphRef
     });
 
     const [showHelp, setShowHelp] = useState(false);
@@ -180,7 +251,8 @@ const App: React.FC<AppProps> = ({
         graphDataRef, setGraphData, setIsProcessing, setError, setSearchId, searchIdRef,
         setLockedPair: state.setLockedPair, dimensions, cacheEnabled, cacheBaseUrl, loadNodeImage, fetchAndExpandNode,
         setNotification, setSelectedNode, setSelectedLink, setPathNodeIds, setPendingAutoExpandId: () => { },
-        showControlPanel: !hideControlPanel, selectedKioskDomain, graphRef
+        showControlPanel: !hideControlPanel, selectedKioskDomain, graphRef,
+        initialSession
     });
 
     const {
@@ -201,8 +273,6 @@ const App: React.FC<AppProps> = ({
         graphData,
         setExpandingNodeId,
         setNewChildNodeIds,
-        /** DevTools: see why a click opened the menu vs expanded (Vite terminal will not show this). */
-        onDebug: (message) => console.info("[Constellations]", message),
         onNavigate: onNodeNavigate ? (node) => {
             onNodeNavigate(node);
         } : undefined,
@@ -218,6 +288,13 @@ const App: React.FC<AppProps> = ({
         },
         getMenuPosition: (node, event) => ({ x: event?.clientX ?? 0, y: event?.clientY ?? 0 })
     });
+
+    const handleNodeContextMenu = useCallback((event: MouseEvent, node: GraphNode) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setSelectedNode(node);
+        setContextMenu({ node, x: event.clientX, y: event.clientY });
+    }, [setSelectedNode, setContextMenu]);
 
     useEffect(() => {
         const checkKey = async () => {
@@ -236,11 +313,83 @@ const App: React.FC<AppProps> = ({
         checkKey();
     }, [setIsKeyReady]);
 
+    const handleStartSearchRef = useRef(handleStartSearch);
     useEffect(() => {
+        handleStartSearchRef.current = handleStartSearch;
+    }, [handleStartSearch]);
+    const onExternalSearchConsumedRef = useRef(onExternalSearchConsumed);
+    useEffect(() => {
+        onExternalSearchConsumedRef.current = onExternalSearchConsumed;
+    }, [onExternalSearchConsumed]);
+
+    useEffect(() => {
+        if (skipPlayerBootstrapRef.current) return;
         if (!externalSearch?.term) return;
-        handleStartSearch(externalSearch.term);
-        if (externalSearch?.id !== undefined) onExternalSearchConsumed?.(externalSearch.id);
-    }, [externalSearch?.id, handleStartSearch, onExternalSearchConsumed]);
+        handleStartSearchRef.current(externalSearch.term);
+        if (externalSearch?.id !== undefined) {
+            onExternalSearchConsumedRef.current?.(externalSearch.id);
+        }
+    }, [externalSearch?.id, externalSearch?.term]);
+
+    const autoExpandDoneRef = useRef<Set<string>>(new Set());
+    const pendingNpFocusRef = useRef(false);
+
+    useEffect(() => {
+        if (nowPlayingKey != null && nowPlayingKey !== "") {
+            pendingNpFocusRef.current = true;
+        } else {
+            pendingNpFocusRef.current = false;
+        }
+    }, [nowPlayingKey]);
+
+    useEffect(() => {
+        if (!autoExpandMatchTitles?.length) return;
+        if (!nodes.length || isProcessing) return;
+        const syncFromPlayer = nowPlayingKey != null && nowPlayingKey !== "";
+        if (syncFromPlayer && !pendingNpFocusRef.current) return;
+
+        const searchSig = `${searchId}`;
+        for (const raw of autoExpandMatchTitles) {
+            const want = raw.trim();
+            if (!want) continue;
+            const expandOnceKey = `${searchSig}::${want.toLowerCase()}`;
+            if (autoExpandDoneRef.current.has(expandOnceKey) && !syncFromPlayer) continue;
+
+            const wl = want.toLowerCase();
+            const found = nodes.find((n) => {
+                if (n.isLoading) return false;
+                const nt = (n.title || '').toLowerCase();
+                if (syncFromPlayer) {
+                    return nt === wl || nt.includes(wl) || wl.includes(nt);
+                }
+                if (n.expanded) return false;
+                return nt === wl || nt.includes(wl) || wl.includes(nt);
+            });
+            if (!found) continue;
+
+            if (syncFromPlayer) {
+                setSelectedNode(found);
+                setSelectedLink(null);
+                setContextMenu(null);
+                pendingNpFocusRef.current = false;
+            }
+            if (!autoExpandDoneRef.current.has(expandOnceKey) && !found.expanded) {
+                autoExpandDoneRef.current.add(expandOnceKey);
+                void fetchAndExpandNode(found, false, false);
+            }
+            break;
+        }
+    }, [
+        nodes,
+        isProcessing,
+        searchId,
+        autoExpandMatchTitles,
+        nowPlayingKey,
+        fetchAndExpandNode,
+        setSelectedNode,
+        setSelectedLink,
+        setContextMenu
+    ]);
 
     useEffect(() => {
         const handlePopState = () => {
@@ -251,10 +400,79 @@ const App: React.FC<AppProps> = ({
         return () => window.removeEventListener('popstate', handlePopState);
     }, [setPeopleBrowserOpen]);
 
+    const handoffSelectionRestored = useRef(false);
+    useEffect(() => {
+        if (!initialSession?.selectedNodeId || handoffSelectionRestored.current) return;
+        const id = initialSession.selectedNodeId;
+        const n = nodes.find((x) => String(x.id) === String(id));
+        if (n) {
+            setSelectedNode(n);
+            handoffSelectionRestored.current = true;
+        }
+    }, [initialSession, nodes, setSelectedNode]);
+
+    useEffect(() => {
+        if (!initialSession) return;
+        if (!nodes.length) return;
+        skipPlayerBootstrapRef.current = false;
+    }, [initialSession, nodes.length]);
+
+    useEffect(() => {
+        if (!embedded) {
+            return undefined;
+        }
+        (window as any).__soundingsConstellationsGetHandoff = () => {
+            try {
+                return buildHandoffFromLiveState({
+                    graph: graphDataRef.current,
+                    exploreTerm,
+                    pathStart,
+                    pathEnd,
+                    searchMode,
+                    isCompact,
+                    isTimelineMode,
+                    isTextOnly,
+                    searchId,
+                    lockedPair,
+                    pathNodeIds,
+                    selectedNodeId: selectedNode?.id
+                });
+            } catch {
+                return null;
+            }
+        };
+        return () => {
+            try { delete (window as any).__soundingsConstellationsGetHandoff; } catch { /* empty */ }
+        };
+    }, [
+        embedded,
+        graphData,
+        exploreTerm,
+        pathStart,
+        pathEnd,
+        searchMode,
+        isCompact,
+        isTimelineMode,
+        isTextOnly,
+        searchId,
+        lockedPair,
+        pathNodeIds,
+        selectedNode
+    ]);
+
+    const handlePathSearchRef = useRef(handlePathSearch);
+    useEffect(() => {
+        handlePathSearchRef.current = handlePathSearch;
+    }, [handlePathSearch]);
+
     // Auto-start search if ?q= parameter is present in URL
     const urlQueryProcessedRef = useRef(false);
     useEffect(() => {
         if (urlQueryProcessedRef.current) return;
+        if (skipPlayerBootstrapRef.current) {
+            urlQueryProcessedRef.current = true;
+            return;
+        }
 
         const params = new URLSearchParams(window.location.search);
         const queryParam = params.get('q');
@@ -263,15 +481,15 @@ const App: React.FC<AppProps> = ({
 
         if (queryParam && isKeyReady && nodes.length === 0) {
             urlQueryProcessedRef.current = true;
-            handleStartSearch(queryParam);
+            handleStartSearchRef.current(queryParam);
         } else if (startParam && endParam && isKeyReady && nodes.length === 0) {
             urlQueryProcessedRef.current = true;
             setSearchMode('connect');
             setPathStart(startParam);
             setPathEnd(endParam);
-            handlePathSearch(startParam, endParam);
+            handlePathSearchRef.current(startParam, endParam);
         }
-    }, [isKeyReady, nodes.length, handleStartSearch, handlePathSearch, setSearchMode, setPathStart, setPathEnd]);
+    }, [isKeyReady, nodes.length, setSearchMode, setPathStart, setPathEnd]);
 
     const applyGraphData = useCallback((data: any, sourceLabel: string) => {
         try {
@@ -311,7 +529,7 @@ const App: React.FC<AppProps> = ({
 
     if (!isKeyReady) {
         return (
-            <div className="flex flex-col items-center justify-center w-screen h-screen bg-slate-900 text-white space-y-6">
+            <div className={`flex flex-col items-center justify-center bg-slate-900 text-white space-y-6 ${embedded ? "h-full w-full" : "h-screen w-screen"}`}>
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">Constellations</h1>
                 <button onClick={async () => { if ((window as any).aistudio) { await (window as any).aistudio.openSelectKey(); setIsKeyReady(true); } }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-medium transition-all hover:scale-105">
                     <Key size={20} className="inline mr-2" /> Select API Key
@@ -320,9 +538,70 @@ const App: React.FC<AppProps> = ({
         );
     }
 
+    // Fresh graph row for the open context menu (stale `node` would miss isLoading/expanded updates).
+    const contextMenuNodeLive: GraphNode | null = contextMenu
+        ? (nodes.find((n) => String(n.id) === String(contextMenu.node.id)) ?? contextMenu.node)
+        : null;
+
+    // Match `pt-14` on the main column: avoid sizing the graph to full window height, which
+    // makes the SVG overflow under the bar and steal clicks. AppHeader is `absolute` inside this
+    // root (not `fixed` to the viewport) so the whole UI shares one stacking context with the graph.
+    const HEADER_PX = 56;
+    const graphWidth = dimensions.width;
+    const graphHeight = hideHeader
+        ? dimensions.height
+        : Math.max(200, dimensions.height - HEADER_PX);
+
+    /**
+     * In-flow (absolute) panels: positioned relative to `main` — the host’s nav (e.g. Trailer h-11)
+     * is *outside* the constellations root, so `top-14` (below the in-root header) is enough.
+     * When `hideHeader`, there is no in-app bar — use `top-2` and pin the control rail with
+     * `constrainToParentHeight` (see `ControlPanel`) so we do not reserve a fake 56px gap.
+     *
+     * `position: fixed` panels (Sidebar, people browser) use *viewport* coordinates. When embedded
+     * with an in-app header, we used `top-[6.25rem]` for host nav + const bar; with `hideHeader`
+     * embeds, align to the content box with `top-2` like the control bar.
+     */
+    const inHostSizedBox = embedded;
+    const headerOffsetClass = inHostSizedBox
+        ? "top-0"
+        : (hostNavOffsetPx > 0 ? "top-11" : "top-0");
+    /** No in-app `AppHeader`: `top-2` for both embedded and full-viewport (e.g. Soundings / Trailer) */
+    const inFlowPanelTopClass = inHostSizedBox
+        ? (hideHeader ? "top-2" : "top-14")
+        : (hostNavOffsetPx > 0 ? "top-[6.25rem]" : (hideHeader ? "top-2" : "top-14"));
+    /** Embedded + host bar (e.g. Soundings /player) uses `hostNavOffsetPx`; full-page overlay with only
+     *  Constellations header uses `top-14` / `top-16` like non-embedded. */
+    const viewportFixedTopClass = inHostSizedBox
+        ? (hideHeader ? "top-2" : (hostNavOffsetPx > 0 ? "top-[6.25rem]" : "top-14"))
+        : (hostNavOffsetPx > 0 ? "top-[6.25rem]" : (hideHeader ? "top-2" : "top-14"));
+    const peopleBrowserFixedTopClass = inHostSizedBox
+        ? (hideHeader ? "top-2" : (hostNavOffsetPx > 0 ? "top-28" : "top-16"))
+        : (hostNavOffsetPx > 0 ? "top-[6.25rem]" : (hideHeader ? "top-2" : "top-16"));
+    /** In-layout absolute rails (Tight embed under host chrome). Full-viewport overlay uses `fixed` + max-h. */
+    const useViewportPanels = Boolean(embedded && useViewportForPanels);
+    const controlPanelOffsetClass = hideHeader
+        ? "top-2 bottom-2"
+        : inFlowPanelTopClass;
+    const controlPanelConstrainToParent = hideHeader && !hideControlPanel && !useViewportPanels;
+    const sidebarOffsetClass = useViewportPanels
+        ? viewportFixedTopClass
+        : (embedded ? inFlowPanelTopClass : viewportFixedTopClass);
+    const peopleBrowserOffsetClass = useViewportPanels
+        ? peopleBrowserFixedTopClass
+        : (embedded ? inFlowPanelTopClass : peopleBrowserFixedTopClass);
+    const sidePanelUseAbsolute = embedded && !useViewportPanels;
+    const showExtensionControls =
+        hideControlPanel && showExtensionWhenPanelHidden;
+
     return (
-        <div className="w-screen h-screen bg-slate-950 overflow-hidden font-sans text-slate-200 selection:bg-indigo-500/30">
-            {hideControlPanel && (
+        <div
+            ref={embedded ? (n) => setGraphHostEl(n) : undefined}
+            className={`${
+                embedded ? "relative w-full h-full" : "relative h-screen w-screen"
+            } bg-slate-950 overflow-hidden font-sans text-slate-200 selection:bg-indigo-500/30`}
+        >
+            {showExtensionControls && (
                 <ExtensionControls
                     isTimelineMode={isTimelineMode}
                     onToggle={setIsTimelineMode}
@@ -338,41 +617,38 @@ const App: React.FC<AppProps> = ({
             <HelpOverlay
                 isOpen={showHelp}
                 onClose={() => setShowHelp(false)}
-                isExtension={hideControlPanel}
+                isExtension={showExtensionControls}
                 onOpenPeopleBrowser={handleOpenPeopleBrowser}
             />
-            <AppHeader
-                showHeader={!hideHeader}
-                panelCollapsed={panelCollapsed}
-                setPanelCollapsed={setPanelCollapsed}
-                showBrowse={peopleBrowserOpen}
-                handleOpenPeopleBrowser={handleOpenPeopleBrowser}
-                selectedNode={selectedNode}
-                sidebarCollapsed={sidebarCollapsed}
-                setSidebarCollapsed={setSidebarCollapsed}
-                setSidebarToggleSignal={setSidebarToggleSignal}
-                onReset={handleClear}
-            />
 
-            <div className={`relative w-full h-full transition-all duration-500 ease-in-out ${!hideHeader ? 'pt-14' : ''}`}>
-                <Graph
-                    ref={graphRef}
-                    nodes={nodes}
-                    links={links}
-                    onNodeClick={onNodeClick}
-                    onLinkClick={(link) => { setSelectedLink(link); setSelectedNode(null); setContextMenu(null); }}
-                    width={dimensions.width}
-                    height={dimensions.height}
-                    isCompact={isCompact}
-                    isTimelineMode={isTimelineMode}
-                    isTextOnly={isTextOnly}
-                    searchId={searchId}
-                    selectedNode={selectedNode}
-                    highlightKeepIds={deletePreview ? deletePreview.keepIds : pathNodeIds}
-                    highlightDropIds={deletePreview ? deletePreview.dropIds : []}
-                    expandingNodeId={expandingNodeId}
-                    newChildNodeIds={newChildNodeIds}
-                />
+            <div
+                className={`relative z-0 w-full min-h-0 h-full transition-all duration-500 ease-in-out ${!hideHeader ? "pt-14" : ""}`}
+            >
+                <div className="pointer-events-auto relative z-0 min-h-0 w-full overflow-hidden" style={{ height: graphHeight, maxHeight: "100%" }}>
+                    <Graph
+                        ref={graphRef}
+                        nodes={nodes}
+                        links={links}
+                        onNodeClick={onNodeClick}
+                        onNodeContextMenu={handleNodeContextMenu}
+                        onLinkClick={(link) => {
+                            setSelectedLink(link);
+                            setSelectedNode(null);
+                            setContextMenu(null);
+                        }}
+                        width={graphWidth}
+                        height={graphHeight}
+                        isCompact={isCompact}
+                        isTimelineMode={isTimelineMode}
+                        isTextOnly={isTextOnly}
+                        searchId={searchId}
+                        selectedNode={selectedNode}
+                        highlightKeepIds={deletePreview ? deletePreview.keepIds : pathNodeIds}
+                        highlightDropIds={deletePreview ? deletePreview.dropIds : []}
+                        expandingNodeId={expandingNodeId}
+                        newChildNodeIds={newChildNodeIds}
+                    />
+                </div>
 
 
                 {!hideControlPanel && (
@@ -393,11 +669,6 @@ const App: React.FC<AppProps> = ({
                         selectedKioskDomainId={selectedKioskDomainId}
                         onSelectKioskDomain={(id) => { setSelectedKioskDomainId(id); setPathStart(''); setPathEnd(''); }}
                         onUpdateKioskDomains={setKioskDomains}
-                        onClear={handleClear}
-                        onClearCache={cacheEnabled ? handleClearCache : undefined}
-                        onToggleHelp={() => setShowHelp(!showHelp)}
-                        showHelp={showHelp}
-                        onExpandAllLeafNodes={handleExpandAllLeafNodes}
                         isProcessing={isProcessing}
                         isCompact={isCompact}
                         onToggleCompact={() => setIsCompact(!isCompact)}
@@ -405,18 +676,13 @@ const App: React.FC<AppProps> = ({
                         onToggleTimeline={() => setIsTimelineMode(!isTimelineMode)}
                         isTextOnly={isTextOnly}
                         onToggleTextOnly={() => setIsTextOnly(!isTextOnly)}
-                        onPrune={handlePrune}
-                        error={error}
-                        onSave={handleSaveGraph}
-                        onLoad={(name) => handleLoadGraph(name, applyGraphData)}
-                        onDeleteGraph={handleDeleteGraph}
-                        onImport={(e) => handleImport(e, applyGraphData)}
-                        savedGraphs={savedGraphs}
-                        helpHover={helpHover}
-                        onHelpHoverChange={setHelpHover}
                         isCollapsed={panelCollapsed}
+                        settingsHref={settingsHref}
                         onSetCollapsed={setPanelCollapsed}
                         onOpenPeopleBrowser={handleOpenPeopleBrowser}
+                        offsetTopClass={controlPanelOffsetClass}
+                        constrainToParentHeight={controlPanelConstrainToParent}
+                        pinToViewport={useViewportPanels}
                     />
                 )}
 
@@ -428,6 +694,8 @@ const App: React.FC<AppProps> = ({
                         onCollapseChange={setSidebarCollapsed}
                         externalToggleSignal={sidebarToggleSignal}
                         isAdminMode={isAdminMode}
+                        useAbsoluteLayout={sidePanelUseAbsolute}
+                        offsetTopClass={sidebarOffsetClass}
                     />
                 )}
 
@@ -436,6 +704,8 @@ const App: React.FC<AppProps> = ({
                 <Suspense fallback={null}>
                     <PeopleBrowserSidebar
                         isOpen={peopleBrowserOpen}
+                        useAbsoluteLayout={sidePanelUseAbsolute}
+                        offsetTopClass={peopleBrowserOffsetClass}
                         onClose={() => setPeopleBrowserOpen(false)}
                         onSelectPerson={(name) => {
                             setExploreTerm(name);
@@ -449,14 +719,15 @@ const App: React.FC<AppProps> = ({
                     />
                 </Suspense>
 
-                {contextMenu && (
+                {contextMenu && contextMenuNodeLive && (
                     <NodeContextMenu
-                        node={contextMenu.node}
+                        node={contextMenuNodeLive}
                         x={contextMenu.x}
                         y={contextMenu.y}
                         onExpandLeaves={handleExpandLeaves}
                         onAddMore={handleExpandMore}
                         onFindBetterPhoto={handleFindBetterImage}
+                        onNewChannelFromNode={onNewChannelFromNode}
                         onDelete={handleSmartDelete}
                         onClose={() => setContextMenu(null)}
                         isProcessing={isProcessing}
@@ -473,6 +744,17 @@ const App: React.FC<AppProps> = ({
                 />
             </div>
 
+            <AppHeader
+                showHeader={!hideHeader}
+                panelCollapsed={panelCollapsed}
+                setPanelCollapsed={setPanelCollapsed}
+                selectedNode={selectedNode}
+                sidebarCollapsed={sidebarCollapsed}
+                setSidebarToggleSignal={setSidebarToggleSignal}
+                onClose={onClose}
+                closeHref={closeHref}
+                offsetTopClass={headerOffsetClass}
+            />
         </div>
     );
 };

@@ -1,3 +1,4 @@
+"use client";
 import { SimulationNodeDatum, SimulationLinkDatum } from 'd3';
 
 export interface GraphNode extends SimulationNodeDatum {
@@ -20,6 +21,8 @@ export interface GraphNode extends SimulationNodeDatum {
   atomic_type?: string; // e.g. "Symptom"
   composite_type?: string; // e.g. "Disease"
   mentioningPageTitles?: string[]; // Titles of articles mentioning this entity (for non-article fallback)
+  /** Measured card height in timeline view (set by Graph layout). */
+  h?: number;
   // D3 Simulation properties explicitly defined to ensure access
   x?: number;
   y?: number;

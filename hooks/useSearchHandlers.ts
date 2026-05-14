@@ -1,10 +1,12 @@
-import React, { useState, useCallback } from 'react';
+"use client";
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { GraphNode, GraphLink } from '../types';
 import { classifyStartPair, fetchConnectionPath, LockedPair, classifyEntity, fetchConnections } from '../services/geminiService';
 import { fetchWikipediaSummary } from '../services/wikipediaService';
 import { dedupeGraph, normalizeForDedup } from '../services/graphUtils';
 import { clampToViewport } from '../utils/graphLogicUtils';
 import { buildWikiUrl } from '../utils/wikiUtils';
+import type { ConstellationsSessionHandoffV1 } from '../sessionHandoff';
 
 interface PathResponse {
     path: any[];
@@ -32,6 +34,7 @@ interface UseSearchHandlersOptions {
     showControlPanel: boolean;
     selectedKioskDomain: any;
     graphRef: React.RefObject<any>;
+    initialSession?: ConstellationsSessionHandoffV1 | null;
 }
 
 export function useSearchHandlers(options: UseSearchHandlersOptions) {
@@ -40,15 +43,23 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
         setSearchId, searchIdRef, setLockedPair, dimensions,
         cacheEnabled, cacheBaseUrl, loadNodeImage, fetchAndExpandNode,
         setNotification, setSelectedNode, setSelectedLink, setPathNodeIds,
-        setPendingAutoExpandId, showControlPanel, selectedKioskDomain, graphRef
+        setPendingAutoExpandId, showControlPanel, selectedKioskDomain, graphRef,
+        initialSession: initialSessionOpt
     } = options;
+    const initialSession = initialSessionOpt && initialSessionOpt.graph?.nodes?.length ? initialSessionOpt : null;
 
-    const [exploreTerm, setExploreTerm] = useState('');
-    const [pathStart, setPathStart] = useState('');
-    const [pathEnd, setPathEnd] = useState('');
+    const dimensionsRef = useRef(dimensions);
+    useEffect(() => {
+        dimensionsRef.current = dimensions;
+    }, [dimensions]);
+
+    const [exploreTerm, setExploreTerm] = useState(initialSession?.exploreTerm ?? '');
+    const [pathStart, setPathStart] = useState(initialSession?.pathStart ?? '');
+    const [pathEnd, setPathEnd] = useState(initialSession?.pathEnd ?? '');
 
     const upsertNodeLocal = useCallback(async (title: string, type: string, description: string, wiki: any) => {
         let nodeData: any = null;
+        let fromCacheServer = false;
         if (cacheEnabled) {
             try {
                 const res = await fetch(new URL("/node", cacheBaseUrl).toString(), {
@@ -63,6 +74,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                 });
                 if (res.ok) {
                     nodeData = await res.json();
+                    fromCacheServer = true;
                 }
             } catch (e) {
                 console.warn("Cache server unreachable", e);
@@ -78,6 +90,14 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                 wikipedia_id: wiki.pageid?.toString()
             };
         }
+        if (process.env.NODE_ENV === "development") {
+            console.log("[Constellations]", "upsertNodeLocal", {
+                title: title.trim().slice(0, 64),
+                fromCacheServer,
+                nodeId: nodeData.id,
+                wikipediaId: wiki.pageid ?? null,
+            });
+        }
         return nodeData;
     }, [cacheEnabled, cacheBaseUrl]);
 
@@ -89,6 +109,21 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
         setSearchId(nextSearchId);
         setPathNodeIds([]);
         setSelectedLink(null);
+
+        if (process.env.NODE_ENV === "development") {
+            let host = "";
+            try {
+                if (cacheBaseUrl) host = new URL(cacheBaseUrl).host;
+            } catch {
+                host = "(invalid cacheBaseUrl)";
+            }
+            console.log("[Constellations]", "handleStartSearch", {
+                searchId: nextSearchId,
+                term: term.trim().slice(0, 80),
+                cacheEnabled,
+                cacheHost: host || null,
+            });
+        }
 
         try {
             const startC = await classifyStartPair(term);
@@ -110,6 +145,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
 
             const nodeData = await upsertNodeLocal(canonicalTitle, type, description || '', wiki);
 
+            const dim = dimensionsRef.current;
             const startNode: GraphNode = {
                 id: nodeData.id,
                 title: canonicalTitle,
@@ -117,8 +153,8 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                 is_atomic: isAtomic,
                 wikipedia_id: wiki.pageid?.toString(),
                 description: wiki.extract || description || '',
-                x: dimensions.width / 2,
-                y: dimensions.height / 2,
+                x: dim.width / 2,
+                y: dim.height / 2,
                 expanded: false,
                 wikiSummary: wiki.extract || undefined,
                 classification_reasoning: reasoning,
@@ -140,7 +176,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
         } finally {
             setIsProcessing(false);
         }
-    }, [dimensions, cacheEnabled, cacheBaseUrl, setGraphData, setIsProcessing, setError, setSearchId, searchIdRef, setLockedPair, loadNodeImage, fetchAndExpandNode, setSelectedNode, setSelectedLink, setPathNodeIds, setPendingAutoExpandId, showControlPanel, selectedKioskDomain, upsertNodeLocal]);
+    }, [cacheEnabled, cacheBaseUrl, setGraphData, setIsProcessing, setError, setSearchId, searchIdRef, setLockedPair, loadNodeImage, fetchAndExpandNode, setSelectedNode, setSelectedLink, setPathNodeIds, setPendingAutoExpandId, showControlPanel, selectedKioskDomain, upsertNodeLocal]);
 
     const handlePathSearch = useCallback(async (start: string, end: string) => {
         setIsProcessing(true);
@@ -166,10 +202,11 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                 upsertNodeLocal(end, endC.type, endC.description || '', endWiki)
             ]);
 
+            const d = dimensionsRef.current;
             const startNode: GraphNode = {
                 id: startNodeData.id, title: start.trim(), type: startC.type, is_atomic: startC.isAtomic,
                 wikipedia_id: startWiki.pageid?.toString(), description: startWiki.extract || startC.description || '',
-                x: dimensions.width / 4, y: dimensions.height / 2, fx: dimensions.width / 4, fy: dimensions.height / 2,
+                x: d.width / 4, y: d.height / 2, fx: d.width / 4, fy: d.height / 2,
                 expanded: false, wikiSummary: startWiki.extract || undefined,
                 imageUrl: startNodeData.imageUrl || startNodeData.image_url,
                 ...startNodeData
@@ -178,7 +215,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
             const endNode: GraphNode = {
                 id: endNodeData.id, title: end.trim(), type: endC.type, is_atomic: endC.isAtomic,
                 wikipedia_id: endWiki.pageid?.toString(), description: endWiki.extract || endC.description || '',
-                x: (dimensions.width * 3) / 4, y: dimensions.height / 2, fx: (dimensions.width * 3) / 4, fy: dimensions.height / 2,
+                x: (d.width * 3) / 4, y: d.height / 2, fx: (d.width * 3) / 4, fy: d.height / 2,
                 expanded: false, wikiSummary: endWiki.extract || undefined,
                 imageUrl: endNodeData.imageUrl || endNodeData.image_url,
                 ...endNodeData
@@ -223,18 +260,19 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
             if (isDbPath) {
                 const dbNodes = pathData.path as any[];
                 dbNodes.forEach(n => pathNodeIdsList.push(n.id));
-                setGraphData(current => {
+                    setGraphData(current => {
+                    const dim = dimensionsRef.current;
                     const updatedNodes = [...current.nodes];
                     const updatedLinks = [...current.links];
                     dbNodes.forEach((dbNode, i) => {
                         let existingNode = updatedNodes.find(n => String(n.id) === String(dbNode.id));
                         if (!existingNode) {
-                            const nodeX = i === 0 ? (startNode.x || dimensions.width / 4) : (updatedNodes[i - 1]?.x || dimensions.width / 2) + (Math.random() - 0.5) * 150;
-                            const nodeY = i === 0 ? (startNode.y || dimensions.height / 2) : (updatedNodes[i - 1]?.y || dimensions.height / 2) + (Math.random() - 0.5) * 150;
+                            const nodeX = i === 0 ? (startNode.x || dim.width / 4) : (updatedNodes[i - 1]?.x || dim.width / 2) + (Math.random() - 0.5) * 150;
+                            const nodeY = i === 0 ? (startNode.y || dim.height / 2) : (updatedNodes[i - 1]?.y || dim.height / 2) + (Math.random() - 0.5) * 150;
                             const clamped = clampToViewport(nodeX, nodeY, 80);
-                            existingNode = { id: dbNode.id, title: dbNode.title, type: dbNode.type, x: clamped.x, y: clamped.y, fx: clamped.x, fy: clamped.y, expanded: false, ...dbNode };
-                            updatedNodes.push(existingNode);
-                            loadNodeImage(dbNode.id, existingNode.title);
+                            const created: GraphNode = { id: dbNode.id, title: dbNode.title, type: dbNode.type, x: clamped.x, y: clamped.y, fx: clamped.x, fy: clamped.y, expanded: false, ...dbNode };
+                            updatedNodes.push(created);
+                            loadNodeImage(dbNode.id, created.title);
                         }
                     });
                     for (let i = 0; i < dbNodes.length - 1; i++) {
@@ -289,7 +327,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                         loadNodeImage(toId, newNode.title);
                         // CRITICAL: Dedupe immediately so that if this node merged with an existing one,
                         // we know the correct ID for the next link in the chain.
-                        return dedupeGraph(updatedNodes, updatedLinks);
+                        return dedupeGraph(updatedNodes, updatedLinks as GraphLink[]);
                     });
 
                     // Wait a moment for state to settle, then find the RESOLVED id of the node we just added.
@@ -355,7 +393,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
             }));
             setPathNodeIds([...finalPathIds]);
             setNotification({ message: "Path discovery complete!", type: 'success' });
-            if (finalPathIds.length) setTimeout(() => graphRef.current?.centerOnNode(finalPathIds[Math.floor(finalPathIds.length / 2)]), 200);
+            if (finalPathIds.length) setTimeout(() => graphRef.current?.fitGraphInView(), 200);
 
         } catch (e) {
             console.error("Path error:", e);
@@ -363,7 +401,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
         } finally {
             setIsProcessing(false);
         }
-    }, [dimensions, cacheEnabled, cacheBaseUrl, setGraphData, setIsProcessing, setError, setSearchId, searchIdRef, setNotification, loadNodeImage, fetchAndExpandNode, setSelectedNode, setPathNodeIds, graphRef, upsertNodeLocal]);
+    }, [cacheEnabled, cacheBaseUrl, setGraphData, setIsProcessing, setError, setSearchId, searchIdRef, setNotification, loadNodeImage, fetchAndExpandNode, setSelectedNode, setPathNodeIds, graphRef, upsertNodeLocal]);
 
     return { exploreTerm, setExploreTerm, pathStart, setPathStart, pathEnd, setPathEnd, handleStartSearch, handlePathSearch };
 }

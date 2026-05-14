@@ -1,3 +1,4 @@
+"use client";
 import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { GraphNode, GraphLink } from '../types';
@@ -6,7 +7,7 @@ import { buildWikiUrl } from '../utils/wikiUtils';
 interface GraphProps {
     nodes: GraphNode[];
     links: GraphLink[];
-    onNodeClick: (node: GraphNode, event?: MouseEvent) => void;
+    onNodeClick: (node: GraphNode | null, event?: MouseEvent) => void;
     onLinkClick?: (link: GraphLink) => void;
     onViewportChange?: (visibleNodes: GraphNode[]) => void;
     width: number;
@@ -24,13 +25,41 @@ interface GraphProps {
 }
 
 export interface GraphHandle {
-    centerOnNode: (nodeId: number, scale?: number) => void;
+    centerOnNode: (nodeId: string | number, scale?: number) => void;
+    /** Pans and zooms so all nodes (with padding) fit in the graph viewport. */
+    fitGraphInView: () => void;
 }
 
 const DEFAULT_CARD_SIZE = 220;
 
 // Helper to sanitize IDs for DOM selectors
 const safeId = (id: string | number) => String(id).replace(/[^a-zA-Z0-9-_]/g, '_');
+
+/**
+ * Text for link hover: relationship label (from the LLM / expansion) plus supporting evidence snippet when present.
+ */
+function formatLinkHoverText(l: GraphLink): string | null {
+    const label = (l.label || '').trim();
+    const ev = l.evidence;
+    const sn = (ev?.snippet || '').trim();
+    if (ev?.kind === 'none') {
+        if (label) return label;
+        if (sn) return sn;
+        return null;
+    }
+    if (label && sn && sn !== label) return `${label}\n\n${sn}`;
+    if (label) return label;
+    if (sn) return sn;
+    return null;
+}
+
+/** Stabilize link ends for d3.forceLink: Map keys are String(node.id) so endpoints must be the same. */
+const linkEndpointId = (e: string | number | GraphNode | null | undefined) => {
+    if (e != null && typeof e === 'object' && 'id' in (e as object)) {
+        return String((e as GraphNode).id);
+    }
+    return String(e);
+};
 
 const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
     const {
@@ -57,11 +86,13 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
     const simulationRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
     const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
     const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
-    const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
+    const [hoveredLinkId, setHoveredLinkId] = useState<string | number | null>(null);
+    const [linkTip, setLinkTip] = useState<{ link: GraphLink; x: number; y: number } | null>(null);
+    const linkHoverWrapRef = useRef<HTMLDivElement>(null);
     const [focusedNode, setFocusedNode] = useState<GraphNode | null>(null);
     const [timelineLayoutVersion, setTimelineLayoutVersion] = useState(0);
     const wasTimelineRef = useRef(isTimelineMode);
-    const timelinePositionsRef = useRef(new Map<number, { x: number, y: number }>());
+    const timelinePositionsRef = useRef(new Map<string | number, { x: number, y: number }>());
 
     // Track previous data sizes to optimize simulation restarts
     const prevNodesLen = useRef(nodes.length);
@@ -122,11 +153,104 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     if (yearA !== yearB) return yearA - yearB;
                 }
 
-                return a.id - b.id;
+                return String(a.id).localeCompare(String(b.id));
             });
     }, [nodes, isAtomicNode]);
 
-    const centerOnNode = useCallback((nodeId: number, scale?: number) => {
+    // Calculate dynamic dimensions for nodes
+    const getNodeDimensions = (node: GraphNode, isTimeline: boolean, textOnly: boolean): { w: number, h: number, r: number, type: string } => {
+        if (isAtomicNode(node)) {
+            if (isTimeline) {
+                return { w: 96, h: 96, r: 110, type: 'circle' };
+            } else {
+                return { w: 48, h: 48, r: 55, type: 'circle' };
+            }
+        }
+
+        if (isTimeline) {
+            return {
+                w: DEFAULT_CARD_SIZE,
+                h: DEFAULT_CARD_SIZE,
+                r: 120,
+                type: 'card'
+            };
+        } else {
+            return { w: 60, h: 60, r: 60, type: 'box' };
+        }
+    };
+
+    /** Graph-space position for layout / timeline fixed positions. */
+    const getNodeLayoutPos = useCallback(
+        (n: GraphNode): { x: number; y: number } | null => {
+            if (isTimelineMode) {
+                const fixed = timelinePositionsRef.current.get(n.id);
+                if (fixed) return { x: fixed.x, y: fixed.y };
+            }
+            if (n.x !== undefined && n.y !== undefined) return { x: n.x, y: n.y };
+            return null;
+        },
+        [isTimelineMode]
+    );
+
+    /** Radius in graph space around each node for bounding (matches collision / drawing). */
+    const getNodeRadiusForBounds = useCallback(
+        (n: GraphNode) => {
+            const dims = getNodeDimensions(n, isTimelineMode, isTextOnly);
+            if (isTimelineMode && dims.type === "card") {
+                const h = (n as GraphNode & { h?: number }).h ?? dims.h;
+                return Math.max(dims.w, h, dims.r) / 2;
+            }
+            return Math.max(dims.r, Math.max(dims.w, dims.h) / 2, 20);
+        },
+        [isTimelineMode, isTextOnly]
+    );
+
+    const fitGraphInView = useCallback(() => {
+        if (!svgRef.current || !zoomBehaviorRef.current) return;
+        const list = nodes;
+        if (!list.length) return;
+
+        const pad = Math.max(32, 0.04 * Math.min(width, height));
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        let any = false;
+
+        for (const n of list) {
+            const p = getNodeLayoutPos(n);
+            if (!p) continue;
+            any = true;
+            const r = getNodeRadiusForBounds(n);
+            minX = Math.min(minX, p.x - r);
+            maxX = Math.max(maxX, p.x + r);
+            minY = Math.min(minY, p.y - r);
+            maxY = Math.max(maxY, p.y + r);
+        }
+        if (!any || !Number.isFinite(minX)) return;
+
+        const graphW = Math.max(1, maxX - minX);
+        const graphH = Math.max(1, maxY - minY);
+        const midX = (minX + maxX) / 2;
+        const midY = (minY + maxY) / 2;
+
+        let k = Math.min((width - 2 * pad) / graphW, (height - 2 * pad) / graphH);
+        // d3 scaleExtent; never zoom in past ~1.4× for a tiny / single-node graph (avoid “magnify one card”)
+        if (graphW < 0.4 * width && graphH < 0.4 * height) {
+            k = Math.min(k, 1.4);
+        }
+        k = Math.min(4, Math.max(0.1, k));
+
+        const svg = d3.select(svgRef.current);
+        const transform = d3.zoomIdentity
+            .translate(width / 2, height / 2)
+            .scale(k)
+            .translate(-midX, -midY);
+
+        svg.transition().duration(800).call(zoomBehaviorRef.current.transform, transform);
+    }, [nodes, width, height, getNodeLayoutPos, getNodeRadiusForBounds]);
+
+    const centerOnNode = useCallback((nodeId: string | number, scale?: number) => {
         const node = nodes.find(n => n.id === nodeId);
         if (!node || !svgRef.current || !zoomBehaviorRef.current) return;
 
@@ -156,34 +280,6 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         svg.transition().duration(800).call(zoomBehaviorRef.current.transform, transform);
     }, [nodes, width, height, isTimelineMode]);
 
-    // Calculate dynamic dimensions for nodes
-    const getNodeDimensions = (node: GraphNode, isTimeline: boolean, textOnly: boolean): { w: number, h: number, r: number, type: string } => {
-        if (isAtomicNode(node)) {
-            if (isTimeline) {
-                // Larger size in timeline mode (2x)
-                return { w: 96, h: 96, r: 110, type: 'circle' }; // r is collision radius
-            } else {
-                // Smaller size in graph mode (original size)
-                return { w: 48, h: 48, r: 55, type: 'circle' }; // r is collision radius
-            }
-        }
-
-        // Events/Things
-        if (isTimeline) {
-            // Timeline Card Mode: Fixed height for consistent layout
-            return {
-                w: DEFAULT_CARD_SIZE,
-                h: DEFAULT_CARD_SIZE,
-                r: 120, // Collision radius
-                type: 'card'
-            };
-        } else {
-            // Graph Mode
-            // Square nodes for everything else, consistent with image nodes
-            return { w: 60, h: 60, r: 60, type: 'box' };
-        }
-    };
-
     // Helper to wrap text in SVG
     const wrapText = (text: string, width: number, maxLines?: number) => {
         if (!text) return [];
@@ -205,27 +301,39 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         return maxLines ? lines.slice(0, maxLines) : lines;
     };
 
-    // Expose centerOnNode function via ref
-    useImperativeHandle(ref, () => ({
-        centerOnNode
-    }), [centerOnNode]);
-
-    // Center on selected node when it changes
+    const nodesRef = useRef(nodes);
     useEffect(() => {
-        if (!selectedNode || !svgRef.current) return;
-        centerOnNode(selectedNode.id);
-    }, [selectedNode?.id, centerOnNode]);
+        nodesRef.current = nodes;
+    }, [nodes]);
 
-    // Auto-center and zoom when entering timeline mode
+    const centerOnNodeRef = useRef(centerOnNode);
+    centerOnNodeRef.current = centerOnNode;
+    const fitGraphInViewRef = useRef(fitGraphInView);
+    fitGraphInViewRef.current = fitGraphInView;
+
+    useImperativeHandle(
+        ref,
+        () => ({
+            centerOnNode,
+            fitGraphInView,
+        }),
+        [centerOnNode, fitGraphInView]
+    );
+
+    // After selection, fit the whole graph in the viewport (200ms: allow layout to place x/y).
+    useEffect(() => {
+        if (!selectedNode) return;
+        const t = setTimeout(() => fitGraphInViewRef.current(), 200);
+        return () => clearTimeout(t);
+    }, [selectedNode?.id]);
+
+    // When entering timeline mode, show the full layout in view
     useEffect(() => {
         if (isTimelineMode && timelineNodes.length > 0) {
-            // Small delay to ensure layout positions are calculated
-            const timer = setTimeout(() => {
-                centerOnNode(timelineNodes[0].id, 1.15);
-            }, 150);
+            const timer = setTimeout(() => fitGraphInViewRef.current(), 150);
             return () => clearTimeout(timer);
         }
-    }, [isTimelineMode, timelineNodes, centerOnNode]);
+    }, [isTimelineMode, timelineNodes, fitGraphInView]);
 
     // Reset zoom and focused state when searchId changes (new graph)
     useEffect(() => {
@@ -383,7 +491,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 if (isTimelineMode && dims.type === 'card') {
                     // For timeline cards, use the larger of width or height plus padding
                     const cardWidth = dims.w;
-                    const cardHeight = d.h || dims.h;
+                    const cardHeight = (d as GraphNode & { h?: number }).h ?? dims.h;
                     // Use the diagonal distance plus padding to ensure no overlap
                     const maxDimension = Math.max(cardWidth, cardHeight);
                     return (maxDimension / 2) + 15; // Increased padding to prevent overlap
@@ -406,7 +514,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         simulation.force("collide", collideForce);
 
         if (isTimelineMode) {
-            const prevPositions = new Map<number, { x: number; y: number }>(timelinePositionsRef.current);
+            const prevPositions = new Map<string | number, { x: number; y: number }>(timelinePositionsRef.current);
 
             const lockNodePosition = (node: GraphNode, x: number, y: number) => {
                 node.fx = x;
@@ -420,8 +528,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
 
 
 
-            const nodeIndexMap = new Map<number, number>(
-                timelineNodes.map((n, i) => [n.id, i] as [number, number])
+            const nodeIndexMap = new Map<string | number, number>(
+                timelineNodes.map((n, i) => [n.id, i] as [string | number, number])
             );
 
             const itemSpacing = 280; // More horizontal breathing room
@@ -638,36 +746,39 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 svg.transition().duration(500).call(zoomBehaviorRef.current.transform, d3.zoomIdentity);
             }
         } else if (!wasTimeline && isTimelineMode && timelineNodes.length > 0) {
-            // Center on the leftmost (first sorted) event
-            const firstEvent = timelineNodes[0];
-            if (firstEvent) {
-                // Use a slight timeout to ensure positions are established
-                setTimeout(() => {
-                    centerOnNode(firstEvent.id);
-                }, 100);
-            }
+            setTimeout(() => {
+                fitGraphInView();
+            }, 100);
         }
         wasTimelineRef.current = isTimelineMode;
-    }, [isTimelineMode, nodes, width, height, timelineNodes, centerOnNode]);
+    }, [isTimelineMode, nodes, width, height, timelineNodes, centerOnNode, fitGraphInView]);
 
     // 4. Structural Effect: Only runs when overall graph structure (nodes/links) changes.
     // This handles D3 enter/exit/merge and restarts the simulation.
     useEffect(() => {
         if (!zoomGroupRef.current) return;
 
-        // 1. Calculate valid links first
+        // 1. Calculate valid links first (string ids only — d3 forceLink's nodeById map uses .id() keys)
+        const nodeIdSet = new Set(nodes.map(n => String(n.id)));
         const validLinks = links
-            .filter(link => {
-                const sId = String(typeof link.source === 'object' ? (link.source as GraphNode).id : link.source);
-                const tId = String(typeof link.target === 'object' ? (link.target as GraphNode).id : link.target);
-                const hasSource = nodes.some(n => String(n.id) === sId);
-                const hasTarget = nodes.some(n => String(n.id) === tId);
-                return hasSource && hasTarget;
+            .map(link => {
+                const sId = linkEndpointId(link.source as string | number | GraphNode);
+                const tId = linkEndpointId(link.target as string | number | GraphNode);
+                return { link, sId, tId };
             })
-            .map(link => ({
+            .filter(
+                ({ sId, tId }) =>
+                    sId.length > 0 &&
+                    tId.length > 0 &&
+                    sId !== 'undefined' &&
+                    tId !== 'undefined' &&
+                    nodeIdSet.has(sId) &&
+                    nodeIdSet.has(tId)
+            )
+            .map(({ link, sId, tId }) => ({
                 ...link,
-                source: String(typeof link.source === 'object' ? (link.source as GraphNode).id : link.source),
-                target: String(typeof link.target === 'object' ? (link.target as GraphNode).id : link.target)
+                source: sId,
+                target: tId
             }));
 
         // 2. Lazily create simulation if it doesn't exist
@@ -724,25 +835,63 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
             linkMerged.style("display", null);
         }
 
-        // Link click handling (for evidence) + hover highlight via hit-area
+        // Link click (optional) + hover highlight + tooltip (label + LLM / evidence text)
+        const placeLinkTip = (event: MouseEvent) => {
+            const root = linkHoverWrapRef.current;
+            if (!root) return null;
+            const r = root.getBoundingClientRect();
+            return { x: event.clientX - r.left, y: event.clientY - r.top };
+        };
+        const hoverInLink = (event: any, d: GraphLink) => {
+            setHoveredLinkId(d.id);
+            const p = placeLinkTip(event as MouseEvent);
+            if (p && formatLinkHoverText(d)) {
+                setLinkTip({ link: d, x: p.x, y: p.y });
+            } else {
+                setLinkTip(null);
+            }
+        };
+        const moveLink = (event: any, d: GraphLink) => {
+            const p = placeLinkTip(event as MouseEvent);
+            if (!p) return;
+            if (formatLinkHoverText(d)) {
+                setLinkTip({ link: d, x: p.x, y: p.y });
+            }
+        };
+        const hoverOutLink = () => {
+            setHoveredLinkId(null);
+            setLinkTip(null);
+        };
         if (onLinkClick) {
             const clickHandler = (event: any, d: GraphLink) => {
                 event.stopPropagation();
                 onLinkClick(d);
             };
-            const hoverIn = (_event: any, d: GraphLink) => setHoveredLinkId(d.id);
-            const hoverOut = () => setHoveredLinkId(null);
-
             linkMerged
                 .style("cursor", "pointer")
                 .on("click", clickHandler)
-                .on("mouseover", hoverIn)
-                .on("mouseout", hoverOut);
+                .on("mouseover", hoverInLink)
+                .on("mousemove", moveLink)
+                .on("mouseout", hoverOutLink);
             linkHitMerged
                 .style("cursor", "pointer")
                 .on("click", clickHandler)
-                .on("mouseover", hoverIn)
-                .on("mouseout", hoverOut);
+                .on("mouseover", hoverInLink)
+                .on("mousemove", moveLink)
+                .on("mouseout", hoverOutLink);
+        } else {
+            linkMerged
+                .style("cursor", "default")
+                .on("click", null)
+                .on("mouseover", hoverInLink)
+                .on("mousemove", moveLink)
+                .on("mouseout", hoverOutLink);
+            linkHitMerged
+                .style("cursor", "default")
+                .on("click", null)
+                .on("mouseover", hoverInLink)
+                .on("mousemove", moveLink)
+                .on("mouseout", hoverOutLink);
         }
 
         const nodeSel = container.selectAll<SVGGElement, GraphNode>(".node").data(nodes, d => d.id);
@@ -843,8 +992,6 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         const hoverOut = () => setHoveredNode(null);
 
         nodeEnter.merge(nodeSel)
-            .attr("role", "button")
-            .attr("aria-label", (d: GraphNode) => (d.title ? `Graph node: ${d.title}` : "Graph node"))
             .style("cursor", "pointer")
             .on("click", clickHandler)
             .on("contextmenu", contextMenuHandler)
@@ -974,7 +1121,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                 axisGroup.style("display", "none");
             }
         });
-    }, [nodes, links, isTimelineMode, width, height]);
+    }, [nodes, links, isTimelineMode, width, height, onLinkClick]);
 
     // 5. Stylistic Effect: Update colors, opacity, labels without restarting simulation
     useEffect(() => {
@@ -987,7 +1134,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
 
         // Build set of path links (links between consecutive nodes in the path)
         // IMPORTANT: Only highlight links that actually exist and are part of the path sequence
-        const pathLinkIds = new Set<string>();
+        const pathLinkIds = new Set<string | number>();
         if (hasHighlight && highlightKeepIds && highlightKeepIds.length > 1) {
             // For each consecutive pair in the path, check if a link exists
             for (let i = 0; i < highlightKeepIds.length - 1; i++) {
@@ -1024,7 +1171,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         const allLinks = container.selectAll<SVGPathElement, GraphLink>(".link");
 
         // Build map of event to connected people for timeline mode
-        const eventToPeople = new Map<number, string[]>();
+        const eventToPeople = new Map<string | number, string[]>();
         if (isTimelineMode) {
             links.forEach(l => {
                 const sId = typeof l.source === 'object' ? (l.source as GraphNode).id : l.source;
@@ -1496,8 +1643,8 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
                     return "#dc2626";
                 })
                 .style("stroke-width", d => {
-                    const sId = typeof d.source === 'object' ? (d.source as GraphNode).id : d.source as string;
-                    const tId = typeof d.target === 'object' ? (d.target as GraphNode).id : d.target as string;
+                    const sId = String(typeof d.source === 'object' ? (d.source as GraphNode).id : d.source);
+                    const tId = String(typeof d.target === 'object' ? (d.target as GraphNode).id : d.target);
                     // Hover highlight for links
                     if (hoveredLinkId && d.id === hoveredLinkId) return 6;
                     // Make path links thicker
@@ -1509,16 +1656,33 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
 
     }, [nodes, links, isTimelineMode, hoveredNode, hoveredLinkId, effectiveFocused, highlightKeepIds, highlightDropIds, isTextOnly, onNodeClick, expandingNodeId, newChildNodeIds]);
 
+    const linkTipText = linkTip ? formatLinkHoverText(linkTip.link) : null;
+
     return (
+        <div ref={linkHoverWrapRef} className="relative" style={{ width, height }}>
+            {linkTip && linkTipText && (
+                <div
+                    className="pointer-events-none absolute z-[100] max-w-sm rounded-lg border border-slate-600/80 bg-slate-950/95 px-2.5 py-2 text-left text-[11px] leading-snug text-slate-100 shadow-lg backdrop-blur-sm"
+                    style={{ left: linkTip.x + 8, top: linkTip.y + 8 }}
+                >
+                    <p className="whitespace-pre-wrap break-words">{linkTipText}</p>
+                </div>
+            )}
         <svg
             ref={svgRef}
             width={width}
             height={height}
             className="cursor-move bg-slate-900"
-            onClick={() => { setHoveredNode(null); setFocusedNode(null); }}
+            onClick={() => {
+                setHoveredNode(null);
+                setFocusedNode(null);
+                setHoveredLinkId(null);
+                setLinkTip(null);
+            }}
         >
             <g ref={zoomGroupRef} />
         </svg>
+        </div>
     );
 });
 

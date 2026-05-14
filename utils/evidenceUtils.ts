@@ -1,3 +1,4 @@
+"use client";
 export const normalizeForEvidence = (s: unknown) =>
     String(s || '')
         .toLowerCase()

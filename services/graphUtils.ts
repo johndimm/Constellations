@@ -1,3 +1,4 @@
+"use client";
 import { GraphNode, GraphLink } from '../types';
 
 // Normalize string for deduplication:
@@ -80,6 +81,90 @@ export const baseDedupeKey = (node: { title: string; type?: string; is_atomic?: 
     return `c|${normTitle}|${normType}`;
 };
 
+const linkEndpointsRaw = (l: GraphLink) => {
+    const get = (e: string | number | GraphNode) => {
+        if (e != null && typeof e === "object" && "id" in (e as object)) return String((e as GraphNode).id);
+        return String(e);
+    };
+    return { a: get(l.source), b: get(l.target) };
+};
+
+/**
+ * Re-attach work/composite nodes that have no edges (often from bipartite filtering or
+ * id-remap glitches) to the most connected person in the session — typical discography layout.
+ * Safe for small exploration graphs; conservative gates avoid cross-topic path searches.
+ */
+export const spliceOrphanCompositesToPersonHub = (
+    nodes: GraphNode[],
+    links: GraphLink[]
+): { nodes: GraphNode[]; links: GraphLink[] } => {
+    if (nodes.length < 2) return { nodes, links };
+
+    const pairKey = (x: string, y: string) => (x < y ? `${x}↔${y}` : `${y}↔${x}`);
+
+    const isPerson = (n: GraphNode) => {
+        const t = (n.type || "").toLowerCase();
+        if (t === "person" || t === "actor" || t === "author" || t === "musician" || t === "singer") return true;
+        if ((n as { is_person?: boolean }).is_person) return true;
+        if (n.is_atomic === true) {
+            if (["album", "film", "movie", "song", "record", "book", "single", "track", "opera", "play"].some((w) => t.includes(w))) {
+                return false;
+            }
+            return true;
+        }
+        return false;
+    };
+
+    const degree = new Map<string, number>();
+    const existingPairs = new Set<string>();
+    for (const l of links) {
+        const { a, b } = linkEndpointsRaw(l);
+        if (!a || !b || a === b || a === "undefined" || b === "undefined") continue;
+        existingPairs.add(pairKey(a, b));
+        degree.set(a, (degree.get(a) || 0) + 1);
+        degree.set(b, (degree.get(b) || 0) + 1);
+    }
+
+    const personHubs = nodes.filter((n) => isPerson(n) && (degree.get(String(n.id)) || 0) > 0);
+    if (personHubs.length === 0) return { nodes, links };
+    personHubs.sort(
+        (x, y) => (degree.get(String(y.id)) || 0) - (degree.get(String(x.id)) || 0)
+    );
+    if (personHubs.length >= 2) {
+        const d0 = degree.get(String(personHubs[0].id)) || 0;
+        const d1 = degree.get(String(personHubs[1].id)) || 0;
+        if (d0 === d1) return { nodes, links };
+    }
+    const hub = personHubs[0];
+    const hubDeg = degree.get(String(hub.id)) || 0;
+    if (hubDeg < 2) return { nodes, links };
+
+    const orphans = nodes.filter((n) => {
+        if (isPerson(n)) return false;
+        return (degree.get(String(n.id)) || 0) === 0;
+    });
+    if (orphans.length === 0) return { nodes, links };
+    if (orphans.length > 24) return { nodes, links };
+
+    const added: GraphLink[] = [];
+    for (const o of orphans) {
+        if (String(o.id) === String(hub.id)) continue;
+        const a = String(hub.id);
+        const b = String(o.id);
+        const pk = pairKey(a, b);
+        if (existingPairs.has(pk)) continue;
+        existingPairs.add(pk);
+        added.push({
+            id: `inferred-${a}-${b}`,
+            source: hub.id,
+            target: o.id,
+            evidence: { kind: "none" as const }
+        });
+    }
+    if (added.length === 0) return { nodes, links };
+    return { nodes, links: [...links, ...added] };
+};
+
 // Merge duplicate nodes (same normalized title/type) and remap links accordingly.
 export const dedupeGraph = (
     nodes: GraphNode[],
@@ -106,7 +191,7 @@ export const dedupeGraph = (
         const prefer = existing.wikipedia_id ? existing : incoming;
         return {
             ...prefer,
-            type: mergeType(existing.type, incoming.type),
+            type: mergeType(existing.type, incoming.type) || existing.type || incoming.type || 'Node',
             imageUrl: existing.imageUrl || incoming.imageUrl || undefined,
             imageChecked: existing.imageChecked || incoming.imageChecked || !!existing.imageUrl || !!incoming.imageUrl,
             wikiSummary: existing.wikiSummary || incoming.wikiSummary || undefined,
@@ -183,8 +268,12 @@ export const dedupeGraph = (
 
     const nodesOut = Array.from(dedupMap.values());
 
-    const remapId = (value: number | string | GraphNode) => {
-        const id = String(typeof value === 'object' ? value.id : value);
+    const remapId = (value: number | string | GraphNode | null | undefined) => {
+        const raw =
+            value != null && typeof value === 'object' && 'id' in (value as object)
+                ? (value as GraphNode).id
+                : (value as number | string);
+        const id = String(raw);
         return idRemap.get(id) ?? id;
     };
 
@@ -205,7 +294,36 @@ export const dedupeGraph = (
         });
     });
 
-    return { nodes: nodesOut, links: linksOut };
+    // Drop links whose endpoints are not in the deduped node set (stale ids after merge/prune).
+    // Graph.tsx only draws validLinks when both ends exist; ghost edges must not pollute state.
+    const nodeIdSet = new Set(nodesOut.map((n) => String(n.id)));
+    const linksFiltered = linksOut.filter((l) => {
+        const a = String(l.source);
+        const b = String(l.target);
+        return nodeIdSet.has(a) && nodeIdSet.has(b);
+    });
+
+    const spliced = spliceOrphanCompositesToPersonHub(nodesOut, linksFiltered);
+
+    // Final pass: remove any nodes that are still isolated (degree 0) after splice.
+    // These arise when dedup ID remapping drops links, leaving both composite and atomic orphans.
+    // Only prune when there are multiple nodes — a single-node graph (e.g. search just started)
+    // must be preserved.
+    if (spliced.nodes.length > 1) {
+        const finalDegree = new Map<string, number>();
+        spliced.links.forEach(l => {
+            const s = String(typeof l.source === 'object' ? (l.source as any).id : l.source);
+            const t = String(typeof l.target === 'object' ? (l.target as any).id : l.target);
+            finalDegree.set(s, (finalDegree.get(s) || 0) + 1);
+            finalDegree.set(t, (finalDegree.get(t) || 0) + 1);
+        });
+        const connected = spliced.nodes.filter(n => (finalDegree.get(String(n.id)) || 0) > 0);
+        if (connected.length > 0) {
+            return { nodes: connected, links: spliced.links };
+        }
+    }
+
+    return spliced;
 };
 
 type ExpansionTarget = GraphNode & {
@@ -222,7 +340,6 @@ export const mergeExpansionGraph = (params: {
     seedFromParent?: boolean;
 }): { nodes: GraphNode[]; links: GraphLink[] } => {
     const { nodes, links, parent, targets, seedFromParent = true } = params;
-    const existingNodeIds = new Set(nodes.map(n => String(n.id)));
     const nodeMap = new Map<string, GraphNode>(nodes.map(n => [String(n.id), n]));
 
     const parentIsAtomic = !!(parent.is_atomic ?? parent.is_person ?? (parent.type || '').toLowerCase() === 'person');
@@ -293,18 +410,15 @@ export const mergeExpansionGraph = (params: {
 
     // console.warn(`🔧 [mergeExpansionGraph] Created ${candidateLinks.length} candidate links`);
 
+    const parentId = String(parent.id);
     const bipartiteSafeCandidates = candidateLinks.filter(l => {
         const s = String(typeof l.source === 'object' ? l.source.id : l.source);
         const t = String(typeof l.target === 'object' ? l.target.id : l.target);
-        // Match useExpansion: edges incident to the expanded parent trust the AI/cache (avoid empty merges when is_atomic drifted in the DB/UI).
-        if (s === String(parent.id) || t === String(parent.id)) return true;
+        // Expansion edges always go from this parent; trust them even if is_atomic is noisy.
+        if (s === parentId) return true;
         const sa = isAtomicForId.get(s);
         const ta = isAtomicForId.get(t);
-        const pass = (sa === undefined || ta === undefined) || (sa !== ta);
-        if (!pass) {
-            // console.warn(`🔧 [mergeExpansionGraph] Link ${s}->${t} FILTERED: parent isAtomic=${sa}, child isAtomic=${ta}`);
-        }
-        return pass;
+        return (sa === undefined || ta === undefined) || (sa !== ta);
     });
 
     // console.warn(`🔧 [mergeExpansionGraph] After bipartite filter: ${bipartiteSafeCandidates.length} links`);
@@ -332,13 +446,9 @@ export const mergeExpansionGraph = (params: {
     });
     const prunedNodes = updatedNodes.filter(n => {
         if (String(n.id) === String(parent.id)) return true;
-        if (existingNodeIds.has(String(n.id))) return true;
         const deg = degree.get(String(n.id)) || 0;
-        const keep = deg > 0;
-        if (!keep && !existingNodeIds.has(String(n.id))) {
-            // console.warn(`🔧 [mergeExpansionGraph] Node "${n.title}" (${n.id}) PRUNED: degree=${deg}`);
-        }
-        return keep;
+        // Do NOT keep "existing" graph nodes with no edges — that leaves floating islands.
+        return deg > 0;
     });
 
     // console.warn(`🔧 [mergeExpansionGraph] After pruning: ${prunedNodes.length} nodes from ${updatedNodes.length}`);

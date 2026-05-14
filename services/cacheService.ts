@@ -1,3 +1,4 @@
+"use client";
 import { getEnvCacheUrl } from "./aiUtils";
 
 // Logic to determine effective cache base URL

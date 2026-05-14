@@ -6,13 +6,16 @@ const App = lazy(() => import("./App"));
 type AppProps = ComponentProps<typeof App>;
 
 /**
- * Embeddable full-page constellations for host apps (Soundings, Trailer Vision, etc.).
- * Always renders in embedded mode (ResizeObserver, handoff window hook) with full chrome.
+ * One code path for "full page" constellations inside a host (Soundings, Trailer Vision, etc.):
+ * always `embedded` (ResizeObserver, handoff window hook) + full control panel + details sidebar
+ * unless the host overrides. The in-app `AppHeader` (panel toggles, title, close) is shown by default;
+ * set `hideHeader` when the host already supplies equivalent chrome.
  */
 export type FullPageConstellationsProps = Omit<AppProps, "embedded" | "useViewportForPanels"> & {
   /**
-   * - `fixed-overlay` — full-viewport layer above the app (e.g. Soundings, `z-[100]`).
-   * - `below-app-chrome` — fills route shell below site nav; parent must supply height.
+   * - `fixed-overlay` — e.g. Soundings: full-viewport layer above the app (`z-[100]`).
+   * - `below-app-chrome` — e.g. Trailer: fills the route shell below the site nav; parent must
+   *   supply height (e.g. `h-[calc(100dvh-2.75rem)]`).
    */
   layout: "fixed-overlay" | "below-app-chrome";
   /** Wrapped around the constellations root; use for a host nav link row, etc. */
