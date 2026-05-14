@@ -4,7 +4,7 @@
   "type": "module",
   "main": "./index.tsx",
   "exports": {
-    ".": "./index.tsx",
+    ".": "./host.ts",
     "./App": "./App.tsx",
     "./FullPageConstellations": "./FullPageConstellations.tsx",
     "./host": "./host.ts",
