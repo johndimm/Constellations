@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Regeneration Prompt — Constellations</title>
+    <title>Prompt — Constellations</title>
     <style>
         :root {
             --bg: #0f172a;
@@ -234,20 +234,60 @@
             .pair-grid { grid-template-columns: 1fr 1fr; }
             .stack-grid { grid-template-columns: 1fr; }
         }
+
+        nav {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+        }
+        nav a {
+            color: var(--muted);
+            text-decoration: none;
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            transition: all 0.15s;
+        }
+        nav a:hover { color: white; border-color: var(--border); }
+        nav a.active { color: var(--accent); border-color: var(--accent); }
+        nav .sep { color: var(--border); padding: 0.25rem 0; }
     </style>
 </head>
 <body>
 
+<nav>
+    <a href="/">← App</a>
+    <span class="sep">·</span>
+    <a href="help.html">Help</a>
+    <a href="prompt.html" class="active">Prompt</a>
+    <a href="journal.html">Dev Journal</a>
+    <a href="api_queries.html">API Queries</a>
+    <a href="../paper/rendered/paper.pdf" target="_blank">Paper ↗</a>
+</nav>
+
 <header>
-    <h1>Regeneration Prompt</h1>
+    <h1>Prompt</h1>
     <p class="subtitle">
-        A complete English specification of <strong>Constellations</strong> — sufficient to rebuild the app from scratch.
-        &nbsp;·&nbsp; <a href="/">← Back to app</a>
+        Original idea, development story, and complete technical specification for <strong>Constellations</strong>.
     </p>
 </header>
 
+<section>
+    <h2><span class="num" style="background:var(--accent2)">✦</span> Original Idea</h2>
+    <p style="font-style:italic; color:var(--muted); font-size:1.05rem; line-height:1.8; border-left:3px solid var(--accent); padding-left:1rem; margin-bottom:1rem;">
+        "I want to generate collaboration graphs of world history. The edges are people who have wikipedia pages. The nodes are things that bring people together: one-on-one meetings, projects, movies, battles, schools, and so on. I want to start with some node, like the movie Godfather, and follow the careers of the people who collaborated on it to other nodes. I want to see it as a graph and be able to wander around in the space."
+    </p>
+    <p>The first surprise was structural: people turned out to be <strong>nodes, not edges</strong>. A person is a hub of events; an event is a hub of persons. The edges connect people with the events they participated in — no person-to-person or event-to-event connections. This is the bipartite constraint that now governs the entire app.</p>
+    <p>The second key decision was <strong>laziness by design</strong>. No pre-built database. The whole graph exists nowhere until you explore it. The LLM constructs a local neighborhood on demand — slower than a static graph, but it works on anything with a Wikipedia presence.</p>
+    <p>Built December 10, 2025. Core graph working that afternoon.</p>
+</section>
+
 <div class="intro">
-    This document describes every feature of Constellations without prescribing layout or visual design. It is intended as a prompt for an AI coding agent to regenerate the application.
+    The sections below describe every feature without prescribing layout or visual design. Intended as a prompt for an AI coding agent to regenerate the application.
 </div>
 
 <section>
@@ -276,7 +316,7 @@
     <h2><span class="num">3</span> Data Sources</h2>
 
     <div class="source-block">
-        <div class="source-name">Gemini (Google AI) — primary intelligence</div>
+        <div class="source-name">LLM — primary intelligence (DeepSeek / Gemini / OpenAI / Anthropic)</div>
         <ul>
             <li>Classify a search term into its bipartite pair and atomic/composite role</li>
             <li>Given a composite node, return 8–12 connected atomic nodes (e.g. actors for a film)</li>
@@ -284,6 +324,7 @@
             <li>Given two terms, find a connecting chain of intermediary nodes</li>
             <li>All calls receive Wikipedia article text as verified context to reduce hallucination</li>
             <li>Returns structured JSON including entity name, type, year, role, and a one-sentence evidence snippet</li>
+            <li>Provider is selectable in the UI (ControlPanel) and persisted to <code>localStorage</code>; default is DeepSeek</li>
         </ul>
     </div>
 
@@ -462,7 +503,7 @@
         <div class="stack-item"><div class="stack-label">Frontend</div><div class="stack-val">React + TypeScript + Vite</div></div>
         <div class="stack-item"><div class="stack-label">Styling</div><div class="stack-val">Tailwind CSS</div></div>
         <div class="stack-item"><div class="stack-label">Graph rendering</div><div class="stack-val">D3.js force simulation</div></div>
-        <div class="stack-item"><div class="stack-label">AI</div><div class="stack-val">Google Gemini API</div></div>
+        <div class="stack-item"><div class="stack-label">AI</div><div class="stack-val">DeepSeek · Gemini · OpenAI · Anthropic</div></div>
         <div class="stack-item"><div class="stack-label">Backend</div><div class="stack-val">Express.js + PostgreSQL</div></div>
         <div class="stack-item"><div class="stack-label">Database</div><div class="stack-val">Supabase (PostgreSQL)</div></div>
         <div class="stack-item"><div class="stack-label">Hosting</div><div class="stack-val">Vercel (frontend) · Render (backend)</div></div>

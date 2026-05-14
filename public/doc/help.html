@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Help — Constellations</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface2: #263348;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #818cf8;
+            --accent2: #38bdf8;
+            --green: #34d399;
+            --border: #334155;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.7;
+            color: var(--text);
+            background: var(--bg);
+            max-width: 780px;
+            margin: 0 auto;
+            padding: 3rem 2rem 6rem;
+        }
+
+        nav {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+        }
+
+        nav a {
+            color: var(--muted);
+            text-decoration: none;
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            transition: all 0.15s;
+        }
+
+        nav a:hover { color: white; border-color: var(--border); }
+        nav a.active { color: var(--accent); border-color: var(--accent); }
+        nav .sep { color: var(--border); padding: 0.25rem 0; }
+
+        header {
+            margin-bottom: 2.5rem;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 800;
+            color: white;
+            letter-spacing: -0.03em;
+            margin-bottom: 0.3rem;
+        }
+
+        header .subtitle { color: var(--muted); font-size: 0.95rem; }
+
+        section { margin-bottom: 2rem; }
+
+        h2 {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .intro-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1.2rem 1.4rem;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+            color: var(--text);
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 100px 1fr;
+            gap: 0.6rem 1rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1.2rem 1.4rem;
+            font-size: 0.88rem;
+        }
+
+        .key { font-weight: 700; color: white; }
+        .desc { color: var(--muted); }
+
+        .feature-list { list-style: none; display: flex; flex-direction: column; gap: 0.6rem; }
+
+        .feature-list li {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 0.7rem 1rem;
+            font-size: 0.9rem;
+        }
+
+        .feature-list li strong { color: white; }
+        .feature-list li span { color: var(--muted); }
+
+        .links-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+        .links-list a {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text);
+            text-decoration: none;
+            font-size: 0.9rem;
+            padding: 0.4rem 0;
+            border-bottom: 1px solid var(--border);
+            transition: color 0.15s;
+        }
+
+        .links-list a:last-child { border-bottom: none; }
+        .links-list a:hover { color: white; }
+        .links-list a.external { color: var(--accent); }
+        .links-list a.highlight { color: #f59e0b; }
+
+        .dot { color: var(--border); }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a href="/">← App</a>
+    <span class="sep">·</span>
+    <a href="help.html" class="active">Help</a>
+    <a href="prompt.html">Prompt</a>
+    <a href="journal.html">Dev Journal</a>
+    <a href="api_queries.html">API Queries</a>
+    <a href="../paper/rendered/paper.pdf" target="_blank">Paper ↗</a>
+</nav>
+
+<header>
+    <h1>Help &amp; Info</h1>
+    <p class="subtitle"><strong>Constellations</strong> — an interactive graph for exploring lives, events, and their hidden connections.</p>
+</header>
+
+<section>
+    <h2>What it does</h2>
+    <div class="intro-box">
+        Type any person, place, film, event, or idea. The app uses an LLM to classify it and expand it into a network of related entities. Each expansion reveals new connections — people who collaborated, events that intertwined, works that share creators. Click any node to expand it further. The graph grows outward from wherever you start.
+        <br><br>
+        The underlying model is a <strong>bipartite graph</strong>: the graph alternates between two kinds of nodes — individual people/creators (<em>atomic</em>) and the things they made or participated in (<em>composite</em>). All edges connect one of each kind; no person-to-person or work-to-work links are possible. This constraint makes the graph navigable.
+    </div>
+</section>
+
+<section>
+    <h2>Controls</h2>
+    <div class="controls-grid">
+        <span class="key">Click</span>        <span class="desc">Select a node or edge — shows details in sidebar</span>
+        <span class="key">Dbl-Click</span>    <span class="desc">Open context menu (Expand, Expand More, Delete, Find Photo)</span>
+        <span class="key">Drag</span>          <span class="desc">Move nodes; pins them in place</span>
+        <span class="key">Scroll</span>        <span class="desc">Zoom in / out</span>
+        <span class="key">Arrow keys</span>    <span class="desc">Move between events in Timeline mode</span>
+    </div>
+</section>
+
+<section>
+    <h2>Modes</h2>
+    <ul class="feature-list">
+        <li><strong>Explore</strong> <span>— type a person or event, expand connections outward</span></li>
+        <li><strong>Connect</strong> <span>— type two terms, find a chain linking them through intermediaries</span></li>
+        <li><strong>Timeline</strong> <span>— shows composite nodes (events, films…) arranged chronologically</span></li>
+        <li><strong>Compact</strong> <span>— reduces node size for dense graphs</span></li>
+        <li><strong>Text Only</strong> <span>— suppresses images; faster on slow connections</span></li>
+    </ul>
+</section>
+
+<section>
+    <h2>Features</h2>
+    <ul class="feature-list">
+        <li><strong>Browse People</strong> <span>— filter Wikipedia's most-notable people by nationality, occupation, and century</span></li>
+        <li><strong>Save / Load / Share</strong> <span>— snapshot graphs by name; export and import as JSON</span></li>
+        <li><strong>Edge evidence</strong> <span>— click any edge to see a one-sentence justification with a source link</span></li>
+        <li><strong>Expand More</strong> <span>— forces fresh LLM expansion, avoiding already-fetched neighbors</span></li>
+        <li><strong>LLM selector</strong> <span>— choose DeepSeek, Gemini, OpenAI, or Anthropic; persists across sessions</span></li>
+        <li><strong>URL parameters</strong> <span>— <code>?q=term</code> auto-starts explore; <code>?start=A&amp;end=B</code> auto-starts pathfinding</span></li>
+    </ul>
+</section>
+
+<section>
+    <h2>More</h2>
+    <div class="links-list">
+        <a href="prompt.html">Prompt — original idea and technical specification</a>
+        <a href="journal.html">Dev Journal — change history</a>
+        <a href="api_queries.html">API Queries — direct curl examples for all endpoints</a>
+        <a href="../paper/rendered/paper.pdf" target="_blank" class="external">Technical Paper (PDF) ↗</a>
+        <a href="https://www.linkedin.com/in/johndimm/" target="_blank" class="highlight">Follow John Dimm on LinkedIn ↗</a>
+        <a href="https://chromewebstore.google.com/detail/nphipbpoephgjgapmeanccnaikljggkg" target="_blank" class="external">Install Chrome Extension ↗</a>
+    </div>
+</section>
+
+</body>
+</html>

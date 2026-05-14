@@ -6,7 +6,7 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, sanitizeSearchTerm } from "./services/aiService";
+import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, sanitizeSearchTerm, setServerLlmOverride } from "./services/aiService";
 import { fetchWikipediaSummary } from "./services/wikipediaService";
 import { resolveImageForTitle, fetchDuckDuckGoImages } from "./services/resolveImageForTitle";
 
@@ -977,7 +977,19 @@ app.get("/api/ddg-image-test", async (req, res) => {
 
 // --- AI Proxy Endpoints ---
 
+/** Apply the browser-selected LLM provider for this request (passed in body as `llmProvider`). */
+function applyProviderFromRequest(req: express.Request): void {
+  const p = req.body?.llmProvider;
+  if (p && typeof p === "string") {
+    setServerLlmOverride(p as any);
+    console.log(`🔀 [Proxy] LLM provider: ${p}`);
+  } else {
+    setServerLlmOverride(null);
+  }
+}
+
 app.post("/api/ai/classify-start", async (req, res) => {
+  applyProviderFromRequest(req);
   const raw = req.body.term;
   if (!raw) return res.status(400).json({ error: "term is required" });
   const term = sanitizeSearchTerm(raw);
@@ -994,6 +1006,7 @@ app.post("/api/ai/classify-start", async (req, res) => {
 });
 
 app.post("/api/ai/classify", async (req, res) => {
+  applyProviderFromRequest(req);
   const raw = req.body.term;
   if (!raw) return res.status(400).json({ error: "term is required" });
   const term = sanitizeSearchTerm(raw);
@@ -1010,6 +1023,7 @@ app.post("/api/ai/classify", async (req, res) => {
 });
 
 app.post("/api/ai/connections", async (req, res) => {
+  applyProviderFromRequest(req);
   const { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
   console.log(`📡 [Proxy] Connections: "${nodeName}" (Type: ${compositeType})`);
@@ -1023,6 +1037,7 @@ app.post("/api/ai/connections", async (req, res) => {
 });
 
 app.post("/api/ai/works", async (req, res) => {
+  applyProviderFromRequest(req);
   const { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
   console.log(`📡 [Proxy] Works: "${nodeName}" (Type: ${atomicType})`);
@@ -1036,6 +1051,7 @@ app.post("/api/ai/works", async (req, res) => {
 });
 
 app.post("/api/ai/path", async (req, res) => {
+  applyProviderFromRequest(req);
   const { start, end, context } = req.body;
   if (!start || !end) return res.status(400).json({ error: "start and end are required" });
   try {
@@ -1047,6 +1063,7 @@ app.post("/api/ai/path", async (req, res) => {
 });
 
 app.post("/api/ai/title", async (req, res) => {
+  applyProviderFromRequest(req);
   const { name, description } = req.body;
   if (!name) return res.status(400).json({ error: "name is required" });
   try {
@@ -1067,6 +1084,37 @@ app.post("/api/ai/search-org", async (req, res) => {
     return res.status(500).json({ error: e.message });
   }
 });
+
+// --- Dev docs ---
+const DOC_STYLE = `<style>body{font-family:ui-monospace,monospace;max-width:900px;margin:2rem auto;padding:0 1.5rem 4rem;background:#0f172a;color:#e2e8f0;line-height:1.6}h1,h2,h3{color:#f1f5f9;margin-top:2rem}h1{color:#c084fc}code{background:#1e293b;padding:.1em .35em;border-radius:3px;font-size:.9em}pre code{background:none;padding:0}pre{background:#1e293b;padding:1rem;border-radius:.5rem;overflow-x:auto;white-space:pre-wrap;word-break:break-word}a{color:#818cf8}hr{border-color:#334155}table{border-collapse:collapse;width:100%}td,th{border:1px solid #334155;padding:.4rem .7rem;text-align:left}th{background:#1e293b}</style>`;
+
+function serveMarkdown(filePath: string, title: string, res: express.Response) {
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    // Very minimal markdown → HTML: fences, headings, bold, code, links, lists, tables, hr
+    const html = raw
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/```[\s\S]*?```/g, m => `<pre><code>${m.slice(3, m.lastIndexOf("```")).replace(/^[a-z]*\n/, "")}</code></pre>`)
+      .replace(/^#{3} (.+)$/gm, "<h3>$1</h3>")
+      .replace(/^#{2} (.+)$/gm, "<h2>$1</h2>")
+      .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+      .replace(/^---$/gm, "<hr>")
+      .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
+      .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
+      .replace(/\n\n/g, "</p><p>")
+      .replace(/^(?!<[hupoli]|<pre|<hr|<strong|<code|<a|<table|<tr|<th|<td)(.+)$/gm, "$1");
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>${DOC_STYLE}</head><body><p>${html}</p></body></html>`);
+  } catch {
+    res.status(404).send("Not found");
+  }
+}
+
+app.get("/docs/about", (_, res) => serveMarkdown(path.join(path.dirname(fileURLToPath(import.meta.url)), "CLAUDE.md"), "About — Constellations", res));
+app.get("/docs/prompt", (_, res) => serveMarkdown(path.join(path.dirname(fileURLToPath(import.meta.url)), "PROMPT.md"), "Prompt — Constellations", res));
+app.get("/docs/journal", (_, res) => serveMarkdown(path.join(path.dirname(fileURLToPath(import.meta.url)), "DEV_JOURNAL.md"), "Dev Journal — Constellations", res));
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => {

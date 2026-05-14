@@ -1,23 +1,27 @@
 /**
- * Provider dispatcher. Set VITE_AI_PROVIDER=deepseek (or gemini) in .env.local.
- * Defaults to gemini when unset.
+ * Provider dispatcher. gemini → geminiService; everything else →
+ * deepseekService (which re-reads getLlmProvider() inside callAltLlm
+ * to pick the right API: deepseek / openai / anthropic).
  */
-import { readBundledEnv } from "./aiUtils";
-import * as gemini from "./geminiService";
-import * as deepseek from "./deepseekService";
+import { getLlmProvider } from "./aiUtils";
+import * as geminiSvc from "./geminiService";
+import * as altSvc from "./deepseekService"; // handles deepseek, openai, anthropic
 
 export * from "./aiUtils";
 export type { LockedPair } from "./geminiService";
 
-const isDeepSeek = (readBundledEnv("VITE_AI_PROVIDER") || "gemini").toLowerCase() === "deepseek";
-const svc = isDeepSeek ? deepseek : gemini;
+function getSvc(fn: string) {
+  const p = getLlmProvider();
+  console.info(`[LLM] ${p} · ${fn}`);
+  return p === "gemini" ? geminiSvc : altSvc;
+}
 
-export const classifyStartPair         = (...args: Parameters<typeof svc.classifyStartPair>)         => svc.classifyStartPair(...args);
-export const classifyEntity            = (...args: Parameters<typeof svc.classifyEntity>)            => svc.classifyEntity(...args);
-export const fetchConnections          = (...args: Parameters<typeof svc.fetchConnections>)          => svc.fetchConnections(...args);
-export const fetchPersonWorks          = (...args: Parameters<typeof svc.fetchPersonWorks>)          => svc.fetchPersonWorks(...args);
-export const fetchConnectionPath       = (...args: Parameters<typeof svc.fetchConnectionPath>)       => svc.fetchConnectionPath(...args);
-export const findWikipediaTitle        = (...args: Parameters<typeof svc.findWikipediaTitle>)        => svc.findWikipediaTitle(...args);
+export const classifyStartPair         = (...args: Parameters<typeof geminiSvc.classifyStartPair>)         => getSvc("classifyStartPair").classifyStartPair(...args);
+export const classifyEntity            = (...args: Parameters<typeof geminiSvc.classifyEntity>)            => getSvc("classifyEntity").classifyEntity(...args);
+export const fetchConnections          = (...args: Parameters<typeof geminiSvc.fetchConnections>)          => getSvc("fetchConnections").fetchConnections(...args);
+export const fetchPersonWorks          = (...args: Parameters<typeof geminiSvc.fetchPersonWorks>)          => getSvc("fetchPersonWorks").fetchPersonWorks(...args);
+export const fetchConnectionPath       = (...args: Parameters<typeof geminiSvc.fetchConnectionPath>)       => getSvc("fetchConnectionPath").fetchConnectionPath(...args);
+export const findWikipediaTitle        = (...args: Parameters<typeof geminiSvc.findWikipediaTitle>)        => getSvc("findWikipediaTitle").findWikipediaTitle(...args);
 // Always uses Gemini — relies on Google Search grounding which is Gemini-specific.
-export const fetchOrgKeyPeopleBlockViaSearch = gemini.fetchOrgKeyPeopleBlockViaSearch;
-export const defaultStartPairResult    = (...args: Parameters<typeof svc.defaultStartPairResult>)    => svc.defaultStartPairResult(...args);
+export const fetchOrgKeyPeopleBlockViaSearch = geminiSvc.fetchOrgKeyPeopleBlockViaSearch;
+export const defaultStartPairResult    = (...args: Parameters<typeof geminiSvc.defaultStartPairResult>)    => getSvc("defaultStartPairResult").defaultStartPairResult(...args);

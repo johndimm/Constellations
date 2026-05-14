@@ -1,7 +1,7 @@
 "use client";
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, sanitizeSearchTerm } from "./aiUtils";
+import { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, sanitizeSearchTerm, looksLikePersonName, getLlmProvider } from "./aiUtils";
 
 export { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify } from "./aiUtils";
 
@@ -120,7 +120,7 @@ async function callAiProxy(endpoint: string, body: any) {
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
+      body: JSON.stringify({ ...body, llmProvider: getLlmProvider() })
     });
 
     if (resp.status === 404 && endpoint === "/api/ai/classify-start") {
@@ -154,7 +154,7 @@ function shouldProxy(): boolean {
   return !!baseUrl;
 }
 
-export function defaultStartPairResult(reason: string): {
+export function defaultStartPairResult(reason: string, term?: string): {
   type: string;
   description: string;
   isAtomic: boolean;
@@ -162,10 +162,11 @@ export function defaultStartPairResult(reason: string): {
   compositeType: string;
   reasoning: string;
 } {
+  const isPerson = term ? looksLikePersonName(term) : false;
   return {
-    type: "Event",
+    type: isPerson ? "Person" : "Event",
     description: "",
-    isAtomic: false,
+    isAtomic: isPerson,
     atomicType: "Person",
     compositeType: "Event",
     reasoning: reason,
@@ -291,7 +292,13 @@ export const classifyStartPair = async (
     });
   }
   if (proxy) {
-    return callAiProxy("/api/ai/classify-start", { term: rawTerm.trim(), wikiContext });
+    const proxyResult = await callAiProxy("/api/ai/classify-start", { term: rawTerm.trim(), wikiContext });
+    // Sanity check: if proxy says non-atomic but the term strongly looks like a person name, correct it.
+    if (!proxyResult.isAtomic && looksLikePersonName(rawTerm)) {
+      console.warn("[classifyStartPair] proxy returned isAtomic=false for apparent person name; overriding", rawTerm);
+      return { ...proxyResult, isAtomic: true, type: "Person" };
+    }
+    return proxyResult;
   }
 
   const needsMusic = rawTermNeedsMusicEntityExtract(rawTerm);
@@ -330,7 +337,7 @@ export const classifyStartPair = async (
 
 
   if (!apiKey) {
-    return defaultStartPairResult("No API key available; defaulting to Person↔Event.");
+    return defaultStartPairResult("No API key available; defaulting to Person↔Event.", term);
   }
 
   const prompt = `Choose the most appropriate bipartite pair for this session based on the input: "${term}".
@@ -391,7 +398,8 @@ Rules:
   } catch (e: any) {
     console.warn("[classifyStartPair]", term, String(e?.message || e).slice(0, 200));
     return defaultStartPairResult(
-      "Classification API unavailable (quota/rate limit or error); defaulting to Person↔Event."
+      "Classification API unavailable (quota/rate limit or error); defaulting to Person↔Event.",
+      term
     );
   }
 };

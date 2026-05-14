@@ -162,19 +162,45 @@
         }
     </style>
 </head>
+<style>
+nav { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:2.5rem; padding-bottom:1.5rem; border-bottom:1px solid var(--border); font-size:0.8rem; }
+nav a { color:var(--muted); text-decoration:none; padding:0.25rem 0.6rem; border-radius:999px; border:1px solid transparent; transition:all 0.15s; }
+nav a:hover { color:white; border-color:var(--border); }
+nav a.active { color:var(--accent); border-color:var(--accent); }
+nav .sep { color:var(--border); padding:0.25rem 0; }
+</style>
+</head>
 <body>
+
+<nav>
+    <a href="/">← App</a>
+    <span class="sep">·</span>
+    <a href="help.html">Help</a>
+    <a href="prompt.html">Prompt</a>
+    <a href="journal.html" class="active">Dev Journal</a>
+    <a href="api_queries.html">API Queries</a>
+    <a href="../paper/rendered/paper.pdf" target="_blank">Paper ↗</a>
+</nav>
 
 <header>
     <h1>Development Journal</h1>
-    <p class="subtitle">
-        A reverse-chronological log of changes to <strong>Constellations</strong>, reconstructed from the git history.
-        &nbsp;·&nbsp; <a href="/">← Back to app</a>
-    </p>
+    <p class="subtitle">A reverse-chronological log of changes to <strong>Constellations</strong>.</p>
 </header>
 
 <div class="timeline">
 
     <div class="year-divider">2026</div>
+
+    <div class="entry">
+        <div class="entry-date">May 14, 2026</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> <strong>Multi-LLM support.</strong> Added DeepSeek, OpenAI, and Anthropic alongside Gemini. LLM selector in ControlPanel persists to <code>localStorage</code>. Every proxy request now carries <code>llmProvider</code> in the body so the cache server honors the browser selection via <code>setServerLlmOverride</code>. Default changed from Gemini to DeepSeek.</p>
+            <p><span class="tag tag-feat">Feat</span> <strong>Hub navigation.</strong> "Constellations" title links back to the Film &amp; Music hub (<code>VITE_HUB_URL</code>) in embedded mode, replacing the old X close button.</p>
+            <p><span class="tag tag-fix">Fix</span> <strong>Kubrick classification bug</strong> — three independent root causes all contributing: (1) <code>...nodeData</code> spread order in <code>useSearchHandlers.ts</code> let stale DB <code>type</code> silently override fresh LLM classification; (2) stale expansion cache reused wrong bipartite children; (3) DB-cached <code>is_atomic</code> values overwrote LLM assignments in the expansion path. Fixes: spread DB data first, semantic cache validation, <code>freshAtomicByTitle</code> map.</p>
+            <p><span class="tag tag-feat">Feat</span> <code>looksLikePersonName(term)</code> heuristic — 2–4 Title-Case words, no parens or digits, no leading article. Used in fallback classification and as a post-proxy sanity check to catch LLM misclassifications of person names as Events.</p>
+            <p><span class="tag tag-infra">Infra</span> Dev docs added: <em>About</em> (architecture guide for coding agents), <em>Prompt</em> (original idea + technical spec), <em>Dev Journal</em>. Links in the Help overlay.</p>
+        </div>
+    </div>
 
     <div class="entry">
         <div class="entry-date">April 15, 2026</div>
@@ -438,6 +464,16 @@
         <div class="entry-date">December 11–13, 2025</div>
         <div class="entry-body">
             <p><span class="tag tag-infra">Infra</span> Project initialized. API key handling. Multiple environment variable sources for Gemini key. Dynamic API key management in UI. Chronological sorting in timeline mode. D3 simulation optimizations.</p>
+        </div>
+    </div>
+
+    <div class="entry">
+        <div class="entry-date">December 10, 2025</div>
+        <div class="entry-body">
+            <p><span class="tag tag-feat">Feat</span> <strong>Genesis.</strong> Core idea: a lazily-constructed collaboration graph of world history — no pre-built database, just live LLM queries expanding a local neighborhood around whatever node you click. Started the morning of Dec 10; the core graph was working that afternoon.</p>
+            <p>The original mental model had people as <em>edges</em> and shared projects as <em>nodes</em>. Within hours that flipped: <strong>people are nodes, not edges.</strong> A person is a hub of events; an event is a hub of persons. This bipartite structure became the organizing principle for everything that followed.</p>
+            <p>The "event" definition: anything involving at least two people at a given time or time range — a film, a battle, a school, a collaboration. The model turned out to be remarkably general.</p>
+            <p><span class="tag tag-infra">Infra</span> <strong>Agent tool history:</strong> started in Google AI Studio (great progress, then took a wrong turn and couldn't revert). Moved to Antigravity (fine until quota ran out), then Cursor (weakest link — many errors, finds best solutions only after exhausting all alternatives), then Codex (step up, ~$3 of remaining work).</p>
         </div>
     </div>
 

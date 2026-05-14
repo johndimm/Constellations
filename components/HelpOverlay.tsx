@@ -109,7 +109,7 @@ const HelpOverlay: React.FC<HelpOverlayProps> = ({
                         className="flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
                     >
                         <LinkIcon size={14} className="text-slate-500" />
-                        <span>Regeneration Prompt</span>
+                        <span>Prompt</span>
                     </a>
                     <a
                         href="/doc/api_queries.html"

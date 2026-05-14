@@ -669,6 +669,18 @@ const App: React.FC<AppProps> = ({
                         selectedKioskDomainId={selectedKioskDomainId}
                         onSelectKioskDomain={(id) => { setSelectedKioskDomainId(id); setPathStart(''); setPathEnd(''); }}
                         onUpdateKioskDomains={setKioskDomains}
+                        onClear={handleClear}
+                        onClearCache={cacheEnabled ? handleClearCache : undefined}
+                        onExpandAllLeafNodes={handleExpandAllLeafNodes}
+                        onSave={handleSaveGraph}
+                        onLoad={(name) => handleLoadGraph(name, applyGraphData)}
+                        onDeleteGraph={handleDeleteGraph}
+                        onImport={(data) => handleImport(data, applyGraphData)}
+                        savedGraphs={savedGraphs}
+                        helpHover={helpHover}
+                        onHelpHoverChange={setHelpHover}
+                        onToggleHelp={() => setShowHelp(!showHelp)}
+                        showHelp={showHelp}
                         isProcessing={isProcessing}
                         isCompact={isCompact}
                         onToggleCompact={() => setIsCompact(!isCompact)}

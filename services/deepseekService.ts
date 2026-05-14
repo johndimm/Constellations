@@ -1,19 +1,12 @@
 "use client";
 import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, readBundledEnv } from "./aiUtils";
+import { parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, readBundledEnv, getLlmProvider, looksLikePersonName } from "./aiUtils";
 import type { LockedPair } from "./geminiService";
 
 export type { LockedPair };
 
-const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
-const DEFAULT_MODEL = "deepseek-chat";
-
 const TIMEOUT_MS = 60000;
 const CLASSIFY_TIMEOUT_MS = 15000;
-
-function getDeepSeekApiKey(): string {
-  return readBundledEnv("VITE_DEEPSEEK_API_KEY");
-}
 
 function shouldProxy(): boolean {
   if (typeof window === "undefined") return false;
@@ -27,24 +20,60 @@ async function callAiProxy(endpoint: string, body: any) {
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, llmProvider: getLlmProvider() }),
   });
   if (!resp.ok) throw new Error(`AI Proxy Error (${resp.status}): ${await resp.text()}`);
   return resp.json();
 }
 
-async function callDeepSeek(system: string, user: string, timeoutMs = TIMEOUT_MS): Promise<string> {
-  const apiKey = getDeepSeekApiKey();
-  if (!apiKey) throw new Error("No VITE_DEEPSEEK_API_KEY set");
+async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS): Promise<string> {
+  const provider = getLlmProvider();
 
-  const res = await fetch(DEEPSEEK_API_URL, {
+  if (provider === "anthropic") {
+    const key = readBundledEnv("VITE_ANTHROPIC_API_KEY");
+    if (!key) throw new Error("No VITE_ANTHROPIC_API_KEY set");
+    const model = readBundledEnv("VITE_ANTHROPIC_MODEL") || "claude-3-5-haiku-20241022";
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 8192,
+        ...(system.trim() ? { system: system.trim() } : {}),
+        messages: [{ role: "user", content: `${user}\n\nReply with a single valid JSON object only. No markdown, no commentary.` }],
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Anthropic API error (${res.status}): ${err}`);
+    }
+    const data = await res.json();
+    const block = data?.content?.[0];
+    return block?.type === "text" ? block.text : "";
+  }
+
+  // OpenAI-compatible: openai or deepseek
+  const isOpenAI = provider === "openai";
+  const baseUrl = isOpenAI
+    ? (readBundledEnv("VITE_OPENAI_BASE_URL") || "https://api.openai.com/v1")
+    : (readBundledEnv("VITE_DEEPSEEK_BASE_URL") || "https://api.deepseek.com/v1");
+  const model = isOpenAI
+    ? (readBundledEnv("VITE_OPENAI_MODEL") || "gpt-4o-mini")
+    : (readBundledEnv("VITE_DEEPSEEK_MODEL") || "deepseek-chat");
+  const key = isOpenAI
+    ? readBundledEnv("VITE_OPENAI_API_KEY")
+    : readBundledEnv("VITE_DEEPSEEK_API_KEY");
+  if (!key) throw new Error(`No API key set for ${provider}`);
+
+  const res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
-      model: DEFAULT_MODEL,
+      model,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -52,15 +81,25 @@ async function callDeepSeek(system: string, user: string, timeoutMs = TIMEOUT_MS
       response_format: { type: "json_object" },
     }),
   });
-
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`DeepSeek API error (${res.status}): ${err}`);
+    throw new Error(`${provider} API error (${res.status}): ${err}`);
   }
-
   const data = await res.json();
   return data.choices?.[0]?.message?.content ?? "";
 }
+
+export const defaultStartPairResult = (reason: string, term?: string) => {
+  const isPerson = term ? looksLikePersonName(term) : false;
+  return {
+    type: isPerson ? "Person" : "Event",
+    description: "",
+    isAtomic: isPerson,
+    atomicType: "Person",
+    compositeType: "Event",
+    reasoning: reason,
+  };
+};
 
 const SYSTEM_INSTRUCTION = `
 You are a Bipartite Graph Generator.
@@ -132,19 +171,16 @@ export const classifyStartPair = async (
   compositeType: string;
   reasoning: string;
 }> => {
-  const fallback = {
-    type: "Event",
-    description: "",
-    isAtomic: false,
-    atomicType: "Person",
-    compositeType: "Event",
-    reasoning: "Default fallback.",
-  };
+  const fallback = defaultStartPairResult("Default fallback.", term);
 
-  if (shouldProxy()) return callAiProxy("/api/ai/classify-start", { term, wikiContext });
-
-  const apiKey = getDeepSeekApiKey();
-  if (!apiKey) return fallback;
+  if (shouldProxy()) {
+    const proxyResult = await callAiProxy("/api/ai/classify-start", { term, wikiContext });
+    if (!proxyResult.isAtomic && looksLikePersonName(term)) {
+      console.warn("[classifyStartPair] proxy returned isAtomic=false for apparent person name; overriding", term);
+      return { ...proxyResult, isAtomic: true, type: "Person" };
+    }
+    return proxyResult;
+  }
 
   const prompt = `Choose the most appropriate bipartite pair for: "${term}".
 
@@ -165,7 +201,7 @@ Return JSON with exactly these fields:
 
   try {
     const raw = await withTimeout(
-      withRetry(() => callDeepSeek(SYSTEM_INSTRUCTION, prompt), 3, 1000),
+      withRetry(() => callAltLlm(SYSTEM_INSTRUCTION, prompt), 3, 1000),
       CLASSIFY_TIMEOUT_MS,
       "classifyStartPair timed out"
     );
@@ -201,9 +237,6 @@ export const classifyEntity = async (
 
   if (shouldProxy()) return callAiProxy("/api/ai/classify", { term, wikiContext });
 
-  const apiKey = getDeepSeekApiKey();
-  if (!apiKey) return fallback;
-
   const wikiPrompt = wikiContext ? `\n\nUSE THIS VERIFIED INFORMATION:\n${wikiContext}\n` : "";
 
   const prompt = `Classify "${term}".${wikiPrompt}
@@ -222,7 +255,7 @@ Return JSON:
 
   try {
     const raw = await withRetry(
-      () => withTimeout(callDeepSeek(SYSTEM_INSTRUCTION, prompt), CLASSIFY_TIMEOUT_MS, "classifyEntity timed out"),
+      () => withTimeout(callAltLlm(SYSTEM_INSTRUCTION, prompt), CLASSIFY_TIMEOUT_MS, "classifyEntity timed out"),
       3,
       1000
     );
@@ -255,9 +288,6 @@ export const fetchConnections = async (
   if (shouldProxy()) {
     return callAiProxy("/api/ai/connections", { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles });
   }
-
-  const apiKey = getDeepSeekApiKey();
-  if (!apiKey) return { people: [] };
 
   const atomicLabel = atomicType || "ATOMIC entity";
   const compositeLabel = compositeType || "COMPOSITE entity";
@@ -299,7 +329,7 @@ Return JSON:
 
   try {
     const raw = await withRetry(
-      () => withTimeout(callDeepSeek(SYSTEM_INSTRUCTION, prompt), TIMEOUT_MS, "fetchConnections timed out"),
+      () => withTimeout(callAltLlm(SYSTEM_INSTRUCTION, prompt), TIMEOUT_MS, "fetchConnections timed out"),
       4,
       1000
     );
@@ -327,9 +357,6 @@ export const fetchPersonWorks = async (
   if (shouldProxy()) {
     return callAiProxy("/api/ai/works", { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles });
   }
-
-  const apiKey = getDeepSeekApiKey();
-  if (!apiKey) return { works: [] };
 
   const atomicLabel = atomicType || "ATOMIC entity";
   const compositeLabel = compositeType || "COMPOSITE entity";
@@ -365,7 +392,7 @@ Return JSON:
 
   try {
     const raw = await withRetry(
-      () => withTimeout(callDeepSeek(SYSTEM_INSTRUCTION, prompt), TIMEOUT_MS, "fetchPersonWorks timed out"),
+      () => withTimeout(callAltLlm(SYSTEM_INSTRUCTION, prompt), TIMEOUT_MS, "fetchPersonWorks timed out"),
       4,
       1000
     );
@@ -388,9 +415,6 @@ export const fetchConnectionPath = async (
 ): Promise<PathResponse> => {
   if (shouldProxy()) return callAiProxy("/api/ai/path", { start, end, context });
 
-  const apiKey = getDeepSeekApiKey();
-  if (!apiKey) return { path: [], found: false };
-
   const wikiPrompt = (context?.startWiki || context?.endWiki)
     ? `\n\nVERIFIED INFO:\n${context?.startWiki ? `[${start}]: ${context.startWiki}\n` : ""}${context?.endWiki ? `[${end}]: ${context.endWiki}\n` : ""}`
     : "";
@@ -412,7 +436,7 @@ Return JSON:
 
   try {
     const raw = await withTimeout(
-      callDeepSeek(SYSTEM_INSTRUCTION, prompt),
+      callAltLlm(SYSTEM_INSTRUCTION, prompt),
       45000,
       "fetchConnectionPath timed out"
     );
@@ -431,9 +455,6 @@ export const findWikipediaTitle = async (
 ): Promise<{ title: string; imageHint?: string } | null> => {
   if (shouldProxy()) return callAiProxy("/api/ai/title", { name, description });
 
-  const apiKey = getDeepSeekApiKey();
-  if (!apiKey) return null;
-
   const prompt = `Find the exact English Wikipedia article title for "${name}"${description ? ` described as "${description}"` : ""}.
 
 Return JSON:
@@ -444,7 +465,7 @@ Return JSON:
 
   try {
     const raw = await withTimeout(
-      callDeepSeek("You are a Wikipedia lookup assistant. Return strict JSON only.", prompt),
+      callAltLlm("You are a Wikipedia lookup assistant. Return strict JSON only.", prompt),
       10000,
       "findWikipediaTitle timed out"
     );
@@ -456,12 +477,3 @@ Return JSON:
   }
 };
 
-
-export const defaultStartPairResult = (reason: string) => ({
-  type: "Event",
-  description: "",
-  isAtomic: false,
-  atomicType: "Person",
-  compositeType: "Event",
-  reasoning: reason,
-});

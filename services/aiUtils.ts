@@ -337,6 +337,87 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string
   });
 }
 
+export function clipForLlmLog(text: string, maxChars = 16000): string {
+  const s = String(text ?? "");
+  if (s.length <= maxChars) return s;
+  return `${s.slice(0, maxChars)}\n… [truncated ${s.length - maxChars} more chars]`;
+}
+
+export function isRateLimitError(e: any): boolean {
+  if (e?.error?.code === 429 || e?.code === 429) return true;
+  const s = String(e?.error?.status || "").toLowerCase();
+  if (s === "resource_exhausted") return true;
+  const t = [e?.message, e?.error, e?.status, e?.code, typeof e === "string" ? e : ""]
+    .map(x => (typeof x === "object" ? JSON.stringify(x) : String(x ?? "")))
+    .join(" ")
+    .toLowerCase();
+  return t.includes("429") || t.includes("resource_exhausted");
+}
+
+export type LlmProviderId = "gemini" | "deepseek" | "openai" | "anthropic";
+
+const BROWSER_LLM_KEY = "constellations_llm_provider";
+
+function isValidProvider(v: string): v is LlmProviderId {
+  return v === "gemini" || v === "deepseek" || v === "openai" || v === "anthropic";
+}
+
+export function getBrowserLlmOverride(): LlmProviderId | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = window.localStorage.getItem(BROWSER_LLM_KEY)?.trim().toLowerCase() ?? "";
+    if (isValidProvider(v)) return v;
+  } catch {}
+  return null;
+}
+
+export function setBrowserLlmOverride(provider: LlmProviderId | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (provider === null) {
+      window.localStorage.removeItem(BROWSER_LLM_KEY);
+    } else {
+      window.localStorage.setItem(BROWSER_LLM_KEY, provider);
+    }
+  } catch {}
+}
+
+// Server-side per-request override (Node.js module memory, set before each proxy call).
+// This is intentionally simple — dev server is single-user so concurrent-request races are fine.
+let _serverLlmOverride: LlmProviderId | null = null;
+
+export function setServerLlmOverride(provider: LlmProviderId | null): void {
+  _serverLlmOverride = provider;
+}
+
+export function getLlmProvider(): LlmProviderId {
+  if (_serverLlmOverride) return _serverLlmOverride;
+  const browser = getBrowserLlmOverride();
+  if (browser) return browser;
+  const raw = (readBundledEnv("VITE_AI_PROVIDER") || "deepseek").trim().toLowerCase();
+  return isValidProvider(raw) ? raw : "deepseek";
+}
+
+/**
+ * Returns true if `term` is likely a person name (2–4 Title-Case words, no parens or digits,
+ * no leading article). Used as a sanity-check on LLM classification results and fallbacks.
+ * False-positives (e.g. "Star Wars") can happen, but this is only consulted when the model
+ * returns or falls back to isAtomic=false, so the worst case is a wrong default that the user
+ * can easily correct by re-searching with a disambiguated term.
+ */
+export function looksLikePersonName(term: string): boolean {
+  const t = term.trim();
+  if (/[()[\]{}]/.test(t)) return false;  // parenthetical tags → work title
+  if (/\d/.test(t)) return false;          // digits → year / track number
+  const words = t.split(/\s+/);
+  if (words.length < 2 || words.length > 4) return false;
+  // Leading stopwords rule out "The Godfather", "A Star Is Born", etc.
+  if (/^(the|a|an|of|in|on|at|to|for|with|by|la|le|les|el|los|das|der|die)$/i.test(words[0])) return false;
+  // Each word: Title-Case word (≥2 chars), single initial with period, or name suffix
+  const nameWordRe = /^[A-Z][a-z'-]{1,}\.?$|^[A-Z]\.$|^(Jr|Sr|II|III|IV|VI|VII|VIII|IX)\.?$/;
+  return words.every(w => nameWordRe.test(w));
+}
+
 // Improved retry logic with exponential backoff and jitter
 export async function withRetry<T>(fn: () => Promise<T>, attempts = 3, backoffMs = 1000): Promise<T> {
   let lastError: any;

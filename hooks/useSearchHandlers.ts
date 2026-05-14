@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { GraphNode, GraphLink } from '../types';
-import { classifyStartPair, fetchConnectionPath, LockedPair, classifyEntity, fetchConnections } from '../services/geminiService';
+import { classifyStartPair, fetchConnectionPath, LockedPair, classifyEntity, fetchConnections } from '../services/aiService';
 import { fetchWikipediaSummary } from '../services/wikipediaService';
 import { dedupeGraph, normalizeForDedup } from '../services/graphUtils';
 import { clampToViewport } from '../utils/graphLogicUtils';
@@ -147,8 +147,10 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
 
             const dim = dimensionsRef.current;
             const startNode: GraphNode = {
+                ...nodeData,
                 id: nodeData.id,
                 title: canonicalTitle,
+                // Fresh classification always wins over stale DB values.
                 type,
                 is_atomic: isAtomic,
                 wikipedia_id: wiki.pageid?.toString(),
@@ -161,7 +163,6 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                 atomic_type: chosenPair.atomicType,
                 composite_type: chosenPair.compositeType,
                 imageUrl: nodeData.imageUrl || nodeData.image_url,
-                ...nodeData
             };
 
             setGraphData({ nodes: [startNode], links: [] });

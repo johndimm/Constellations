@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Queries Documentation - Constellations</title>
+    <title>API Queries — Constellations</title>
     <style>
         :root {
             --bg: #0f172a;
@@ -74,44 +74,103 @@
             border-radius: 1rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
+
+        nav {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+        }
+        nav a {
+            color: #94a3b8;
+            text-decoration: none;
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            transition: all 0.15s;
+        }
+        nav a:hover { color: white; border-color: var(--border); text-decoration: none; }
+        nav a.active { color: var(--accent); border-color: var(--accent); }
+        nav .sep { color: var(--border); padding: 0.25rem 0; }
     </style>
 </head>
 
 <body>
+    <nav>
+        <a href="/">← App</a>
+        <span class="sep">·</span>
+        <a href="help.html">Help</a>
+        <a href="prompt.html">Prompt</a>
+        <a href="journal.html">Dev Journal</a>
+        <a href="api_queries.html" class="active">API Queries</a>
+        <a href="../paper/rendered/paper.pdf" target="_blank">Paper ↗</a>
+    </nav>
     <div class="container">
         <h1>API Queries Documentation</h1>
-        <p>This document outlines the external API calls used by the <strong>Constellations</strong> application. These
-            include Google Gemini for entity processing and Wikipedia/Google Books/DuckDuckGo for metadata and images.
-        </p>
+        <p>This document outlines the external API calls used by <strong>Constellations</strong>. All AI calls go
+            through the cache server proxy (port 4000 in dev, Render in production) — the browser never calls LLM
+            APIs directly. The cache server checks PostgreSQL first; on a miss, it forwards the call to the selected
+            LLM provider (DeepSeek by default; Gemini, OpenAI, and Anthropic also supported).</p>
 
         <hr>
 
-        <h2>1. Google Gemini (LLM)</h2>
-        <p>The application uses <code>gemini-2.5-flash</code> for all entity classification and graph expansion tasks
-            via the <code>@google/genai</code> SDK.</p>
+        <h2>1. Cache Server (AI Proxy)</h2>
+        <p>The browser always calls <code>http://localhost:4000/api/ai/*</code> in dev (or the Render URL in production).
+            Include <code>"llmProvider"</code> in the body to select the LLM; omit it to use the server's default.</p>
 
-        <h3>Common Request Structure</h3>
-        <ul>
-            <li><strong>Endpoint</strong>:
-                <code>https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$API_KEY</code>
-            </li>
-            <li><strong>Method</strong>: <code>POST</code></li>
-            <li><strong>Headers</strong>: <code>Content-Type: application/json</code></li>
-        </ul>
+        <h3>Classify start term</h3>
+        <pre><code>curl http://localhost:4000/api/ai/classify-start \
+  -H 'Content-Type: application/json' \
+  -d '{"term": "Stanley Kubrick", "llmProvider": "deepseek"}'</code></pre>
 
-        <h3>Entity Classification</h3>
-        <p>Used to determine if a search term is a "Person" or an "Event/Thing".</p>
-        <p><strong>Example Curl</strong>:</p>
-        <pre><code>curl https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$API_KEY \
+        <h3>Expand node (connections)</h3>
+        <pre><code>curl http://localhost:4000/api/ai/connections \
+  -H 'Content-Type: application/json' \
+  -d '{"nodeName": "Stanley Kubrick", "atomicType": "Director", "compositeType": "Movie", "llmProvider": "deepseek"}'</code></pre>
+
+        <h3>Expand node (works)</h3>
+        <pre><code>curl http://localhost:4000/api/ai/works \
+  -H 'Content-Type: application/json' \
+  -d '{"nodeName": "The Godfather", "atomicType": "Actor", "compositeType": "Movie", "llmProvider": "deepseek"}'</code></pre>
+
+        <h3>Find path between two nodes</h3>
+        <pre><code>curl http://localhost:4000/api/ai/path \
+  -H 'Content-Type: application/json' \
+  -d '{"start": "Stanley Kubrick", "end": "Francis Ford Coppola", "llmProvider": "deepseek"}'</code></pre>
+
+        <h3>Clear cache</h3>
+        <pre><code>curl -X DELETE http://localhost:4000/cache/clear</code></pre>
+
+        <hr>
+
+        <h2>2. Direct LLM APIs (bypasses cache)</h2>
+        <p>These examples call LLM providers directly, as the cache server does internally. Useful for debugging
+            prompts without the proxy layer.</p>
+
+        <h3>DeepSeek (default provider)</h3>
+        <pre><code>curl https://api.deepseek.com/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $VITE_DEEPSEEK_API_KEY" \
+  -d '{
+    "model": "deepseek-chat",
+    "messages": [{"role": "user", "content": "Classify \"Samuel Beckett\". Return JSON with type (Person or Event) and description."}],
+    "max_tokens": 1024
+  }'</code></pre>
+
+        <h3>Google Gemini</h3>
+        <p>The application can use <code>gemini-2.5-flash</code> (or <code>gemini-2.5-pro</code>) when provider is set to <code>gemini</code>.</p>
+        <pre><code>curl https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$VITE_GEMINI_API_KEY \
     -H 'Content-Type: application/json' \
     -d '{
-      "contents": [{
-        "parts":[{"text": "Classify \"Samuel Beckett\". Return JSON with a \"type\" field (Person or Event) and a \"description\"."}]
-      }],
-      "generationConfig": {
-        "response_mime_type": "application/json"
-      }
+      "contents": [{"parts":[{"text": "Classify \"Samuel Beckett\". Return JSON with type (Person or Event) and description."}]}],
+      "generationConfig": {"response_mime_type": "application/json"}
     }'</code></pre>
+
+        <h3>System prompt (all providers)</h3>
+        <p>The application sends this system instruction with every expansion call:</p>
 
         <h3>System Instruction</h3>
         <p>The application uses a detailed system instruction to ensure the AI follows bipartite graph rules and returns
@@ -180,7 +239,7 @@ Return strict JSON.</code></pre>
 
         <hr>
 
-        <h2>2. Wikipedia API</h2>
+        <h2>3. Wikipedia API</h2>
         <p>Wikipedia is used for entity disambiguation, fetching multi-paragraph summaries, and finding high-quality
             images.</p>
 
@@ -206,14 +265,14 @@ Return strict JSON.</code></pre>
 
         <hr>
 
-        <h2>3. Google Books API</h2>
+        <h2>4. Google Books API</h2>
         <p>Used as a fallback for finding book cover images when Wikipedia lacks a suitable image.</p>
         <p><strong>Example Curl</strong>:</p>
         <pre><code>curl "https://www.googleapis.com/books/v1/volumes?q=Waiting%20for%20Godot&maxResults=1"</code></pre>
 
         <hr>
 
-        <h2>4. DuckDuckGo Image Search (server-side)</h2>
+        <h2>5. DuckDuckGo Image Search (server-side)</h2>
         <p>Used as a fallback when Wikimedia does not provide a suitable image. The server first fetches a
             <code>vqd</code>
             token from the HTML response, then requests image results from the JSON endpoint.</p>

@@ -182,9 +182,21 @@ export function useExpansion(options: UseExpansionOptions) {
                     // and vice versa.
                     const parentIsAtomic = !!(node.is_atomic ?? (node as any).is_person ?? (node.type || '').toLowerCase() === 'person');
                     const expectedChildIsAtomic = !parentIsAtomic;
+
+                    // Validate cache semantic consistency: if most cached children look like the
+                    // wrong bipartite type (e.g. persons cached from when this node was an Event,
+                    // but now it's a Person), skip the cache so the LLM fetches fresh data.
+                    const ATOMIC_TYPE_WORDS = new Set(['person', 'actor', 'author', 'director', 'artist', 'musician', 'character', 'scientist', 'philosopher', 'researcher', 'composer', 'photographer']);
+                    const atomicLookingCount = upgraded.filter((cn: any) => ATOMIC_TYPE_WORDS.has((cn.type || '').toLowerCase())).length;
+                    const mostlyCachedAreAtomic = upgraded.length > 0 && atomicLookingCount > upgraded.length / 2;
+                    const cacheSemanticValid = mostlyCachedAreAtomic === expectedChildIsAtomic;
+                    if (!cacheSemanticValid) {
+                        console.warn(`[useExpansion] Cache bypassed: cached nodes are mostly ${mostlyCachedAreAtomic ? 'atomic' : 'composite'} but expected ${expectedChildIsAtomic ? 'atomic' : 'composite'} for "${node.title}"`);
+                    }
+
                     validCached = upgraded.map((cn: any) => ({ ...cn, is_atomic: expectedChildIsAtomic }));
 
-                    if (validCached.length >= 5) {
+                    if (cacheSemanticValid && validCached.length >= 5) {
                         const existingNodeIdsBefore = new Set(graphDataRef.current.nodes.map(n => String(n.id)));
                         const newChildIds: (string | number)[] = validCached.filter(cn => !existingNodeIdsBefore.has(String(cn.id))).map(cn => cn.id);
                         // Include ALL connected nodes for highlighting, not just new ones
@@ -538,6 +550,13 @@ export function useExpansion(options: UseExpansionOptions) {
                 let nodesToUse = resultsWithWiki;
                 if (!exploreTerm.toLowerCase().startsWith('list of ')) nodesToUse = nodesToUse.filter((n: any) => !isBadListPage(n.title));
 
+                // Preserve LLM-assigned is_atomic before cache fetch may overwrite with stale DB values.
+                const freshAtomicByTitle = new Map<string, boolean>(
+                    resultsWithWiki
+                        .filter((cn: any) => typeof cn.is_atomic === 'boolean')
+                        .map((cn: any) => [String(cn.title || '').toLowerCase(), Boolean(cn.is_atomic)])
+                );
+
                 let finalIDMap: Record<string, number> | undefined;
                 if (cacheEnabled) {
                     let combinedNodes = [...resultsWithWiki];
@@ -609,7 +628,11 @@ export function useExpansion(options: UseExpansionOptions) {
                         const existing = nodeMap.get(String(cn.id));
                         nodeMap.set(String(cn.id), {
                             id: cn.id, title: cn.title, type: cn.type,
-                            is_atomic: (existing?.is_atomic ?? (existing as any)?.is_person ?? (typeof (cn as any).is_atomic === 'boolean' ? (cn as any).is_atomic : expectedChildIsAtomic)),
+                            // Prefer LLM-assigned is_atomic (most accurate); fall back to bipartite inference.
+                            // DB is_atomic is unreliable (can be stale from a prior wrong classification).
+                            is_atomic: freshAtomicByTitle.has(String(cn.title || '').toLowerCase())
+                                ? freshAtomicByTitle.get(String(cn.title || '').toLowerCase())!
+                                : expectedChildIsAtomic,
                             wikipedia_id: cn.wikipedia_id, description: cn.description || existing?.description || "",
                             year: cn.year ?? existing?.year, imageUrl: meta.imageUrl ?? existing?.imageUrl,
                             imageChecked: !!(meta.imageUrl ?? existing?.imageUrl) || existing?.imageChecked,

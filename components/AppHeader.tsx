@@ -37,8 +37,6 @@ const AppHeader: React.FC<AppHeaderProps> = ({
 }) => {
     if (!showHeader) return null;
 
-    const showLeave = closeHref || onClose;
-
     return (
         <header
             className={`absolute left-0 right-0 z-[200] h-14 max-h-14 min-h-14 shrink-0 pointer-events-auto bg-slate-900/95 backdrop-blur flex items-center justify-between px-2 sm:px-3 py-2 gap-2 overflow-x-hidden max-w-full ${offsetTopClass}`}
@@ -57,9 +55,19 @@ const AppHeader: React.FC<AppHeaderProps> = ({
                 >
                     {panelCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
                 </button>
-                <span className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap">
-                    Constellations
-                </span>
+                {closeHref ? (
+                    <a
+                        href={closeHref}
+                        title="Film & Music — return to hub"
+                        className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap hover:text-red-400 transition-colors"
+                    >
+                        Constellations
+                    </a>
+                ) : (
+                    <span className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap">
+                        Constellations
+                    </span>
+                )}
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 mr-1">
                 {selectedNode && (
@@ -79,18 +87,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({
                         {sidebarCollapsed ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
                     </button>
                 )}
-                {showLeave && closeHref && (
-                    <a
-                        href={closeHref}
-                        onClick={onClose}
-                        className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white hover:border-slate-600 transition flex-shrink-0"
-                        title="Return to the main app"
-                        aria-label="Return to the main app"
-                    >
-                        <X size={20} strokeWidth={2} />
-                    </a>
-                )}
-                {showLeave && !closeHref && onClose && (
+                {!closeHref && onClose && (
                     <button
                         type="button"
                         onClick={(e) => {
