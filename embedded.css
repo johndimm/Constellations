@@ -1,0 +1,38 @@
+/* Component-specific styles for @johndimm/constellations when embedded in a host app.
+   Import this in your root layout: import "@johndimm/constellations/embedded.css" */
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 2px;
+}
+
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+    background: #64748b;
+}
+
+@keyframes cc-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes cc-scale-in {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes cc-fade-in-up {
+    from { transform: translate(-50%, 20px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+.animate-fade-in { animation: cc-fade-in 0.2s ease-out forwards; }
+.animate-scale-in { animation: cc-scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-fade-in-up { animation: cc-fade-in-up 0.3s ease-out forwards; }

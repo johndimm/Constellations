@@ -1,6 +1,5 @@
 "use client";
 import { lazy, Suspense, type ComponentProps, type FC, type ReactNode } from "react";
-import "./index.css";
 
 const App = lazy(() => import("./App"));
 

@@ -1,6 +1,6 @@
 {
   "name": "@johndimm/constellations",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "main": "./index.tsx",
   "exports": {
@@ -9,6 +9,7 @@
     "./FullPageConstellations": "./FullPageConstellations.tsx",
     "./host": "./host.ts",
     "./index.css": "./index.css",
+    "./embedded.css": "./embedded.css",
     "./sessionHandoff": "./sessionHandoff.ts",
     "./graphNodeToChannelNotes": "./utils/graphNodeToChannelNotes.ts",
     "./types": "./types.ts"
@@ -18,6 +19,7 @@
     "FullPageConstellations.tsx",
     "FullPageConstellationsHostShell.tsx",
     "host.ts",
+    "embedded.css",
     "index.css",
     "index.tsx",
     "kioskDomains.ts",
