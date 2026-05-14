@@ -130,3 +130,29 @@ export function takeEmbedHandoffForInitialState(): ConstellationsSessionHandoffV
     embedHandoffMem = null;
     return null;
 }
+
+declare global {
+    interface Window {
+        __soundingsConstellationsGetHandoff?: () => unknown;
+    }
+}
+
+/** Serialize current embedded graph (`__soundingsConstellationsGetHandoff`) before navigating away. */
+export function persistWindowConstellationsHandoffToSession(): void {
+    if (typeof window === 'undefined') return;
+    try {
+        const fn = window.__soundingsConstellationsGetHandoff;
+        if (typeof fn !== 'function') return;
+        const payload = fn();
+        if (!payload || typeof payload !== 'object') return;
+        const p = payload as { v?: number; graph?: { nodes?: unknown[] } };
+        if (p.v !== 1 || !p.graph?.nodes?.length) return;
+        try {
+            sessionStorage.setItem(SOUNDINGS_CONSTELLATIONS_HANDOFF_KEY, JSON.stringify(payload));
+        } catch (e) {
+            console.warn('[constellations] handoff too large for sessionStorage', e);
+        }
+    } catch (e) {
+        console.warn('[constellations] handoff persist', e);
+    }
+}
