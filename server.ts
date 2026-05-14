@@ -6,12 +6,9 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, defaultStartPairResult, getLlmProvider } from "./services/geminiService";
-import { registerServerRequestLlmReader } from "./services/aiUtils";
-import { withRequestLlm, readRequestLlm } from "./serverRequestLlm";
+import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, sanitizeSearchTerm } from "./services/aiService";
 import { fetchWikipediaSummary } from "./services/wikipediaService";
-
-registerServerRequestLlmReader(readRequestLlm);
+import { resolveImageForTitle, fetchDuckDuckGoImages } from "./services/resolveImageForTitle";
 
 // Load env from .env.local if present
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -172,83 +169,13 @@ app.options("*", cors({ origin: "*", methods: ["GET", "POST", "DELETE", "OPTIONS
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
-// Log requests for debugging (POST always; GET for hot paths — otherwise expansion reads look "silent")
+// Log requests for debugging
 app.use((req, res, next) => {
-  const pathOnly = req.url.split("?")[0] || req.url;
-  const logThisGet =
-    req.method === "GET" && (pathOnly === "/expansion" || pathOnly === "/path" || pathOnly.startsWith("/graphs"));
-  if (req.method === "POST" || logThisGet) {
-    const extra = req.method === "POST" ? ` - ${req.get("content-length") || 0} bytes` : "";
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}${extra}`);
+  if (req.method === 'POST') {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - ${req.get('content-length') || 0} bytes`);
   }
   next();
 });
-
-// Server-side DuckDuckGo image fetch (avoids browser CORS).
-const fetchPosterFromDuckDuckGo = async (q: string): Promise<string | null> => {
-  const exclude = ['logo', 'icon', 'emoji', 'svg', 'vector', 'clipart', 'cartoon', 'animated', 'posterized'];
-  try {
-    const candidates = await fetchDuckDuckGoImages(q, 10);
-    console.log("[Poster][DDG] results", candidates.length);
-    for (const r of candidates) {
-      const url = String(r?.image || r?.thumbnail || '');
-      if (!url) continue;
-      const lower = url.toLowerCase();
-      if (exclude.some(p => lower.includes(p))) continue;
-      console.log(`[Poster][DDG] candidate`, { url: r?.image, thumbnail: r?.thumbnail, title: r?.title });
-      return url;
-    }
-  } catch (e) {
-    console.warn("[Poster][DDG] failed", q, e);
-  }
-  return null;
-};
-
-// Raw DuckDuckGo image fetch for testing (returns top N results without filtering).
-const fetchDuckDuckGoImages = async (q: string, limit: number = 10): Promise<Array<{ image?: string; thumbnail?: string; title?: string }>> => {
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
-    'Accept-Language': 'en-US,en;q=0.9'
-  };
-  try {
-    const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(q)}&iax=images&ia=images`;
-    const pageRes = await fetch(searchUrl, { headers });
-    if (!pageRes.ok) {
-      console.warn("[DDG-Test] search status", pageRes.status, q);
-      return [];
-    }
-    const pageText = await pageRes.text();
-    const vqdMatch = pageText.match(/vqd=['"]?([^'"&]+)/);
-    const vqd = vqdMatch?.[1];
-    if (!vqd) {
-      console.warn("[DDG-Test] missing vqd for query", q);
-      return [];
-    }
-
-    const apiUrl = `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(q)}&vqd=${encodeURIComponent(vqd)}&f=,,,&p=1`;
-    const apiRes = await fetch(apiUrl, {
-      headers: {
-        ...headers,
-        Referer: searchUrl,
-        Accept: "application/json, text/javascript, */*; q=0.01",
-        "X-Requested-With": "XMLHttpRequest"
-      }
-    });
-    if (!apiRes.ok) {
-      console.warn("[DDG-Test] api status", apiRes.status, q);
-      return [];
-    }
-    const data = await apiRes.json();
-    const results: any[] = data?.results || [];
-    return results.slice(0, limit).map(r => ({
-      image: r?.image,
-      thumbnail: r?.thumbnail,
-      title: r?.title
-    }));
-  } catch {
-    return [];
-  }
-};
 
 // Schema initializer
 const initSql = `
@@ -858,7 +785,12 @@ app.post("/expansion", async (req, res) => {
 
     // 1. Get source node is_atomic to know if it's an atomic or composite
     const sourceRes = await client.query("select is_atomic, type from nodes where id = $1", [sourceId]);
-    if (sourceRes.rowCount === 0) throw new Error("Source node not found");
+    if (sourceRes.rowCount === 0) {
+      await client.query("rollback");
+      client.release();
+      client = undefined;
+      return res.json({ ok: true, skipped: true, reason: "source node not in db" });
+    }
     const sourceIsAtomic = sourceRes.rows[0].is_atomic ?? (sourceRes.rows[0].type?.toLowerCase() === 'person');
 
     // 2. Upsert target nodes
@@ -1004,292 +936,6 @@ app.delete("/graphs/:name", async (req, res) => {
   }
 });
 
-const resolveImageForTitle = async (title: string, context: string): Promise<{ url: string | null; source?: string }> => {
-  const trimmedTitle = title.trim();
-  const trimmedContext = context.trim();
-  const looksLikeScreenWork = (s: string) => /\b(film|movie|television series|tv series|miniseries|sitcom|drama series|comedy series|series)\b/i.test(s.toLowerCase());
-  // Recognize person types: exact match OR if context contains person-related type (Actor, Musician, etc.)
-  const isPersonContext = (s: string) => {
-    const normalized = s.trim().toLowerCase();
-    // Exact matches
-    if (/^(person|author|actor|musician|artist|scientist|mathematician|researcher)$/i.test(normalized)) return true;
-    // Check if context contains person type anywhere (e.g., "Actor ↔ Movie")
-    if (/\b(person|author|actor|musician|artist|scientist|mathematician|researcher|composer|director|writer|poet|playwright)\b/i.test(normalized)) return true;
-    return false;
-  };
-  let isScreenWork = looksLikeScreenWork(`${trimmedTitle} ${trimmedContext}`);
-  const isPerson = isPersonContext(trimmedContext);
-
-  const fetchImageInfo = async (fileTitle: string): Promise<string | null> => {
-    const apis = [
-      `https://commons.wikimedia.org/w/api.php`,
-      `https://en.wikipedia.org/w/api.php`
-    ];
-    for (const api of apis) {
-      try {
-        const url = `${api}?action=query&format=json&prop=imageinfo&titles=${encodeURIComponent(fileTitle)}&iiprop=url&iiurlwidth=800&origin=*`;
-        const resp = await fetch(url, { headers: { 'User-Agent': 'Constellations/1.0' } });
-        if (!resp.ok) continue;
-        const data = await resp.json();
-        const pagesInfo = data?.query?.pages;
-        const imgPage = pagesInfo ? (Object.values(pagesInfo)[0] as any) : null;
-        const info = imgPage?.imageinfo?.[0];
-        if (info?.thumburl || info?.url) return info.thumburl || info.url;
-      } catch { }
-    }
-    return null;
-  };
-
-  const resolveWikidataId = async (allowSearchFallback: boolean): Promise<string | null> => {
-    try {
-      const ppUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(trimmedTitle)}&redirects=1&origin=*`;
-      const ppRes = await fetch(ppUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
-      if (!ppRes.ok) {
-        console.warn("[Image][Wikidata] pageprops status", ppRes.status);
-      }
-      const ppData = await ppRes.json();
-      const pages = ppData?.query?.pages;
-      const page = pages ? (Object.values(pages)[0] as any) : null;
-      const qid = page?.pageprops?.wikibase_item;
-      if (qid && /^Q\d+$/.test(qid)) return qid;
-      console.warn("[Image][Wikidata] no qid from pageprops", trimmedTitle);
-    } catch (e) {
-      console.warn("[Image][Wikidata] pageprops failed", trimmedTitle, e);
-    }
-
-    if (allowSearchFallback) {
-      try {
-        const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=${encodeURIComponent(trimmedTitle)}&origin=*`;
-        const res = await fetch(searchUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
-        const data = await res.json();
-        const id = data?.search?.[0]?.id;
-        if (id && /^Q\d+$/.test(id)) return id;
-        console.warn("[Image][Wikidata] search found nothing", trimmedTitle);
-      } catch (e) {
-        console.warn("[Image][Wikidata] search failed", trimmedTitle, e);
-      }
-    }
-    return null;
-  };
-
-  const fetchWikidataImageForTitle = async (allowSearchFallback: boolean): Promise<string | null> => {
-    try {
-      const qid = await resolveWikidataId(allowSearchFallback);
-      if (!qid) return null;
-      const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${qid}&origin=*`;
-      const wdRes = await fetch(wdUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
-      if (!wdRes.ok) console.warn("[Image][Wikidata] wbgetentities status", wdRes.status);
-      const wdData = await wdRes.json();
-      const claims = wdData?.entities?.[qid]?.claims;
-      const p18 = claims?.P18?.[0]?.mainsnak?.datavalue?.value as string | undefined;
-      if (!p18) return null;
-      const imgTitle = p18.startsWith('File:') ? p18 : `File:${p18}`;
-      return fetchImageInfo(imgTitle);
-    } catch (e) {
-      console.warn("[Image][Wikidata] failed", trimmedTitle, e);
-      return null;
-    }
-  };
-
-  const fetchWikipediaPageImage = async (): Promise<string | null> => {
-    try {
-      const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&titles=${encodeURIComponent(trimmedTitle)}&pithumbsize=800&redirects=1&origin=*`;
-      const resp = await fetch(url, { headers: { 'User-Agent': 'Constellations/1.0' } });
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      const pages = data?.query?.pages;
-      const page = pages ? (Object.values(pages)[0] as any) : null;
-      return page?.thumbnail?.source || null;
-    } catch {
-      return null;
-    }
-  };
-
-  const fetchWikipediaExtract = async (): Promise<string | null> => {
-    try {
-      const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&exintro=1&explaintext=1&titles=${encodeURIComponent(trimmedTitle)}&redirects=1&origin=*`;
-      const resp = await fetch(url, { headers: { 'User-Agent': 'Constellations/1.0' } });
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      const pages = data?.query?.pages;
-      const page = pages ? (Object.values(pages)[0] as any) : null;
-      return page?.extract || null;
-    } catch {
-      return null;
-    }
-  };
-
-  const fetchWikipediaPosterFromImages = async (): Promise<string | null> => {
-    try {
-      const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=images&titles=${encodeURIComponent(trimmedTitle)}&imlimit=50&redirects=1&origin=*`;
-      const resp = await fetch(url, { headers: { 'User-Agent': 'Constellations/1.0' } });
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      const pages = data?.query?.pages;
-      const page = pages ? (Object.values(pages)[0] as any) : null;
-      const images = page?.images || [];
-      if (!images.length) return null;
-
-      const normalizedTitle = trimmedTitle.toLowerCase();
-      const candidates = images
-        .map((img: any) => String(img?.title || ''))
-        .filter((t: string) => t.toLowerCase().startsWith('file:'));
-
-      if (!candidates.length) return null;
-
-      const scored = candidates.map((t: string) => {
-        const lt = t.toLowerCase();
-        let score = 0;
-        if (lt.includes('poster')) score += 500;
-        if (lt.includes('cover')) score += 200;
-        if (lt.includes('film') || lt.includes('movie')) score += 150;
-        if (lt.includes(normalizedTitle)) score += 200;
-
-        // Penalize junk keywords often found in museum/car photos
-        const junk = ['museum', 'car', 'grill', 'packard', 'automobile', 'vehicle', 'display', 'engine', 'cockpit', 'interior', 'exterior', 'restoration', 'may_2017'];
-        if (junk.some(j => lt.includes(j))) score -= 1000;
-
-        // Movie posters usually have clean filenames. Long, descriptive names often imply a photo OF a prop.
-        if (t.length > 100) score -= 400;
-
-        if (lt.includes('.svg') || lt.includes('.webm') || lt.includes('.gif')) score -= 300;
-        return { title: t, score };
-      }).sort((a: any, b: any) => b.score - a.score);
-
-      const best = scored[0];
-      if (!best || best.score <= 0) {
-        console.warn(`[Image][Wiki-Poster] No good poster found for "${trimmedTitle}". Best score: ${best?.score || 0}`);
-        return null;
-      }
-      return fetchImageInfo(best.title);
-    } catch {
-      return null;
-    }
-  };
-
-  const fetchCommonsPoster = async (): Promise<string | null> => {
-    try {
-      const searchQuery = `"${trimmedTitle}" poster`;
-      const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srnamespace=6&srlimit=5&origin=*`;
-      const res = await fetch(searchUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
-      const data = await res.json();
-      const hits: any[] = data?.query?.search || [];
-      let best: { url: string; score: number; title: string } | null = null;
-      const normalizedTitle = trimmedTitle.toLowerCase();
-      for (const h of hits) {
-        const fileTitle = h?.title;
-        if (!fileTitle) continue;
-        const lowerTitle = String(fileTitle).toLowerCase();
-        if (lowerTitle.endsWith('.pdf') || lowerTitle.includes('.pdf/')) continue;
-        const infoUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&titles=${encodeURIComponent(fileTitle)}&iiprop=url|size&iiurlwidth=800&origin=*`;
-        const infoRes = await fetch(infoUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
-        const infoData = await infoRes.json();
-        const pages = infoData?.query?.pages;
-        const page = pages ? (Object.values(pages)[0] as any) : null;
-        const info = page?.imageinfo?.[0];
-        const url = info?.thumburl || info?.url;
-        if (!url) continue;
-        const w = Number(info?.thumbwidth || info?.width || 0);
-        const hgt = Number(info?.thumbheight || info?.height || 0);
-        const ratio = hgt > 0 && w > 0 ? hgt / w : 0;
-        let score = 0;
-        const lt = String(fileTitle).toLowerCase();
-        if (lt.includes(normalizedTitle)) score += 180;
-        if (lt.includes('poster')) score += 120;
-        if (lt.includes('season')) score += 40;
-        if (ratio > 1.2) score += 60;
-        if (ratio < 0.9) score -= 150;
-        if (w < 300 || hgt < 400) score -= 80;
-        if (score <= 0) score = 10;
-        if (!best || score > best.score) best = { url, score, title: fileTitle };
-      }
-      return best?.url || null;
-    } catch {
-      return null;
-    }
-  };
-
-  const fetchCommonsPortrait = async (): Promise<string | null> => {
-    try {
-      const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(trimmedTitle)}&srnamespace=6&srlimit=10&origin=*`;
-      const res = await fetch(searchUrl, { headers: { 'User-Agent': 'Constellations/1.0' } });
-      const data = await res.json();
-      const hits: any[] = data?.query?.search || [];
-      if (!hits.length) return null;
-      const baseWords = trimmedTitle.toLowerCase().split(/\s+/).filter(w => w.length > 1);
-      const scored = hits.map(h => {
-        const fileTitle = String(h?.title || '');
-        const lt = fileTitle.toLowerCase();
-        if (!lt.startsWith('file:')) return { title: fileTitle, score: -1000 };
-        let score = 0;
-        if (lt.includes('portrait') || lt.includes('photo') || lt.includes('headshot') || lt.includes('face')) score += 350;
-        if (lt.includes('poster')) score -= 200;
-        if (lt.includes('with') || lt.includes(' and ') || lt.includes(' group')) score -= 250;
-        const matches = baseWords.filter(w => lt.includes(w));
-        if (matches.length < Math.min(2, baseWords.length)) score -= 400;
-        score += (matches.length / Math.max(1, baseWords.length)) * 500;
-        if (lt.includes('.jpg') || lt.includes('.jpeg')) score += 100;
-        if (lt.includes('.png')) score -= 20;
-        if (lt.includes('.svg') || lt.includes('.webm') || lt.includes('.gif')) score -= 300;
-        const wordCount = lt.split(/[^a-z]/).filter(w => w.length > 2).length;
-        score -= wordCount * 15;
-        return { title: fileTitle, score };
-      }).sort((a: any, b: any) => b.score - a.score);
-
-      const best = scored[0];
-      if (!best || best.score <= 0) return null;
-      return fetchImageInfo(best.title);
-    } catch {
-      return null;
-    }
-  };
-
-  if (trimmedTitle.toLowerCase().startsWith('file:') || trimmedTitle.toLowerCase().startsWith('image:')) {
-    const fileUrl = await fetchImageInfo(trimmedTitle);
-    return { url: fileUrl, source: fileUrl ? "file" : "file-miss" };
-  }
-
-  if (!isScreenWork && !isPerson) {
-    const extract = await fetchWikipediaExtract();
-    if (extract && looksLikeScreenWork(extract)) {
-      isScreenWork = true;
-    }
-  }
-
-  if (isPerson) {
-    const fromPageImage = await fetchWikipediaPageImage();
-    if (fromPageImage) return { url: fromPageImage, source: "pageimage" };
-    const fromWikidata = await fetchWikidataImageForTitle(false);
-    if (fromWikidata) return { url: fromWikidata, source: "wikidata" };
-    const fromCommons = await fetchCommonsPortrait();
-    if (fromCommons) return { url: fromCommons, source: "commons-portrait" };
-    return { url: null };
-  }
-
-  if (isScreenWork) {
-    const fromEnwikiPoster = await fetchWikipediaPosterFromImages();
-    if (fromEnwikiPoster) return { url: fromEnwikiPoster, source: "enwiki-images" };
-    const fromCommons = await fetchCommonsPoster();
-    if (fromCommons) return { url: fromCommons, source: "commons" };
-    const fromWikidata = await fetchWikidataImageForTitle(false);
-    if (fromWikidata) return { url: fromWikidata, source: "wikidata" };
-    const fromPageImage = await fetchWikipediaPageImage();
-    if (fromPageImage) return { url: fromPageImage, source: "pageimage" };
-    const fromDdg = await fetchPosterFromDuckDuckGo(trimmedTitle);
-    if (fromDdg) return { url: fromDdg, source: "ddg" };
-    return { url: null };
-  }
-
-  const fromWikidata = await fetchWikidataImageForTitle(true);
-  if (fromWikidata) return { url: fromWikidata, source: "wikidata" };
-  const fromPageImage = await fetchWikipediaPageImage();
-  if (fromPageImage) return { url: fromPageImage, source: "pageimage" };
-  const fromCommons = await fetchCommonsPoster();
-  if (fromCommons) return { url: fromCommons, source: "commons" };
-  const fromDdg = await fetchPosterFromDuckDuckGo(trimmedTitle);
-  if (fromDdg) return { url: fromDdg, source: "ddg" };
-  return { url: null };
-};
 
 app.get("/api/image", async (req, res) => {
   const title = String(req.query.title || "").trim();
@@ -1331,150 +977,98 @@ app.get("/api/ddg-image-test", async (req, res) => {
 
 // --- AI Proxy Endpoints ---
 
-/** Send 200 + JSON without using res.json (avoids Express passing stringify errors to the global 500 handler). */
-function sendAiJson(res: express.Response, payload: unknown, fallbackBody: string) {
-  try {
-    if (res.headersSent) return;
-    res.status(200).type("application/json").send(JSON.stringify(payload));
-  } catch (e) {
-    console.error("[sendAiJson] stringify failed; sending fallback", e);
-    if (!res.headersSent) {
-      res.status(200).type("application/json").send(fallbackBody);
-    }
-  }
-}
-
 app.post("/api/ai/classify-start", async (req, res) => {
-  const { term, wikiContext, llmProvider } = req.body;
-  if (!term) return res.status(400).json({ error: "term is required" });
+  const raw = req.body.term;
+  if (!raw) return res.status(400).json({ error: "term is required" });
+  const term = sanitizeSearchTerm(raw);
+  const { wikiContext } = req.body;
+  if (term !== raw) console.log(`🧹 [Sanitize] "${raw}" → "${term}"`);
   console.log(`📡 [Proxy] Classify-Start: "${term}"`);
-  const fallback = defaultStartPairResult(
-    "Classification service error; defaulting to Person↔Event."
-  );
-  await withRequestLlm(llmProvider, async () => {
-    try {
-      const result = await classifyStartPair(term, wikiContext);
-      console.log(`✅ [Proxy] Classify-Start result for "${term}":`, result);
-      sendAiJson(res, result, JSON.stringify(fallback));
-    } catch (e: any) {
-      console.error(`[Proxy] Classify-Start error for "${term}":`, e);
-      sendAiJson(res, fallback, JSON.stringify(fallback));
-    }
-  });
+  try {
+    const result = await classifyStartPair(term, wikiContext);
+    console.log(`✅ [Proxy] Classify-Start result for "${term}":`, result);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 app.post("/api/ai/classify", async (req, res) => {
-  const { term, wikiContext, llmProvider } = req.body;
-  if (!term) return res.status(400).json({ error: "term is required" });
+  const raw = req.body.term;
+  if (!raw) return res.status(400).json({ error: "term is required" });
+  const term = sanitizeSearchTerm(raw);
+  const { wikiContext } = req.body;
+  if (term !== raw) console.log(`🧹 [Sanitize] "${raw}" → "${term}"`);
   console.log(`📡 [Proxy] Classify: "${term}"`);
-  const fallback = { type: "Event", description: "", isAtomic: false };
-  await withRequestLlm(llmProvider, async () => {
-    try {
-      const result = await classifyEntity(term, wikiContext);
-      console.log(`✅ [Proxy] Classify internal result for "${term}":`, result);
-      sendAiJson(res, result, JSON.stringify(fallback));
-    } catch (e: any) {
-      console.error(`[Proxy] Classify error for "${term}":`, e);
-      sendAiJson(res, fallback, JSON.stringify(fallback));
-    }
-  });
+  try {
+    const result = await classifyEntity(term, wikiContext);
+    console.log(`✅ [Proxy] Classify internal result for "${term}":`, result);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 app.post("/api/ai/connections", async (req, res) => {
-  const { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles, llmProvider } = req.body;
+  const { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
   console.log(`📡 [Proxy] Connections: "${nodeName}" (Type: ${compositeType})`);
-  const empty = { people: [] };
-  await withRequestLlm(llmProvider, async () => {
-    try {
-      const result = await fetchConnections(nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
-      console.log(`✅ [Proxy] Connections internal result for "${nodeName}":`, result.people?.length || 0, "people found");
-      sendAiJson(res, result, '{"people":[]}');
-    } catch (e: any) {
-      console.error(`[Proxy] Connections error for "${nodeName}":`, e);
-      sendAiJson(res, empty, '{"people":[]}');
-    }
-  });
+  try {
+    const result = await fetchConnections(nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
+    console.log(`✅ [Proxy] Connections internal result for "${nodeName}":`, result.people?.length || 0, "people found");
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 app.post("/api/ai/works", async (req, res) => {
-  const { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles, llmProvider } = req.body;
+  const { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
   console.log(`📡 [Proxy] Works: "${nodeName}" (Type: ${atomicType})`);
-  const empty = { works: [] };
-  await withRequestLlm(llmProvider, async () => {
-    try {
-      const result = await fetchPersonWorks(nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
-      console.log(`✅ [Proxy] Works result for "${nodeName}":`, result.works?.length || 0, "works found");
-      sendAiJson(res, result, '{"works":[]}');
-    } catch (e: any) {
-      console.error(`[Proxy] Works error for "${nodeName}":`, e);
-      sendAiJson(res, empty, '{"works":[]}');
-    }
-  });
+  try {
+    const result = await fetchPersonWorks(nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
+    console.log(`✅ [Proxy] Works result for "${nodeName}":`, result.works?.length || 0, "works found");
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 app.post("/api/ai/path", async (req, res) => {
-  const { start, end, context, llmProvider } = req.body;
+  const { start, end, context } = req.body;
   if (!start || !end) return res.status(400).json({ error: "start and end are required" });
-  const empty = { path: [], found: false };
-  await withRequestLlm(llmProvider, async () => {
-    try {
-      const result = await fetchConnectionPath(start, end, context);
-      sendAiJson(res, result, '{"path":[],"found":false}');
-    } catch (e: any) {
-      console.error(`[Proxy] Path error:`, e);
-      sendAiJson(res, empty, '{"path":[],"found":false}');
-    }
-  });
+  try {
+    const result = await fetchConnectionPath(start, end, context);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 app.post("/api/ai/title", async (req, res) => {
-  const { name, description, llmProvider } = req.body;
+  const { name, description } = req.body;
   if (!name) return res.status(400).json({ error: "name is required" });
-  await withRequestLlm(llmProvider, async () => {
-    try {
-      const result = await findWikipediaTitle(name, description);
-      sendAiJson(res, result, "null");
-    } catch (e: any) {
-      console.error(`[Proxy] Title error for "${name}":`, e);
-      sendAiJson(res, null, "null");
-    }
-  });
+  try {
+    const result = await findWikipediaTitle(name, description);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 app.post("/api/ai/search-org", async (req, res) => {
-  const { orgName, llmProvider } = req.body;
+  const { orgName } = req.body;
   if (!orgName) return res.status(400).json({ error: "orgName is required" });
-  await withRequestLlm(llmProvider, async () => {
-    try {
-      const result = await fetchOrgKeyPeopleBlockViaSearch(orgName);
-      sendAiJson(res, result, "null");
-    } catch (e: any) {
-      console.error(`[Proxy] search-org error:`, e);
-      sendAiJson(res, null, "null");
-    }
-  });
+  try {
+    const result = await fetchOrgKeyPeopleBlockViaSearch(orgName);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
-  const prov = getLlmProvider();
-  const hasKey =
-    prov === "gemini"
-      ? Boolean(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY)
-      : prov === "openai"
-        ? Boolean(process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY)
-        : prov === "deepseek"
-          ? Boolean(process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY)
-          : Boolean(process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY);
-  const hasGemini429Fallback = Boolean(
-    process.env.OPENAI_API_KEY ||
-      process.env.VITE_OPENAI_API_KEY ||
-      process.env.DEEPSEEK_API_KEY ||
-      process.env.VITE_DEEPSEEK_API_KEY
-  );
-  console.log(
-    `Cache server listening on ${port} (LLM_PROVIDER=${process.env.LLM_PROVIDER ?? "unset"} → effective ${prov}, primary key: ${hasKey ? "set" : "missing"}; ${prov === "gemini" ? `429 fallback keys: ${hasGemini429Fallback ? "set" : "missing"}` : "—"})`
-  );
+  console.log(`Cache server listening on ${port}`);
 });

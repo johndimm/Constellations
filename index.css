@@ -4,14 +4,28 @@
     box-sizing: border-box;
 }
 
-html,
-body,
-#root {
+/**
+ * Full-viewport shell for the standalone Vite app only. When constellations is embedded
+ * (e.g. Soundings /player), we must NOT lock document scroll — see App.tsx toggling
+ * `constellations-standalone` on <html>.
+ */
+html.constellations-standalone,
+html.constellations-standalone body {
     position: fixed;
     inset: 0;
     width: 100%;
     height: 100%;
     max-width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden !important;
+}
+
+html.constellations-standalone #root {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     margin: 0;
     padding: 0;
     overflow: hidden !important;

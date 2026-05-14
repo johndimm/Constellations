@@ -1,0 +1,6 @@
+{
+  "framework": "vite",
+  "installCommand": "cd ../.. && npm install",
+  "buildCommand": "cd ../.. && npm run build -w @film-music/constellations",
+  "outputDirectory": "dist"
+}

@@ -4,6 +4,20 @@ import { jsonFromResponse } from "./aiUtils";
 
 type WikiImageCacheEntry = { url: string | null; pageId?: number; pageTitle?: string; misses?: number };
 
+// Session-level rate-limit gate: after any 429, block all Wikipedia/Wikidata calls for 90s.
+let _wikiRateLimitedUntil = 0;
+function wikiIsRateLimited() { return Date.now() < _wikiRateLimitedUntil; }
+function wikiSetRateLimited() {
+  _wikiRateLimitedUntil = Date.now() + 90_000;
+  console.warn('[Wiki] 429 received — pausing all Wikipedia/Wikidata calls for 90s');
+}
+async function wikiFetch(url: string, init?: RequestInit): Promise<Response | null> {
+  if (wikiIsRateLimited()) return null;
+  const res = await fetch(url, init);
+  if (res.status === 429) { wikiSetRateLimited(); return null; }
+  return res;
+}
+
 // DuckDuckGo image search fallback (posters/cover art when Wikimedia lacks a usable image).
 export const fetchDuckDuckGoPoster = async (q: string): Promise<string | null> => {
   // Respect network sandbox: if running in a browser without CORS, skip.
@@ -493,6 +507,7 @@ export const fetchWikipediaSummary = async (
   depth: number = 0,
   triedNoContext = false
 ): Promise<{ extract: string | null; pageid: number | null; title: string | null; year?: number | null; mentioningPageTitles?: string[] | null; searchContext?: string | null }> => {
+  if (wikiIsRateLimited()) return { extract: null, pageid: null, title: null };
   const normKey = `${query.trim().toLowerCase()}|${context || ''}`;
   if (visited.has(normKey) || depth > 2) {
     return { extract: null, pageid: null, title: null };
@@ -504,7 +519,8 @@ export const fetchWikipediaSummary = async (
     const tryDirectLookup = async (titleToFetch: string) => {
       try {
         const directUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToFetch)}&redirects=1&origin=*`;
-        const directRes = await fetch(directUrl);
+        const directRes = await wikiFetch(directUrl);
+        if (!directRes) return null;
         const directData = (await jsonFromResponse(directRes)) as { query?: { pages?: unknown; redirects?: unknown } } | null;
         if (!directData) return null;
         const directPages = directData.query?.pages;
@@ -646,7 +662,8 @@ export const fetchWikipediaSummary = async (
 
     const avoidMedia = /\b(project|program|programme|operation|war|battle|campaign|treaty|scandal|scientist)\b/i.test(baseQuery);
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(searchQuery)}&srlimit=5&origin=*`;
-    const searchRes = await fetch(searchUrl);
+    const searchRes = await wikiFetch(searchUrl);
+    if (!searchRes) return { extract: null, pageid: null, title: null };
     const searchData = (await jsonFromResponse(searchRes)) as { query?: { search?: any[] } } | null;
 
     let bestTitle = query;
@@ -796,7 +813,8 @@ export const fetchWikipediaSummary = async (
           }
         }
         const summaryUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToTry)}&redirects=1&origin=*`;
-        const summaryRes = await fetch(summaryUrl);
+        const summaryRes = await wikiFetch(summaryUrl);
+        if (!summaryRes) break;
         const summaryData = (await jsonFromResponse(summaryRes)) as { query?: { pages?: unknown } } | null;
         if (!summaryData) continue;
         const pages = summaryData.query?.pages;
@@ -1061,8 +1079,10 @@ const fetchWikidataLabels = async (ids: string[], signal: AbortSignal): Promise<
 
 const resolveWikidataIdBySearch = async (label: string, signal: AbortSignal): Promise<string | null> => {
   try {
+    if (wikiIsRateLimited()) return null;
     const url = `https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&limit=8&search=${encodeURIComponent(label)}&origin=*`;
     const res = await fetch(url, { signal });
+    if (res.status === 429) { wikiSetRateLimited(); return null; }
     const data = (await jsonFromResponse(res)) as { search?: any[] } | null;
     const results: any[] = data?.search || [];
     if (!results.length) return null;
