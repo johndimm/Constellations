@@ -1,6 +1,6 @@
 {
   "name": "@johndimm/constellations",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "type": "module",
   "main": "./index.tsx",
   "exports": {
@@ -53,6 +53,7 @@
   "dependencies": {
     "@google/genai": "^1.33.0",
     "@johndimm/constellations": "^1.0.2",
+    "@types/d3": "^7.4.3",
     "d3": "^7.9.0",
     "dotenv": "^16.4.5",
     "lucide-react": "^0.560.0"
@@ -61,7 +62,6 @@
     "@tailwindcss/postcss": "^4.1.18",
     "@tailwindcss/vite": "^4.1.18",
     "@types/chrome": "^0.1.36",
-    "@types/d3": "^7.4.3",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.23",
