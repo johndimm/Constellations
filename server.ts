@@ -8,7 +8,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, sanitizeSearchTerm, setServerLlmOverride } from "./services/aiService";
 import type { LlmProviderId } from "./services/aiUtils";
-import { setServerLlmModelOverride } from "./services/aiUtils";
+import { setServerLlmModelOverride, resolveAnthropicModel } from "./services/aiUtils";
 import { fetchWikipediaSummary } from "./services/wikipediaService";
 import { resolveImageForTitle, fetchDuckDuckGoImages } from "./services/resolveImageForTitle";
 import { fetchAllModels, fetchModelsForProvider } from "./services/modelsService";
@@ -1037,7 +1037,11 @@ function applyProviderFromRequest(req: express.Request): void {
   }
   const model = req.body?.llmModel;
   setServerLlmModelOverride(model && typeof model === "string" ? model : null);
-  if (activeProvider) console.log(`🤖 [LLM] ${activeProvider}${model ? ` / ${model}` : ""}`);
+  if (activeProvider === "anthropic") {
+    console.log(`🤖 [LLM] anthropic / ${resolveAnthropicModel()}`);
+  } else if (activeProvider) {
+    console.log(`🤖 [LLM] ${activeProvider}${model ? ` / ${model}` : ""}`);
+  }
 }
 
 app.post("/api/ai/classify-start", async (req, res) => {

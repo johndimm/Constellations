@@ -386,7 +386,12 @@ export function setBrowserLlmOverride(provider: LlmProviderId | null): void {
 export function getBrowserLlmModel(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(BROWSER_LLM_MODEL_KEY)?.trim() || null;
+    const v = window.localStorage.getItem(BROWSER_LLM_MODEL_KEY)?.trim() || null;
+    if (v && getBrowserLlmOverride() === "anthropic" && isRetiredAnthropicModel(v)) {
+      window.localStorage.removeItem(BROWSER_LLM_MODEL_KEY);
+      return null;
+    }
+    return v;
   } catch {}
   return null;
 }
@@ -417,6 +422,31 @@ export function setServerLlmModelOverride(model: string | null): void {
 
 export function getServerLlmModelOverride(): string | null {
   return _serverLlmModelOverride;
+}
+
+/** Default when no model is configured (claude-3-5-haiku-20241022 was retired). */
+export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
+
+const RETIRED_ANTHROPIC_MODELS = new Set([
+  "claude-3-5-haiku-20241022",
+  "claude-3-5-haiku-20240307",
+]);
+
+export function isRetiredAnthropicModel(model: string): boolean {
+  return RETIRED_ANTHROPIC_MODELS.has(model.trim());
+}
+
+/** Per-request override → env → default; maps retired snapshot ids to current Haiku. */
+export function resolveAnthropicModel(): string {
+  const raw =
+    getServerLlmModelOverride()?.trim() ||
+    readBundledEnv("VITE_ANTHROPIC_MODEL")?.trim() ||
+    DEFAULT_ANTHROPIC_MODEL;
+  if (isRetiredAnthropicModel(raw)) {
+    console.warn(`[anthropic] replacing retired model "${raw}" with "${DEFAULT_ANTHROPIC_MODEL}"`);
+    return DEFAULT_ANTHROPIC_MODEL;
+  }
+  return raw;
 }
 
 export function getLlmProvider(): LlmProviderId {

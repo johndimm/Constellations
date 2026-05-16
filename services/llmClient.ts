@@ -1,10 +1,10 @@
 import {
   clipForLlmLog,
-  getEnvVar,
   getLlmProvider,
   getLlmApiKey,
   getResponseText,
   isRateLimitError,
+  resolveAnthropicModel,
   withRetry,
   withTimeout,
   type LlmProviderId,
@@ -77,7 +77,7 @@ async function anthropicJson(system: string | undefined, user: string): Promise<
   const key = await getLlmApiKey();
   if (!key) throw new Error("No API key for anthropic");
 
-  const model = getEnvVar("VITE_ANTHROPIC_MODEL") || "claude-3-5-haiku-20241022";
+  const model = resolveAnthropicModel();
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",

@@ -1,12 +1,16 @@
 "use client";
 import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, readBundledEnv, getLlmProvider, looksLikePersonName, getServerLlmModelOverride } from "./aiUtils";
+import { parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, readBundledEnv, getLlmProvider, looksLikePersonName, getServerLlmModelOverride, getBrowserLlmModel, resolveAnthropicModel } from "./aiUtils";
 import type { LockedPair } from "./geminiService";
 
 export type { LockedPair };
 
 const TIMEOUT_MS = 60000;
 const CLASSIFY_TIMEOUT_MS = 15000;
+
+function llmLogTag(): string {
+  return `[${getLlmProvider()}]`;
+}
 
 function shouldProxy(): boolean {
   if (typeof window === "undefined") return false;
@@ -20,7 +24,7 @@ async function callAiProxy(endpoint: string, body: any) {
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...body, llmProvider: getLlmProvider() }),
+    body: JSON.stringify({ ...body, llmProvider: getLlmProvider(), llmModel: getBrowserLlmModel() ?? undefined }),
   });
   if (!resp.ok) throw new Error(`AI Proxy Error (${resp.status}): ${await resp.text()}`);
   return resp.json();
@@ -32,7 +36,7 @@ async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS):
   if (provider === "anthropic") {
     const key = readBundledEnv("VITE_ANTHROPIC_API_KEY");
     if (!key) throw new Error("No VITE_ANTHROPIC_API_KEY set");
-    const model = readBundledEnv("VITE_ANTHROPIC_MODEL") || "claude-3-5-haiku-20241022";
+    const model = resolveAnthropicModel();
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -217,7 +221,7 @@ Return JSON with exactly these fields:
       reasoning: s(json.reasoning, ""),
     };
   } catch (e) {
-    console.warn("[DeepSeek] classifyStartPair failed:", String(e).slice(0, 200));
+    console.warn(`${llmLogTag()} classifyStartPair failed:`, String(e).slice(0, 200));
     return fallback;
   }
 };
@@ -270,7 +274,7 @@ Return JSON:
       reasoning: json.reasoning as string | undefined,
     };
   } catch (e) {
-    console.warn("[DeepSeek] classifyEntity failed:", String(e).slice(0, 200));
+    console.warn(`${llmLogTag()} classifyEntity failed:`, String(e).slice(0, 200));
     return fallback;
   }
 };
@@ -340,7 +344,7 @@ Return JSON:
       .map(p => ({ ...p, isAtomic: true }));
     return parsed;
   } catch (e) {
-    console.error("[DeepSeek] fetchConnections error:", e);
+    console.error(`${llmLogTag()} fetchConnections error:`, e);
     return { people: [] };
   }
 };
@@ -403,7 +407,7 @@ Return JSON:
       .map(w => ({ ...w, isAtomic: false }));
     return parsed;
   } catch (e) {
-    console.error("[DeepSeek] fetchPersonWorks error:", e);
+    console.error(`${llmLogTag()} fetchPersonWorks error:`, e);
     return { works: [] };
   }
 };
@@ -444,7 +448,7 @@ Return JSON:
     if (!json || !Array.isArray(json.path)) return { path: [], found: false };
     return { path: json.path, found: json.path.length > 0 };
   } catch (e) {
-    console.error("[DeepSeek] fetchConnectionPath error:", e);
+    console.error(`${llmLogTag()} fetchConnectionPath error:`, e);
     return { path: [], found: false };
   }
 };

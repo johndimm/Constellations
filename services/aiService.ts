@@ -5,7 +5,7 @@
  */
 import { getLlmProvider } from "./aiUtils";
 import * as geminiSvc from "./geminiService";
-import * as altSvc from "./deepseekService"; // handles deepseek, openai, anthropic
+import * as altSvc from "./deepseekService"; // non-Gemini providers (deepseek / openai / anthropic)
 
 export * from "./aiUtils";
 export type { LockedPair } from "./geminiService";
