@@ -756,6 +756,31 @@ const App: React.FC<AppProps> = ({
                 />
             </div>
 
+            {!embedded && nodes.length === 0 && !isProcessing && (
+                <div className="absolute inset-0 z-[150] bg-slate-950 flex flex-col items-center justify-center" style={{ paddingTop: hideHeader ? 0 : '3.5rem' }}>
+                    <div className="text-center max-w-lg px-8">
+                        <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+                            Constellations
+                        </h1>
+                        <p className="text-slate-400 mb-8 text-base leading-relaxed">
+                            Start with anything. Follow the connections.
+                        </p>
+                        <div className="flex flex-wrap justify-center gap-3">
+                            {["Alan Turing", "The Godfather", "David Bowie", "Marie Curie", "Dune"].map((example) => (
+                                <button
+                                    key={example}
+                                    onClick={() => handleStartSearch(example)}
+                                    className="px-4 py-2 rounded-xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/30 hover:text-indigo-200 transition-all text-sm font-medium"
+                                >
+                                    {example}
+                                </button>
+                            ))}
+                        </div>
+                        <p className="text-slate-600 text-xs mt-8">or type anything in the search box above</p>
+                    </div>
+                </div>
+            )}
+
             <AppHeader
                 showHeader={!hideHeader}
                 panelCollapsed={panelCollapsed}
