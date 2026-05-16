@@ -447,8 +447,30 @@ async function upsertNodes(client: pg.PoolClient, nodes: any[]): Promise<Map<str
             wikiSummary
           ];
         }
-        const insertRes = await client.query(insertSql, insertParams);
-        row = insertRes.rows[0];
+        await client.query("savepoint upsert_node");
+        try {
+          const insertRes = await client.query(insertSql, insertParams);
+          row = insertRes.rows[0];
+          await client.query("release savepoint upsert_node");
+        } catch (insertErr: any) {
+          await client.query("rollback to savepoint upsert_node");
+          if (insertErr.code === '23505') {
+            // Race condition: another concurrent request inserted the same node between our SELECT
+            // and INSERT. Roll back to the savepoint so the transaction stays alive, then SELECT
+            // the winning row.
+            const fallbackRes = await client.query(
+              `select * from nodes where lower(title) = lower($1) and lower(type) = lower($2) and COALESCE(wikipedia_id, '') = $3 limit 1`,
+              [title, n.type, normalizedWikiId]
+            );
+            if (fallbackRes.rows[0]) {
+              row = fallbackRes.rows[0];
+            } else {
+              throw insertErr;
+            }
+          } else {
+            throw insertErr;
+          }
+        }
       }
 
       if (row) {
