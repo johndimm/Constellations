@@ -860,6 +860,7 @@ app.post("/node", async (req, res) => {
   let client;
   try {
     client = await pool.connect();
+    await client.query("BEGIN");
     const nodeMap = await upsertNodes(client, [{
       title: node.title || (node as any).id,
       type: node.type,
@@ -868,6 +869,7 @@ app.post("/node", async (req, res) => {
       meta: node.meta ?? {},
       wikipedia_id: node.wikipedia_id ?? null
     }]);
+    await client.query("COMMIT");
 
     const title = node.title || (node as any).id || "";
     const type = node.type || "";
@@ -876,6 +878,7 @@ app.post("/node", async (req, res) => {
     const dbNode = nodeMap.get(key);
     res.json({ ok: true, id: dbNode?.id, ...dbNode });
   } catch (e: any) {
+    if (client) await client.query("ROLLBACK").catch(() => {});
     console.error(e);
     res.status(500).json({ error: e.message });
   } finally {
