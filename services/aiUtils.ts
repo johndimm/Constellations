@@ -1,18 +1,93 @@
+/** Trim whitespace and optional wrapping quotes (common when pasting into Render/Vercel). */
+export function normalizeEnvSecret(raw: string | undefined | null): string {
+  if (raw == null) return "";
+  let s = String(raw).trim().replace(/^\uFEFF/, "");
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  if (s.toLowerCase().startsWith("bearer ")) s = s.slice(7).trim();
+  // API keys must not contain whitespace; a mid-key line break keeps the last 4 chars "correct".
+  if (/^sk-/i.test(s)) s = s.replace(/\s+/g, "");
+  return s;
+}
+
+/** Node cache server: read secrets from process.env only (never import.meta build artifacts). */
+export function readServerEnv(...keys: string[]): string {
+  if (typeof process === "undefined" || !process.env) return "";
+  for (const key of keys) {
+    const v = normalizeEnvSecret(process.env[key]);
+    if (v) return v;
+  }
+  return "";
+}
+
+export function getOpenAiApiKey(): string {
+  if (typeof window === "undefined") {
+    return readServerEnv("VITE_OPENAI_API_KEY", "OPENAI_API_KEY");
+  }
+  return normalizeEnvSecret(readBundledEnv("VITE_OPENAI_API_KEY"));
+}
+
+/** OpenAI / OpenAI-compatible chat/completions request config (server-safe env reads). */
+export function getOpenAiCompatConfig(): {
+  apiKey: string;
+  baseUrl: string;
+  headers: Record<string, string>;
+} {
+  const apiKey = getOpenAiApiKey();
+  const baseUrlRaw =
+    typeof window === "undefined"
+      ? readServerEnv("VITE_OPENAI_BASE_URL", "OPENAI_BASE_URL")
+      : normalizeEnvSecret(readBundledEnv("VITE_OPENAI_BASE_URL"));
+  const baseUrl = (baseUrlRaw || "https://api.openai.com/v1").replace(/\/$/, "");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+  };
+  const org = readServerEnv(
+    "VITE_OPENAI_ORG",
+    "OPENAI_ORG",
+    "VITE_OPENAI_ORGANIZATION",
+    "OPENAI_ORGANIZATION",
+  );
+  const project = readServerEnv("VITE_OPENAI_PROJECT", "OPENAI_PROJECT");
+  if (org) headers["OpenAI-Organization"] = org;
+  if (project) headers["OpenAI-Project"] = project;
+  return { apiKey, baseUrl, headers };
+}
+
+export function getDeepSeekApiKey(): string {
+  if (typeof window === "undefined") {
+    return readServerEnv("VITE_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY");
+  }
+  return normalizeEnvSecret(readBundledEnv("VITE_DEEPSEEK_API_KEY"));
+}
+
+export function getAnthropicApiKey(): string {
+  if (typeof window === "undefined") {
+    return readServerEnv("VITE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY");
+  }
+  return normalizeEnvSecret(readBundledEnv("VITE_ANTHROPIC_API_KEY"));
+}
+
 /** Read a Vite-style env var from process (e.g. Next.js) or import.meta (Vite). */
 export function readBundledEnv(key: string): string {
-  const fromProcess = getEnvVar(key);
+  const fromProcess = normalizeEnvSecret(getEnvVar(key));
   if (fromProcess) return fromProcess;
   // Dual-bundler: Vite uses `VITE_*`; Next exposes the same values as `NEXT_PUBLIC_VITE_*`
   // (see apps/soundings/next.config `env`), not `NEXT_PUBLIC_*` with the `VITE_` infix stripped.
   const nextKey = key.startsWith("VITE_") ? `NEXT_PUBLIC_${key}` : key;
-  const alt = getEnvVar(nextKey);
+  const alt = normalizeEnvSecret(getEnvVar(nextKey));
   if (alt) return alt;
   try {
     // @ts-ignore
     if (typeof import.meta !== "undefined" && import.meta.env) {
       // @ts-ignore
       const v = import.meta.env[key];
-      if (v != null && String(v) !== "") return String(v);
+      if (v != null && String(v) !== "") return normalizeEnvSecret(String(v));
     }
   } catch {
     /* ignore */
@@ -25,9 +100,12 @@ export const getEnvVar = (name: string): string => {
   try {
     if (typeof process !== 'undefined' && process.env) {
       const val = process.env[name];
-      if (val) return val;
+      if (val != null && val !== "") return normalizeEnvSecret(val);
     }
   } catch (e) { }
+
+  // On the cache server, never fall back to import.meta (can embed stale client build keys).
+  if (typeof window === "undefined") return "";
 
   // Try import.meta.env (Vite / Browser)
   try {
@@ -35,7 +113,7 @@ export const getEnvVar = (name: string): string => {
     if (typeof import.meta !== 'undefined' && import.meta.env) {
       // @ts-ignore
       const val = import.meta.env[name];
-      if (val) return val;
+      if (val != null && val !== "") return normalizeEnvSecret(String(val));
     }
   } catch (e) { }
 

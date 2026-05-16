@@ -9,7 +9,7 @@ import fs from "fs";
 import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, sanitizeSearchTerm, setServerLlmOverride } from "./services/aiService";
 import { resolveStartSearchTerm } from "./services/geminiService";
 import type { LlmProviderId } from "./services/aiUtils";
-import { setServerLlmModelOverride, resolveAnthropicModel } from "./services/aiUtils";
+import { setServerLlmModelOverride, resolveAnthropicModel, getOpenAiCompatConfig } from "./services/aiUtils";
 import { fetchWikipediaSummary } from "./services/wikipediaService";
 import { resolveImageForTitle, fetchDuckDuckGoImages } from "./services/resolveImageForTitle";
 import { fetchAllModels, fetchModelsForProvider } from "./services/modelsService";
@@ -998,6 +998,33 @@ app.get("/api/models", async (req, res) => {
   }
 });
 
+/** Verify OpenAI credentials from this server's env (not the browser). */
+app.get("/api/ai/openai-ping", async (_req, res) => {
+  try {
+    const { apiKey, baseUrl, headers } = getOpenAiCompatConfig();
+    if (!apiKey) {
+      return res.status(400).json({ ok: false, error: "No OpenAI API key in server env" });
+    }
+    const pingHeaders: Record<string, string> = { Authorization: headers.Authorization };
+    if (headers["OpenAI-Organization"]) pingHeaders["OpenAI-Organization"] = headers["OpenAI-Organization"];
+    if (headers["OpenAI-Project"]) pingHeaders["OpenAI-Project"] = headers["OpenAI-Project"];
+    const r = await fetch(`${baseUrl}/models`, { headers: pingHeaders });
+    const body = await r.text();
+    return res.status(r.ok ? 200 : r.status).json({
+      ok: r.ok,
+      baseUrl,
+      keyLen: apiKey.length,
+      keySuffix: apiKey.slice(-4),
+      hasOpenAIOrganization: !!headers["OpenAI-Organization"],
+      hasOpenAIProject: !!headers["OpenAI-Project"],
+      openaiStatus: r.status,
+      openaiBody: body.slice(0, 500),
+    });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message || "ping failed" });
+  }
+});
+
 // --- AI Proxy Endpoints ---
 
 /** Returns true if this server has credentials for the given provider. */
@@ -1005,7 +1032,7 @@ function serverHasCredentials(provider: string): boolean {
   switch (provider) {
     case "gemini":  return !!(process.env.GEMINI_API_KEY || process.env.VITE_API_KEY || process.env.VITE_GEMINI_API_KEY);
     case "deepseek": return !!process.env.VITE_DEEPSEEK_API_KEY;
-    case "openai":     return !!process.env.VITE_OPENAI_API_KEY;
+    case "openai":     return !!(process.env.VITE_OPENAI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim());
     case "anthropic":  return !!process.env.VITE_ANTHROPIC_API_KEY;
     default:           return false;
   }

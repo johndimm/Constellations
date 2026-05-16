@@ -1,6 +1,6 @@
 {
   "name": "@johndimm/constellations",
-  "version": "1.0.7",
+  "version": "1.0.9",
   "type": "module",
   "main": "./index.tsx",
   "exports": {

@@ -1,12 +1,21 @@
 "use client";
 import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, readBundledEnv, getLlmProvider, looksLikePersonName, getServerLlmModelOverride, getBrowserLlmModel, resolveAnthropicModel } from "./aiUtils";
+import { parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, readBundledEnv, readServerEnv, getLlmProvider, looksLikePersonName, getServerLlmModelOverride, getBrowserLlmModel, resolveAnthropicModel, getOpenAiCompatConfig, getDeepSeekApiKey, getAnthropicApiKey } from "./aiUtils";
 import type { LockedPair } from "./geminiService";
 
 export type { LockedPair };
 
 const TIMEOUT_MS = 60000;
 const CLASSIFY_TIMEOUT_MS = 15000;
+
+let loggedProviderKeyDiag = new Set<string>();
+
+function logProviderKeyOnce(provider: string, key: string) {
+  if (typeof window !== "undefined") return;
+  if (!key || loggedProviderKeyDiag.has(provider)) return;
+  loggedProviderKeyDiag.add(provider);
+  console.log(`[${provider}] API key loaded (…${key.slice(-4)}, len=${key.length})`);
+}
 
 function llmLogTag(): string {
   return `[${getLlmProvider()}]`;
@@ -34,8 +43,9 @@ async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS):
   const provider = getLlmProvider();
 
   if (provider === "anthropic") {
-    const key = readBundledEnv("VITE_ANTHROPIC_API_KEY");
-    if (!key) throw new Error("No VITE_ANTHROPIC_API_KEY set");
+    const key = getAnthropicApiKey();
+    if (!key) throw new Error("No VITE_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY set");
+    logProviderKeyOnce("anthropic", key);
     const model = resolveAnthropicModel();
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -62,20 +72,30 @@ async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS):
 
   // OpenAI-compatible: openai or deepseek
   const isOpenAI = provider === "openai";
+  const openAi = isOpenAI ? getOpenAiCompatConfig() : null;
   const baseUrl = isOpenAI
-    ? (readBundledEnv("VITE_OPENAI_BASE_URL") || "https://api.openai.com/v1")
-    : (readBundledEnv("VITE_DEEPSEEK_BASE_URL") || "https://api.deepseek.com/v1");
+    ? openAi!.baseUrl
+    : (typeof window === "undefined"
+        ? readServerEnv("VITE_DEEPSEEK_BASE_URL", "DEEPSEEK_BASE_URL")
+        : readBundledEnv("VITE_DEEPSEEK_BASE_URL")) || "https://api.deepseek.com/v1";
   const model = getServerLlmModelOverride() || (isOpenAI
-    ? (readBundledEnv("VITE_OPENAI_MODEL") || "gpt-4o-mini")
-    : (readBundledEnv("VITE_DEEPSEEK_MODEL") || "deepseek-chat"));
-  const key = isOpenAI
-    ? readBundledEnv("VITE_OPENAI_API_KEY")
-    : readBundledEnv("VITE_DEEPSEEK_API_KEY");
+    ? (typeof window === "undefined"
+        ? readServerEnv("VITE_OPENAI_MODEL", "OPENAI_MODEL")
+        : readBundledEnv("VITE_OPENAI_MODEL")) || "gpt-4o-mini"
+    : (typeof window === "undefined"
+        ? readServerEnv("VITE_DEEPSEEK_MODEL", "DEEPSEEK_MODEL")
+        : readBundledEnv("VITE_DEEPSEEK_MODEL")) || "deepseek-chat");
+  const key = isOpenAI ? openAi!.apiKey : getDeepSeekApiKey();
   if (!key) throw new Error(`No API key set for ${provider}`);
+  logProviderKeyOnce(provider, key);
+
+  const headers = isOpenAI
+    ? { ...openAi!.headers }
+    : { "Content-Type": "application/json", Authorization: `Bearer ${key}` };
 
   const res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    headers,
     body: JSON.stringify({
       model,
       messages: [
@@ -87,6 +107,16 @@ async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS):
   });
   if (!res.ok) {
     const err = await res.text();
+    if (res.status === 401 && isOpenAI) {
+      console.error("[openai] 401 — check key is active, billing, and base URL", {
+        baseUrl,
+        model,
+        keyLen: key.length,
+        keySuffix: key.slice(-4),
+        hasOpenAIOrganization: !!headers["OpenAI-Organization"],
+        hasOpenAIProject: !!headers["OpenAI-Project"],
+      });
+    }
     throw new Error(`${provider} API error (${res.status}): ${err}`);
   }
   const data = await res.json();

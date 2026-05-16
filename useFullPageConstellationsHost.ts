@@ -9,9 +9,9 @@ export type NowPlayingSnapshot = {
 };
 
 /** Append performer when a bare title is ambiguous (e.g. "Summertime" vs "In the Summertime"). */
-function nowPlayingSearchTerm(track: string, artist: string): string {
-  const t = track.trim();
-  const a = artist.trim();
+function nowPlayingSearchTerm(track: string | undefined, artist: string | undefined): string {
+  const t = (track ?? "").trim();
+  const a = (artist ?? "").trim();
   if (!t) return a;
   if (!a) return t;
   if (t.toLowerCase().includes(a.toLowerCase())) return t;
@@ -85,7 +85,7 @@ export function useFullPageConstellationsHost(input: {
     const album = snap?.album?.trim();
     const track = snap?.track?.trim();
     const artist = snap?.artist?.trim();
-    const searchTerm = nowPlayingSearchTerm(track, artist);
+    const searchTerm = nowPlayingSearchTerm(track ?? "", artist ?? "");
     const mergedExpand = [
       ...extra,
       ...(album ? [album] : []),
