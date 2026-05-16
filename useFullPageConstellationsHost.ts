@@ -8,6 +8,19 @@ export type NowPlayingSnapshot = {
   artist?: string | null;
 };
 
+/** Append performer when a bare title is ambiguous (e.g. "Summertime" vs "In the Summertime"). */
+function nowPlayingSearchTerm(track: string, artist: string): string {
+  const t = track.trim();
+  const a = artist.trim();
+  if (!t) return a;
+  if (!a) return t;
+  if (t.toLowerCase().includes(a.toLowerCase())) return t;
+  // Classical / rich titles already name the composer; YouTube channel is often junk.
+  if (/[:(~]/.test(t)) return t;
+  if (/\([^)]+\)\s*$/.test(t)) return t;
+  return `${t} (${a})`;
+}
+
 /**
  * State sync for every full-page constellations host (Soundings, Trailer, etc.): URL `q` / `expand`,
  * optional handoff gating, and optional live player bridge (now-playing + external search).
@@ -72,27 +85,25 @@ export function useFullPageConstellationsHost(input: {
     const album = snap?.album?.trim();
     const track = snap?.track?.trim();
     const artist = snap?.artist?.trim();
+    const searchTerm = nowPlayingSearchTerm(track, artist);
     const mergedExpand = [
       ...extra,
       ...(album ? [album] : []),
-      ...(track ? [track] : []),
-      ...(artist ? [artist] : []),
+      ...(searchTerm ? [searchTerm] : []),
+      ...(track && searchTerm !== track ? [track] : []),
+      ...(artist && !searchTerm.toLowerCase().includes(artist.toLowerCase()) ? [artist] : []),
     ];
     if (album || track) {
-      setNowPlayingKey(`${npRev}::${album || ""}::${track || ""}`);
+      setNowPlayingKey(`${npRev}::${album || ""}::${track || ""}::${artist || ""}`);
     } else {
       setNowPlayingKey(null);
     }
     if (qParam) {
       setExternalSearch(null);
     } else {
-      // Prefer the track title over the artist/channel name. For YouTube classical music,
-      // the title contains the composer ("Vaughan Williams ~ The Lark Ascending") while
-      // the artist is just the uploader's channel name. The LLM in classifyStartPair
-      // (extractMusicEntity) will parse the title to extract the primary musical entity.
-      const searchTerm = track || snap?.artist?.trim() || "";
-      if (searchTerm) {
-        setExternalSearch({ term: searchTerm, id: `np:${searchTerm.toLowerCase()}` });
+      const term = searchTerm || artist || "";
+      if (term) {
+        setExternalSearch({ term, id: `np:${term.toLowerCase()}` });
       } else {
         setExternalSearch(null);
       }

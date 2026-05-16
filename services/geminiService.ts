@@ -292,13 +292,7 @@ export const classifyStartPair = async (
     });
   }
   if (proxy) {
-    const proxyResult = await callAiProxy("/api/ai/classify-start", { term: rawTerm.trim(), wikiContext });
-    // Sanity check: if proxy says non-atomic but the term strongly looks like a person name, correct it.
-    if (!proxyResult.isAtomic && looksLikePersonName(rawTerm)) {
-      console.warn("[classifyStartPair] proxy returned isAtomic=false for apparent person name; overriding", rawTerm);
-      return { ...proxyResult, isAtomic: true, type: "Person" };
-    }
-    return proxyResult;
+    return await callAiProxy("/api/ai/classify-start", { term: rawTerm.trim(), wikiContext });
   }
 
   const needsMusic = rawTermNeedsMusicEntityExtract(rawTerm);
