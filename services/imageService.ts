@@ -10,19 +10,14 @@ export type ServerImageResult = {
 
 /**
  * Base URL for `GET /api/image` in the browser.
- * Prefer the current page (e.g. Next.js Soundings implements this route). The graph
- * cache server is for expansions / persistence; image lookup should not depend on it
- * when the host app can resolve Wikipedia images itself.
+ * Prefer the cache/proxy server when one is configured — it always implements /api/image.
+ * Fall back to window.location.origin for Next.js host apps that implement the route locally.
  */
 export const getImageApiBaseUrl = (cacheBaseUrl: string | undefined): string => {
-    if (typeof window !== 'undefined') {
-        return window.location.origin;
-    }
-    return (
-        (cacheBaseUrl && cacheBaseUrl.replace(/\/$/, '')) ||
-        getEffectiveCacheBaseUrl() ||
-        ''
-    );
+    const cacheBase = (cacheBaseUrl && cacheBaseUrl.replace(/\/$/, '')) || getEffectiveCacheBaseUrl();
+    if (cacheBase) return cacheBase;
+    if (typeof window !== 'undefined') return window.location.origin;
+    return '';
 };
 
 export const fetchServerImage = async (

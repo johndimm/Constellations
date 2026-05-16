@@ -101,7 +101,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
         return nodeData;
     }, [cacheEnabled, cacheBaseUrl]);
 
-    const handleStartSearch = useCallback(async (term: string, recursiveDepth = 0) => {
+    const handleStartSearch = useCallback(async (term: string, recursiveDepth = 0, typeHint?: string) => {
         setIsProcessing(true);
         setError(null);
         const nextSearchId = searchIdRef.current + 1;
@@ -134,7 +134,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
             // CRITICAL FIX: Only use kiosk domain context if the user hasn't provided a specific disambiguated term.
             // "Republic (Plato)" should NEVER get "Actors / Movies / TV" context.
             const hasDisambiguation = term.includes('(') && term.includes(')');
-            const wikiContext = (showControlPanel && !hasDisambiguation) ? selectedKioskDomain?.label : undefined;
+            const wikiContext = (showControlPanel && !hasDisambiguation) ? selectedKioskDomain?.label : typeHint;
 
             const wiki = await fetchWikipediaSummary(term, wikiContext);
             const canonicalTitle = (wiki.title || term).trim();

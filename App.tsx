@@ -36,7 +36,7 @@ type AppProps = {
      */
     showExtensionWhenPanelHidden?: boolean;
     hideSidebar?: boolean;
-    externalSearch?: { term: string; id: string | number } | null;
+    externalSearch?: { term: string; id: string | number; typeHint?: string } | null;
     onExternalSearchConsumed?: (id: string | number) => void;
     onNodeNavigate?: (node: GraphNode) => void;
     renderEvidencePopup?: (selectedLink: GraphLink | null, onClose: () => void) => React.ReactNode;
@@ -325,7 +325,7 @@ const App: React.FC<AppProps> = ({
     useEffect(() => {
         if (skipPlayerBootstrapRef.current) return;
         if (!externalSearch?.term) return;
-        handleStartSearchRef.current(externalSearch.term);
+        handleStartSearchRef.current(externalSearch.term, 0, externalSearch.typeHint);
         if (externalSearch?.id !== undefined) {
             onExternalSearchConsumedRef.current?.(externalSearch.id);
         }
