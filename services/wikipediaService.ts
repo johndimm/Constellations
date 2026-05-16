@@ -653,6 +653,10 @@ export const fetchWikipediaSummary = async (
     const baseQuery = query.replace(/\s*\(.*\)\s*/g, '').trim();
     const parenMatch = query.match(/\((.*)\)/);
     const paren = parenMatch ? parenMatch[1] : null;
+    const queryYear =
+      (paren || cleanQuery).match(/(\d{4})/)?.[1] ||
+      (context || "").match(/\b(18|19|20)\d{2}\b/)?.[0] ||
+      null;
 
     // We search for the base query but include the parenthetical as additional context
     // This is more robust than a literal search for "Republic (book)" which ranks partial matches poorly.
@@ -701,6 +705,14 @@ export const fetchWikipediaSummary = async (
           const parenLower = paren.toLowerCase();
           if (title.includes(parenLower)) s += 500;
           if (snippet.includes(parenLower)) s += 200;
+        }
+
+        // Film/TV year disambiguation: "Django" + 1966 must not become Django (2017 film).
+        if (queryYear) {
+          const titleYear = title.match(/\((\d{4})\s*(?:film|movie|tv)/i)?.[1];
+          if (titleYear === queryYear) s += 5000;
+          else if (titleYear && titleYear !== queryYear) s -= 5000;
+          if (snippet.includes(queryYear)) s += 400;
         }
 
         // Music disambiguation: prefer musician/band pages over generic title definitions.

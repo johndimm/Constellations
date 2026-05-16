@@ -14,3 +14,4 @@ export { useFullPageConstellationsHost } from "./useFullPageConstellationsHost";
 export type { NowPlayingSnapshot } from "./useFullPageConstellationsHost";
 export { FullPageConstellationsHostLoading } from "./FullPageConstellationsHostShell";
 export { newChannelFromGraphNode } from "./utils/graphNodeToChannelNotes";
+export { filmWorkSearchTerm, extractYearFromFilmTitle } from "./utils/graphLogicUtils";

@@ -134,10 +134,22 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
             // CRITICAL FIX: Only use kiosk domain context if the user hasn't provided a specific disambiguated term.
             // "Republic (Plato)" should NEVER get "Actors / Movies / TV" context.
             const hasDisambiguation = term.includes('(') && term.includes(')');
-            const wikiContext = (showControlPanel && !hasDisambiguation) ? selectedKioskDomain?.label : typeHint;
+            const wikiContext = [
+                !hasDisambiguation && showControlPanel ? selectedKioskDomain?.label : null,
+                typeHint,
+                type,
+            ].filter(Boolean).join(" ") || undefined;
 
             const wiki = await fetchWikipediaSummary(term, wikiContext);
-            const canonicalTitle = (wiki.title || term).trim();
+            let canonicalTitle = (wiki.title || term).trim();
+            const userFilmYear = term.match(/\((\d{4})\s*(?:film|movie|tv)/i)?.[1];
+            const wikiFilmYear = canonicalTitle.match(/\((\d{4})\s*(?:film|movie|tv)/i)?.[1];
+            if (userFilmYear && wikiFilmYear && userFilmYear !== wikiFilmYear) {
+                console.warn(
+                    `[Constellations] Wikipedia year mismatch for "${term}": got "${canonicalTitle}", keeping user term`
+                );
+                canonicalTitle = term.trim();
+            }
 
             // We no longer rewrite the user's query to the Wikipedia title.
             // This ensures "Republic (book)" stays as "Republic (book)" in the UI.
@@ -158,6 +170,7 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
                 x: dim.width / 2,
                 y: dim.height / 2,
                 expanded: false,
+                year: wiki.year ?? undefined,
                 wikiSummary: wiki.extract || undefined,
                 classification_reasoning: reasoning,
                 atomic_type: chosenPair.atomicType,
