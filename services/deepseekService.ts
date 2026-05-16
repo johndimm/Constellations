@@ -89,7 +89,7 @@ async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS):
   if (!key) throw new Error(`No API key set for ${provider}`);
   logProviderKeyOnce(provider, key);
 
-  const headers = isOpenAI
+  const headers: Record<string, string> = isOpenAI
     ? { ...openAi!.headers }
     : { "Content-Type": "application/json", Authorization: `Bearer ${key}` };
 
