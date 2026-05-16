@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, sanitizeSearchTerm, setServerLlmOverride } from "./services/aiService";
+import { resolveStartSearchTerm } from "./services/geminiService";
 import type { LlmProviderId } from "./services/aiUtils";
 import { setServerLlmModelOverride, resolveAnthropicModel } from "./services/aiUtils";
 import { fetchWikipediaSummary } from "./services/wikipediaService";
@@ -1048,7 +1049,11 @@ app.post("/api/ai/classify-start", async (req, res) => {
   applyProviderFromRequest(req);
   const raw = req.body.term;
   if (!raw) return res.status(400).json({ error: "term is required" });
-  const term = sanitizeSearchTerm(raw);
+  const sanitized = sanitizeSearchTerm(raw);
+  const term = await resolveStartSearchTerm(sanitized);
+  if (term !== sanitized) {
+    console.log(`[classify-start] music resolve: "${sanitized.slice(0, 80)}" → "${term.slice(0, 80)}"`);
+  }
   const { wikiContext } = req.body;
   try {
     const result = await classifyStartPair(term, wikiContext);

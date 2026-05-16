@@ -173,15 +173,26 @@ export function defaultStartPairResult(reason: string, term?: string): {
   };
 }
 
-/** Messy pasted now-playing / YouTube text; short single-line queries skip the extra Gemini call. */
-function rawTermNeedsMusicEntityExtract(raw: string): boolean {
+/** Messy pasted now-playing / YouTube text; also Soundings-style "Track (Artist)" / "Track by Artist". */
+export function rawTermNeedsMusicEntityExtract(raw: string): boolean {
   const t = raw.trim();
   if (!t) return false;
   if (t.length > 220) return true;
   if (t.includes("\n")) return true;
   if (/https?:\/\/(www\.)?(youtube\.com|youtu\.be)\b/i.test(t)) return true;
   if (/\b(feat\.|ft\.|official\s+video|official\s+audio)\b/i.test(t)) return true;
+  // e.g. "Summertime (Miles Davis)" from now-playing bridge — bare title is ambiguous
+  if (/^.+\s+\([^)]{2,}\)\s*$/.test(t)) return true;
+  if (/^.+\s+by\s+.+$/i.test(t)) return true;
   return false;
+}
+
+/** Normalize a graph seed before classify-start (music disambiguation). Used on server + local non-proxy paths. */
+export async function resolveStartSearchTerm(raw: string): Promise<string> {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+  if (!rawTermNeedsMusicEntityExtract(trimmed)) return trimmed;
+  return extractMusicEntity(trimmed);
 }
 
 /**
@@ -295,11 +306,13 @@ export const classifyStartPair = async (
     return await callAiProxy("/api/ai/classify-start", { term: rawTerm.trim(), wikiContext });
   }
 
-  const needsMusic = rawTermNeedsMusicEntityExtract(rawTerm);
+  const term = await resolveStartSearchTerm(rawTerm);
   if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-    console.log("[Constellations]", "classifyStartPair local Gemini path", { needsMusicExtract: needsMusic });
+    console.log("[Constellations]", "classifyStartPair local Gemini path", {
+      term: term.slice(0, 80),
+      resolvedFrom: term !== rawTerm.trim() ? rawTerm.trim().slice(0, 80) : undefined,
+    });
   }
-  const term = needsMusic ? await extractMusicEntity(rawTerm) : rawTerm.trim();
 
   const apiKey = await getApiKey();
   // String-level safety heuristic (no Wikipedia required):
