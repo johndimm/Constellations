@@ -8,8 +8,10 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, sanitizeSearchTerm, setServerLlmOverride } from "./services/aiService";
 import type { LlmProviderId } from "./services/aiUtils";
+import { setServerLlmModelOverride } from "./services/aiUtils";
 import { fetchWikipediaSummary } from "./services/wikipediaService";
 import { resolveImageForTitle, fetchDuckDuckGoImages } from "./services/resolveImageForTitle";
+import { fetchAllModels, fetchModelsForProvider } from "./services/modelsService";
 
 // Load env from .env.local if present
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -170,13 +172,7 @@ app.options("*", cors({ origin: "*", methods: ["GET", "POST", "DELETE", "OPTIONS
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
-// Log requests for debugging
-app.use((req, res, next) => {
-  if (req.method === 'POST') {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - ${req.get('content-length') || 0} bytes`);
-  }
-  next();
-});
+app.use((_, __, next) => next());
 
 // Schema initializer
 const initSql = `
@@ -497,8 +493,6 @@ app.post("/api/expand", async (req, res) => {
   const { query, context, atomicType, compositeType } = req.body;
   if (!query) return res.status(400).json({ error: "query required" });
 
-  console.log(`📡 [CLI] Expansion requested for "${query}"`);
-
   try {
     // 1. Wikipedia/Grounding
     const wiki = await fetchWikipediaSummary(query, context);
@@ -619,7 +613,6 @@ app.delete("/cache/clear", async (_, res) => {
   let client;
   try {
     client = await pool.connect();
-    console.log("🗑️  Clearing all cached data...");
     await client.query("BEGIN");
 
     // Delete all edges first (to avoid foreign key constraints)
@@ -632,7 +625,6 @@ app.delete("/cache/clear", async (_, res) => {
 
     await client.query("COMMIT");
 
-    console.log(`✅ Cache cleared: ${nodesDeleted} nodes, ${edgesDeleted} edges deleted`);
     res.json({
       ok: true,
       message: "Cache cleared successfully",
@@ -922,9 +914,6 @@ app.post("/graphs", async (req, res) => {
   const { name, data } = req.body as { name: string; data: any };
   if (!name || !data) return res.status(400).json({ error: "name and data required" });
 
-  const dataSize = JSON.stringify(data).length;
-  console.log(`[${new Date().toISOString()}] Saving graph "${name}", size: ${(dataSize / 1024 / 1024).toFixed(2)} MB`);
-
   let client;
   try {
     client = await pool.connect();
@@ -967,12 +956,10 @@ app.get("/api/image", async (req, res) => {
   const title = String(req.query.title || "").trim();
   const context = String(req.query.context || "").trim();
   if (!title) return res.status(400).json({ error: "title is required" });
-  console.log(`[Image] request`, { title, context });
   try {
     const result = await resolveImageForTitle(title, context);
     return res.status(200).json(result);
   } catch (e: any) {
-    console.warn("[Image] error for", title, e);
     return res.status(500).json({ error: e?.message || "image fetch failed" });
   }
 });
@@ -982,12 +969,10 @@ app.get("/api/poster", async (req, res) => {
   const title = String(req.query.title || "").trim();
   const context = String(req.query.context || "").trim();
   if (!title) return res.status(400).json({ error: "title is required" });
-  console.log(`[Poster] request`, { title, context });
   try {
     const result = await resolveImageForTitle(title, context);
     return res.status(200).json(result);
   } catch (e: any) {
-    console.warn("[Poster] error for", title, e);
     return res.status(500).json({ error: e?.message || "poster fetch failed" });
   }
 });
@@ -999,6 +984,17 @@ app.get("/api/ddg-image-test", async (req, res) => {
   if (!q) return res.status(400).json({ error: "title (or q) is required" });
   const results = await fetchDuckDuckGoImages(q, isNaN(limit) ? 10 : limit);
   return res.status(200).json({ query: q, count: results.length, results });
+});
+
+// --- Models Endpoint ---
+app.get("/api/models", async (req, res) => {
+  const provider = typeof req.query.provider === "string" ? req.query.provider : null;
+  try {
+    const models = provider ? await fetchModelsForProvider(provider) : await fetchAllModels();
+    return res.json({ models });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || "models fetch failed" });
+  }
 });
 
 // --- AI Proxy Endpoints ---
@@ -1022,21 +1018,26 @@ function firstAvailableProvider(): LlmProviderId {
   return "gemini";
 }
 
-/** Honor the browser's provider choice, but fall back if this server lacks credentials for it. */
+/** Honor the browser's provider+model choice, but fall back if this server lacks credentials. */
 function applyProviderFromRequest(req: express.Request): void {
   const requested = req.body?.llmProvider;
+  let activeProvider: string | null = null;
   if (requested && typeof requested === "string" && serverHasCredentials(requested)) {
     setServerLlmOverride(requested as LlmProviderId);
-    console.log(`🔀 [Proxy] LLM provider: ${requested}`);
+    activeProvider = requested;
   } else {
     if (requested && !serverHasCredentials(requested)) {
       const fallback = firstAvailableProvider();
       setServerLlmOverride(fallback);
-      console.warn(`⚠️ [Proxy] No key for "${requested}" — using ${fallback}`);
+      activeProvider = fallback;
+      console.warn(`⚠️ [LLM] No key for "${requested}" — using ${fallback}`);
     } else {
       setServerLlmOverride(null);
     }
   }
+  const model = req.body?.llmModel;
+  setServerLlmModelOverride(model && typeof model === "string" ? model : null);
+  if (activeProvider) console.log(`🤖 [LLM] ${activeProvider}${model ? ` / ${model}` : ""}`);
 }
 
 app.post("/api/ai/classify-start", async (req, res) => {
@@ -1045,11 +1046,8 @@ app.post("/api/ai/classify-start", async (req, res) => {
   if (!raw) return res.status(400).json({ error: "term is required" });
   const term = sanitizeSearchTerm(raw);
   const { wikiContext } = req.body;
-  if (term !== raw) console.log(`🧹 [Sanitize] "${raw}" → "${term}"`);
-  console.log(`📡 [Proxy] Classify-Start: "${term}"`);
   try {
     const result = await classifyStartPair(term, wikiContext);
-    console.log(`✅ [Proxy] Classify-Start result for "${term}":`, result);
     return res.status(200).json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
@@ -1062,11 +1060,8 @@ app.post("/api/ai/classify", async (req, res) => {
   if (!raw) return res.status(400).json({ error: "term is required" });
   const term = sanitizeSearchTerm(raw);
   const { wikiContext } = req.body;
-  if (term !== raw) console.log(`🧹 [Sanitize] "${raw}" → "${term}"`);
-  console.log(`📡 [Proxy] Classify: "${term}"`);
   try {
     const result = await classifyEntity(term, wikiContext);
-    console.log(`✅ [Proxy] Classify internal result for "${term}":`, result);
     return res.status(200).json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
@@ -1077,10 +1072,8 @@ app.post("/api/ai/connections", async (req, res) => {
   applyProviderFromRequest(req);
   const { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
-  console.log(`📡 [Proxy] Connections: "${nodeName}" (Type: ${compositeType})`);
   try {
     const result = await fetchConnections(nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
-    console.log(`✅ [Proxy] Connections internal result for "${nodeName}":`, result.people?.length || 0, "people found");
     return res.status(200).json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
@@ -1091,10 +1084,8 @@ app.post("/api/ai/works", async (req, res) => {
   applyProviderFromRequest(req);
   const { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body;
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
-  console.log(`📡 [Proxy] Works: "${nodeName}" (Type: ${atomicType})`);
   try {
     const result = await fetchPersonWorks(nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
-    console.log(`✅ [Proxy] Works result for "${nodeName}":`, result.works?.length || 0, "works found");
     return res.status(200).json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });

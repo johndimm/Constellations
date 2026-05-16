@@ -357,6 +357,7 @@ export function isRateLimitError(e: any): boolean {
 export type LlmProviderId = "gemini" | "deepseek" | "openai" | "anthropic";
 
 const BROWSER_LLM_KEY = "constellations_llm_provider";
+const BROWSER_LLM_MODEL_KEY = "constellations_llm_model";
 
 function isValidProvider(v: string): v is LlmProviderId {
   return v === "gemini" || v === "deepseek" || v === "openai" || v === "anthropic";
@@ -382,12 +383,40 @@ export function setBrowserLlmOverride(provider: LlmProviderId | null): void {
   } catch {}
 }
 
-// Server-side per-request override (Node.js module memory, set before each proxy call).
-// This is intentionally simple — dev server is single-user so concurrent-request races are fine.
+export function getBrowserLlmModel(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(BROWSER_LLM_MODEL_KEY)?.trim() || null;
+  } catch {}
+  return null;
+}
+
+export function setBrowserLlmModel(model: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (!model) {
+      window.localStorage.removeItem(BROWSER_LLM_MODEL_KEY);
+    } else {
+      window.localStorage.setItem(BROWSER_LLM_MODEL_KEY, model);
+    }
+  } catch {}
+}
+
+// Server-side per-request overrides (Node.js module memory, set before each proxy call).
+// Intentionally simple — dev server is single-user so concurrent-request races are fine.
 let _serverLlmOverride: LlmProviderId | null = null;
+let _serverLlmModelOverride: string | null = null;
 
 export function setServerLlmOverride(provider: LlmProviderId | null): void {
   _serverLlmOverride = provider;
+}
+
+export function setServerLlmModelOverride(model: string | null): void {
+  _serverLlmModelOverride = model;
+}
+
+export function getServerLlmModelOverride(): string | null {
+  return _serverLlmModelOverride;
 }
 
 export function getLlmProvider(): LlmProviderId {

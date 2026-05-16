@@ -1,7 +1,7 @@
 "use client";
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, sanitizeSearchTerm, looksLikePersonName, getLlmProvider } from "./aiUtils";
+import { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, sanitizeSearchTerm, looksLikePersonName, getLlmProvider, getBrowserLlmModel, getServerLlmModelOverride } from "./aiUtils";
 
 export { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify } from "./aiUtils";
 
@@ -74,8 +74,8 @@ const CLASSIFY_TIMEOUT_MS = 15000; // 15 seconds for classification
 // Model selection (configurable via Vite env vars)
 // - VITE_GEMINI_MODEL: used for expansions + pathfinding (default)
 // - VITE_GEMINI_MODEL_CLASSIFY: optional override for classification
-const getGeminiModel = getEnvGeminiModel;
-const getGeminiModelClassify = getEnvGeminiModelClassify;
+const getGeminiModel = () => getServerLlmModelOverride() || getEnvGeminiModel();
+const getGeminiModelClassify = () => getServerLlmModelOverride() || getEnvGeminiModelClassify();
 
 // Rejects YouTube channel names, streaming platforms, and other web junk.
 function isValidEntityName(name: string): boolean {
@@ -120,7 +120,7 @@ async function callAiProxy(endpoint: string, body: any) {
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...body, llmProvider: getLlmProvider() })
+      body: JSON.stringify({ ...body, llmProvider: getLlmProvider(), llmModel: getBrowserLlmModel() ?? undefined })
     });
 
     if (resp.status === 404 && endpoint === "/api/ai/classify-start") {

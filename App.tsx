@@ -23,6 +23,53 @@ import { buildHandoffFromLiveState, type ConstellationsSessionHandoffV1 } from '
 
 const PeopleBrowserSidebar = lazy(() => import('./components/PeopleBrowserSidebar'));
 
+const WELCOME_EXAMPLES = ["Alan Turing", "The Godfather", "Iceman by Drake"];
+
+function WelcomeOverlay({ hideHeader, onSearch, onDismiss }: { hideHeader?: boolean; onSearch: (term: string) => void; onDismiss: () => void }) {
+    const [draft, setDraft] = useState('');
+    const submit = (term: string) => { const t = term.trim(); if (t) onSearch(t); };
+    return (
+        <div className="absolute inset-0 z-[150] bg-slate-950 flex flex-col items-center justify-center" style={{ paddingTop: hideHeader ? 0 : '3.5rem' }}>
+            <div className="text-center max-w-lg px-8 w-full">
+                <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+                    Constellations
+                </h1>
+                <p className="text-slate-400 mb-8 text-base leading-relaxed">
+                    Start with anything. Follow the connections.
+                </p>
+                <form onSubmit={e => { e.preventDefault(); submit(draft); }} className="flex gap-2 mb-6">
+                    <input
+                        autoFocus
+                        type="text"
+                        value={draft}
+                        onChange={e => setDraft(e.target.value)}
+                        placeholder="Person, film, album, idea…"
+                        className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20"
+                    />
+                    <button
+                        type="submit"
+                        disabled={!draft.trim()}
+                        className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+                    >
+                        Go
+                    </button>
+                </form>
+                <div className="flex flex-wrap justify-center gap-2">
+                    {WELCOME_EXAMPLES.map(ex => (
+                        <button key={ex} onClick={() => submit(ex)}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white transition-all text-sm">
+                            {ex}
+                        </button>
+                    ))}
+                    <button onClick={onDismiss}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700/50 text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition-all text-sm">
+                        blank slate
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 type AppProps = {
     mode?: 'standalone' | 'extension';
@@ -243,6 +290,7 @@ const App: React.FC<AppProps> = ({
     });
 
     const [showHelp, setShowHelp] = useState(false);
+    const [welcomeDismissed, setWelcomeDismissed] = useState(false);
 
     const {
         exploreTerm, setExploreTerm, pathStart, setPathStart, pathEnd, setPathEnd,
@@ -756,29 +804,8 @@ const App: React.FC<AppProps> = ({
                 />
             </div>
 
-            {!embedded && nodes.length === 0 && !isProcessing && (
-                <div className="absolute inset-0 z-[150] bg-slate-950 flex flex-col items-center justify-center" style={{ paddingTop: hideHeader ? 0 : '3.5rem' }}>
-                    <div className="text-center max-w-lg px-8">
-                        <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
-                            Constellations
-                        </h1>
-                        <p className="text-slate-400 mb-8 text-base leading-relaxed">
-                            Start with anything. Follow the connections.
-                        </p>
-                        <div className="flex flex-wrap justify-center gap-3">
-                            {["Alan Turing", "The Godfather", "David Bowie", "Marie Curie", "Dune"].map((example) => (
-                                <button
-                                    key={example}
-                                    onClick={() => handleStartSearch(example)}
-                                    className="px-4 py-2 rounded-xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/30 hover:text-indigo-200 transition-all text-sm font-medium"
-                                >
-                                    {example}
-                                </button>
-                            ))}
-                        </div>
-                        <p className="text-slate-600 text-xs mt-8">or type anything in the search box above</p>
-                    </div>
-                </div>
+            {!embedded && nodes.length === 0 && !isProcessing && !welcomeDismissed && (
+                <WelcomeOverlay hideHeader={hideHeader} onSearch={handleStartSearch} onDismiss={() => setWelcomeDismissed(true)} />
             )}
 
             <AppHeader

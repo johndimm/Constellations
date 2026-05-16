@@ -1,6 +1,6 @@
 "use client";
 import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, readBundledEnv, getLlmProvider, looksLikePersonName } from "./aiUtils";
+import { parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, readBundledEnv, getLlmProvider, looksLikePersonName, getServerLlmModelOverride } from "./aiUtils";
 import type { LockedPair } from "./geminiService";
 
 export type { LockedPair };
@@ -61,9 +61,9 @@ async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS):
   const baseUrl = isOpenAI
     ? (readBundledEnv("VITE_OPENAI_BASE_URL") || "https://api.openai.com/v1")
     : (readBundledEnv("VITE_DEEPSEEK_BASE_URL") || "https://api.deepseek.com/v1");
-  const model = isOpenAI
+  const model = getServerLlmModelOverride() || (isOpenAI
     ? (readBundledEnv("VITE_OPENAI_MODEL") || "gpt-4o-mini")
-    : (readBundledEnv("VITE_DEEPSEEK_MODEL") || "deepseek-chat");
+    : (readBundledEnv("VITE_DEEPSEEK_MODEL") || "deepseek-chat"));
   const key = isOpenAI
     ? readBundledEnv("VITE_OPENAI_API_KEY")
     : readBundledEnv("VITE_DEEPSEEK_API_KEY");
