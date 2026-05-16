@@ -394,7 +394,7 @@ export function getLlmProvider(): LlmProviderId {
   if (_serverLlmOverride) return _serverLlmOverride;
   const browser = getBrowserLlmOverride();
   if (browser) return browser;
-  const raw = (readBundledEnv("VITE_AI_PROVIDER") || "deepseek").trim().toLowerCase();
+  const raw = (readBundledEnv("VITE_AI_PROVIDER") || "gemini").trim().toLowerCase();
   return isValidProvider(raw) ? raw : "deepseek";
 }
 

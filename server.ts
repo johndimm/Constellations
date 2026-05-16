@@ -1002,15 +1002,12 @@ app.get("/api/ddg-image-test", async (req, res) => {
 
 // --- AI Proxy Endpoints ---
 
-/** Apply the browser-selected LLM provider for this request (passed in body as `llmProvider`). */
-function applyProviderFromRequest(req: express.Request): void {
-  const p = req.body?.llmProvider;
-  if (p && typeof p === "string") {
-    setServerLlmOverride(p as any);
-    console.log(`🔀 [Proxy] LLM provider: ${p}`);
-  } else {
-    setServerLlmOverride(null);
-  }
+/** The server always uses its own configured LLM provider (VITE_AI_PROVIDER env var, defaulting
+ *  to "gemini"). The browser's `llmProvider` request body field is intentionally ignored so that
+ *  stale client bundles cannot force an unconfigured provider.
+ */
+function applyProviderFromRequest(_req: express.Request): void {
+  setServerLlmOverride(null); // let getLlmProvider() use the server's env var
 }
 
 app.post("/api/ai/classify-start", async (req, res) => {
