@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import { fetchConnections, fetchPersonWorks, classifyEntity, classifyStartPair, fetchConnectionPath, findWikipediaTitle, fetchOrgKeyPeopleBlockViaSearch, sanitizeSearchTerm, setServerLlmOverride } from "./services/aiService";
+import type { LlmProviderId } from "./services/aiUtils";
 import { fetchWikipediaSummary } from "./services/wikipediaService";
 import { resolveImageForTitle, fetchDuckDuckGoImages } from "./services/resolveImageForTitle";
 
@@ -1002,12 +1003,40 @@ app.get("/api/ddg-image-test", async (req, res) => {
 
 // --- AI Proxy Endpoints ---
 
-/** The server always uses its own configured LLM provider (VITE_AI_PROVIDER env var, defaulting
- *  to "gemini"). The browser's `llmProvider` request body field is intentionally ignored so that
- *  stale client bundles cannot force an unconfigured provider.
- */
-function applyProviderFromRequest(_req: express.Request): void {
-  setServerLlmOverride(null); // let getLlmProvider() use the server's env var
+/** Returns true if this server has credentials for the given provider. */
+function serverHasCredentials(provider: string): boolean {
+  switch (provider) {
+    case "gemini":  return !!(process.env.GEMINI_API_KEY || process.env.VITE_API_KEY || process.env.VITE_GEMINI_API_KEY);
+    case "deepseek": return !!process.env.VITE_DEEPSEEK_API_KEY;
+    case "openai":     return !!process.env.VITE_OPENAI_API_KEY;
+    case "anthropic":  return !!process.env.VITE_ANTHROPIC_API_KEY;
+    default:           return false;
+  }
+}
+
+/** Returns the first provider this server has credentials for, or "gemini" as last resort. */
+function firstAvailableProvider(): LlmProviderId {
+  for (const p of ["deepseek", "gemini", "openai"] as LlmProviderId[]) {
+    if (serverHasCredentials(p)) return p;
+  }
+  return "gemini";
+}
+
+/** Honor the browser's provider choice, but fall back if this server lacks credentials for it. */
+function applyProviderFromRequest(req: express.Request): void {
+  const requested = req.body?.llmProvider;
+  if (requested && typeof requested === "string" && serverHasCredentials(requested)) {
+    setServerLlmOverride(requested as LlmProviderId);
+    console.log(`🔀 [Proxy] LLM provider: ${requested}`);
+  } else {
+    if (requested && !serverHasCredentials(requested)) {
+      const fallback = firstAvailableProvider();
+      setServerLlmOverride(fallback);
+      console.warn(`⚠️ [Proxy] No key for "${requested}" — using ${fallback}`);
+    } else {
+      setServerLlmOverride(null);
+    }
+  }
 }
 
 app.post("/api/ai/classify-start", async (req, res) => {
