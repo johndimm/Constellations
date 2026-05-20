@@ -97,8 +97,10 @@ type AppProps = {
     nowPlayingKey?: string | null;
     /** e.g. optional cleanup (e.g. document class) when leaving full-screen; use with `closeHref` for navigation. */
     onClose?: () => void;
-    /** If set, close control is an `<a href>` (see `AppHeader`); e.g. `/` (Trailer Vision) or `/player` (Soundings). */
+    /** If set, close control is an `<a href>` (see `AppHeader`); e.g. `/player` (Soundings). */
     closeHref?: string;
+    /** Landing / hub URL for the house control beside the title (default `/`). */
+    homeHref?: string;
     /** Soundings: create a new DJ channel seeded from the right-clicked graph node. */
     onNewChannelFromNode?: (node: GraphNode) => void;
     /**
@@ -225,6 +227,7 @@ const App: React.FC<AppProps> = ({
     nowPlayingKey = null,
     onClose,
     closeHref,
+    homeHref,
     onNewChannelFromNode,
     initialSession: initialSessionProp = null,
     hostNavOffsetPx = 0,
@@ -817,6 +820,7 @@ const App: React.FC<AppProps> = ({
                 setSidebarToggleSignal={setSidebarToggleSignal}
                 onClose={onClose}
                 closeHref={closeHref}
+                homeHref={homeHref}
                 offsetTopClass={headerOffsetClass}
             />
         </div>

@@ -62,7 +62,7 @@ export function newChannelFromGraphNode(
     try {
         sessionStorage.setItem(
             options.sessionStorageKey,
-            JSON.stringify({ v: 1, name, notes })
+            JSON.stringify({ v: 1, name, freeText: notes, notes })
         );
     } catch (e) {
         console.warn(`[${label}] could not queue new channel for host`, e);

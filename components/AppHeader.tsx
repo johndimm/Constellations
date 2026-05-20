@@ -1,6 +1,6 @@
 "use client";
 import React from 'react';
-import { ChevronRight, ChevronLeft, X } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Home, X } from 'lucide-react';
 import { GraphNode } from '../types';
 
 interface AppHeaderProps {
@@ -13,10 +13,12 @@ interface AppHeaderProps {
     /** When set, shows a top-right control that leaves full-screen (e.g. back to player). */
     onClose?: () => void;
     /**
-     * When set (e.g. `/` or `/player`), the close control is a real `href` link so navigation works
+     * When set (e.g. `/player`), the close control is a real `href` link so navigation works
      * even if pointer-event layering blocked the old button. `onClick` can still run for cleanup.
      */
     closeHref?: string;
+    /** Landing / hub URL for the house control (default `/`). */
+    homeHref?: string;
     /**
      * When the host app shows its own top bar (e.g. Trailer Vision nav, ~44px), set so this header
      * does not sit at viewport top:0 and steal clicks from the host nav. Use `top-11` for 2.75rem.
@@ -33,9 +35,12 @@ const AppHeader: React.FC<AppHeaderProps> = ({
     setSidebarToggleSignal,
     onClose,
     closeHref,
+    homeHref = "/",
     offsetTopClass = "top-0",
 }) => {
     if (!showHeader) return null;
+
+    const showLeave = closeHref || onClose;
 
     return (
         <header
@@ -48,26 +53,26 @@ const AppHeader: React.FC<AppHeaderProps> = ({
                     className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition flex-shrink-0"
                     title={
                         panelCollapsed
-                            ? "Show left panel — search, save/load, graph options"
-                            : "Hide left panel"
+                            ? "Show control panel — search, save/load, graph options"
+                            : "Hide control panel"
                     }
                     aria-label={panelCollapsed ? "Show control panel" : "Hide control panel"}
                 >
                     {panelCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
                 </button>
-                {closeHref ? (
+                {homeHref ? (
                     <a
-                        href={closeHref}
+                        href={homeHref}
                         title="Film & Music — return to hub"
-                        className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap hover:text-red-400 transition-colors"
+                        className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white transition flex-shrink-0"
+                        aria-label="Home"
                     >
-                        Constellations
+                        <Home size={18} strokeWidth={2} aria-hidden />
                     </a>
-                ) : (
-                    <span className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap">
-                        Constellations
-                    </span>
-                )}
+                ) : null}
+                <span className="text-base sm:text-lg font-bold text-red-500 whitespace-nowrap">
+                    Constellations
+                </span>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 mr-1">
                 {selectedNode && (
@@ -87,7 +92,18 @@ const AppHeader: React.FC<AppHeaderProps> = ({
                         {sidebarCollapsed ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
                     </button>
                 )}
-                {!closeHref && onClose && (
+                {showLeave && closeHref && (
+                    <a
+                        href={closeHref}
+                        onClick={onClose}
+                        className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-800/80 border border-slate-700 rounded-lg flex items-center justify-center text-slate-300 hover:text-white hover:border-slate-600 transition flex-shrink-0"
+                        title="Return to the main app"
+                        aria-label="Return to the main app"
+                    >
+                        <X size={20} strokeWidth={2} />
+                    </a>
+                )}
+                {showLeave && !closeHref && onClose && (
                     <button
                         type="button"
                         onClick={(e) => {

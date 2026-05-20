@@ -1662,7 +1662,7 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         <div ref={linkHoverWrapRef} className="relative" style={{ width, height }}>
             {linkTip && linkTipText && (
                 <div
-                    className="pointer-events-none absolute z-[100] max-w-sm rounded-lg border border-slate-600/80 bg-slate-950/95 px-2.5 py-2 text-left text-[11px] leading-snug text-slate-100 shadow-lg backdrop-blur-sm"
+                    className="pointer-events-none absolute z-[100] max-w-sm rounded-lg border border-slate-600 bg-slate-950 px-2.5 py-2 text-left text-[11px] leading-snug text-slate-100 shadow-lg"
                     style={{ left: linkTip.x + 8, top: linkTip.y + 8 }}
                 >
                     <p className="whitespace-pre-wrap break-words">{linkTipText}</p>

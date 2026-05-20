@@ -13,6 +13,6 @@ const hubUrl: string = import.meta.env.VITE_HUB_URL || "http://127.0.0.1:8000";
 
 root.render(
   <React.StrictMode>
-    <App closeHref={hubUrl} />
+    <App homeHref={hubUrl} />
   </React.StrictMode>
 );
