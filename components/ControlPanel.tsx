@@ -156,13 +156,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       if (exploreTerm.trim()) {
         onSearch(exploreTerm.trim());
         setHasStarted(true);
-        if (window.innerWidth < 768) onSetCollapsed(true);
+        onSetCollapsed(true);
       }
     } else {
       if (pathStart.trim() && pathEnd.trim()) {
         onPathSearch(pathStart.trim(), pathEnd.trim());
         setHasStarted(true);
-        if (window.innerWidth < 768) onSetCollapsed(true);
+        onSetCollapsed(true);
       }
     }
   };
@@ -566,7 +566,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                             setExploreTerm(term);
                             onSearch(term);
                             setHasStarted(true);
-                            if (window.innerWidth < 768) onSetCollapsed(true);
+                            onSetCollapsed(true);
                           }}
                           disabled={isProcessing}
                           className="flex-1 text-[11px] bg-slate-800/60 hover:bg-indigo-500/20 text-slate-400 hover:text-indigo-300 px-2 py-1.5 rounded-lg border border-slate-700 hover:border-indigo-500/40 transition-all truncate"
@@ -666,7 +666,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         setExploreTerm(term);
                         onSearch(term);
                         setHasStarted(true);
-                        if (window.innerWidth < 768) onSetCollapsed(true);
+                        onSetCollapsed(true);
                       }}
                       className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-full border border-slate-700 transition-colors"
                       disabled={isProcessing}

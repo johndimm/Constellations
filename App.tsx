@@ -451,6 +451,14 @@ const App: React.FC<AppProps> = ({
         return () => window.removeEventListener('popstate', handlePopState);
     }, [setPeopleBrowserOpen]);
 
+    const prevNodeCountRef = useRef(nodes.length);
+    useEffect(() => {
+        if (prevNodeCountRef.current === 0 && nodes.length > 0 && !hideControlPanel) {
+            setPanelCollapsed(true);
+        }
+        prevNodeCountRef.current = nodes.length;
+    }, [nodes.length, hideControlPanel, setPanelCollapsed]);
+
     const handoffSelectionRestored = useRef(false);
     useEffect(() => {
         if (!initialSession?.selectedNodeId || handoffSelectionRestored.current) return;
