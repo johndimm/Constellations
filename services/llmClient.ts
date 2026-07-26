@@ -37,7 +37,7 @@ async function openAiCompatibleJson(
 
   const model =
     provider === "deepseek"
-      ? getEnvVar("VITE_DEEPSEEK_MODEL") || "deepseek-chat"
+      ? getEnvVar("VITE_DEEPSEEK_MODEL") || "deepseek-v4-flash"
       : getEnvVar("VITE_OPENAI_MODEL") || "gpt-4o-mini";
 
   const messages: { role: string; content: string }[] = [];

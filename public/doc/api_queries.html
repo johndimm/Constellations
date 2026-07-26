@@ -155,7 +155,7 @@
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $VITE_DEEPSEEK_API_KEY" \
   -d '{
-    "model": "deepseek-chat",
+    "model": "deepseek-v4-flash",
     "messages": [{"role": "user", "content": "Classify \"Samuel Beckett\". Return JSON with type (Person or Event) and description."}],
     "max_tokens": 1024
   }'</code></pre>

@@ -84,7 +84,7 @@ async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS):
         : readBundledEnv("VITE_OPENAI_MODEL")) || "gpt-4o-mini"
     : (typeof window === "undefined"
         ? readServerEnv("VITE_DEEPSEEK_MODEL", "DEEPSEEK_MODEL")
-        : readBundledEnv("VITE_DEEPSEEK_MODEL")) || "deepseek-chat");
+        : readBundledEnv("VITE_DEEPSEEK_MODEL")) || "deepseek-v4-flash");
   const key = isOpenAI ? openAi!.apiKey : getDeepSeekApiKey();
   if (!key) throw new Error(`No API key set for ${provider}`);
   logProviderKeyOnce(provider, key);
