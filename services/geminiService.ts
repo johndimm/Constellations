@@ -2,6 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
 import { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, sanitizeSearchTerm, looksLikePersonName, getLlmProvider, getBrowserLlmModel, getServerLlmModelOverride } from "./aiUtils";
+// Runtime import is safe: deepseekService only imports a *type* from this module (erased at runtime), so no cycle.
+import { callAltLlm } from "./deepseekService";
 
 export { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify } from "./aiUtils";
 
@@ -204,10 +206,6 @@ export const extractMusicEntity = async (raw: string): Promise<string> => {
   const trimmed = raw.trim();
   if (!trimmed) return trimmed;
 
-  const apiKey = await getApiKey();
-  if (!apiKey) return trimmed;
-
-  const ai = new GoogleGenAI({ apiKey });
   const prompt = `You are given raw text from a music context (YouTube title, track listing, now-playing display, or search query). It may include one or more track titles, an artist name, a composer, a YouTube channel username, a year, or other metadata.
 
 Return the single best name to use as a music knowledge-graph starting node — one that will connect meaningfully to related works, composers, performers, and styles. Use your world knowledge of music to pick an unambiguous, well-known entity.
@@ -241,23 +239,37 @@ ${trimmed}
 Return JSON: { "entity": "<extracted entity name>" }`;
 
   try {
-    const response = await withTimeout(
-      ai.models.generateContent({
-        model: getGeminiModelClassify(),
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: { entity: { type: Type.STRING } },
-            required: ["entity"]
+    let text: string;
+    if (getLlmProvider() === "gemini") {
+      const apiKey = await getApiKey();
+      if (!apiKey) return trimmed;
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await withTimeout(
+        ai.models.generateContent({
+          model: getGeminiModelClassify(),
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: { entity: { type: Type.STRING } },
+              required: ["entity"]
+            }
           }
-        }
-      }),
-      8000,
-      "extractMusicEntity timed out"
-    );
-    const parsed = parseJsonFromModelText(getResponseText(response)) as { entity?: string } | null;
+        }),
+        8000,
+        "extractMusicEntity timed out"
+      );
+      text = getResponseText(response);
+    } else {
+      // deepseek / openai / anthropic — callAltLlm already requests JSON output.
+      text = await withTimeout(
+        callAltLlm("You extract the best music knowledge-graph entity. Return strict JSON only.", prompt),
+        8000,
+        "extractMusicEntity timed out"
+      );
+    }
+    const parsed = parseJsonFromModelText(text) as { entity?: string } | null;
     const entity = parsed?.entity?.trim();
     if (entity && entity.length > 1) {
       if (entity !== trimmed) console.log(`[extractMusicEntity] "${trimmed}" → "${entity}"`);
@@ -281,7 +293,7 @@ export const classifyStartPair = async (
   reasoning: string;
 }> => {
   // With `VITE_CACHE_URL`, classification hits the cache server first. Skip client-side
-  // `extractMusicEntity` (music/YouTube-specific Gemini call) — it adds a full round-trip and
+  // `extractMusicEntity` (music/YouTube-specific LLM call) — it adds a full round-trip and
   // the wrong prompt for films / general graph seeds like "The Godfather".
   const cacheUrl = getEnvCacheUrl();
   const proxy =

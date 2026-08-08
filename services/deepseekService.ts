@@ -39,7 +39,7 @@ async function callAiProxy(endpoint: string, body: any) {
   return resp.json();
 }
 
-async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS): Promise<string> {
+export async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS): Promise<string> {
   const provider = getLlmProvider();
 
   if (provider === "anthropic") {
