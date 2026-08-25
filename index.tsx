@@ -9,7 +9,7 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
-const hubUrl: string = import.meta.env.VITE_HUB_URL || "http://127.0.0.1:8000";
+const hubUrl: string = import.meta.env.VITE_HUB_URL || "https://johndimm.vercel.app";
 
 root.render(
   <React.StrictMode>
