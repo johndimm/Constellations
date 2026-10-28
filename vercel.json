@@ -6,12 +6,15 @@
     "api/**/*.ts": { "maxDuration": 60 }
   },
   "rewrites": [
+    { "source": "/api/ai/:action", "destination": "/api/ai/:action" },
+    { "source": "/api/crossref/work", "destination": "/api/crossref-work" },
     { "source": "/expansion", "destination": "/api/expansion" },
     { "source": "/node", "destination": "/api/node" },
     { "source": "/path", "destination": "/api/db-path" },
-    { "source": "/graphs/:name", "destination": "/api/graphs/:name" },
+    { "source": "/graphs/:name", "destination": "/api/graphs?name=:name" },
     { "source": "/graphs", "destination": "/api/graphs" },
-    { "source": "/cache/clear", "destination": "/api/cache/clear" },
+    { "source": "/cache/clear", "destination": "/api/cache-clear" },
+    { "source": "/crossref/work", "destination": "/api/crossref-work" },
     { "source": "/init", "destination": "/api/init" },
     { "source": "/health", "destination": "/api/health" },
     { "source": "/docs/:slug", "destination": "/api/docs/:slug" }
