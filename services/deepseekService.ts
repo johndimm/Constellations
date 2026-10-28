@@ -24,8 +24,7 @@ function llmLogTag(): string {
 function shouldProxy(): boolean {
   if (typeof window === "undefined") return false;
   if ((window as any).__PRERENDER_INJECTED) return false;
-  if (getEnvCacheUrl()) return true;
-  return window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+  return true;
 }
 
 async function callAiProxy(endpoint: string, body: any) {
@@ -37,7 +36,12 @@ async function callAiProxy(endpoint: string, body: any) {
     body: JSON.stringify({ ...body, llmProvider: getLlmProvider(), llmModel: getBrowserLlmModel() ?? undefined }),
   });
   if (!resp.ok) throw new Error(`AI Proxy Error (${resp.status}): ${await resp.text()}`);
-  return resp.json();
+  const data = await resp.json();
+  if (data._sec) {
+    const action = endpoint.split("/").pop();
+    console.log(`[API] ${action} ${data._sec}s (${data._source})`);
+  }
+  return data;
 }
 
 export async function callAltLlm(system: string, user: string, timeoutMs = TIMEOUT_MS): Promise<string> {

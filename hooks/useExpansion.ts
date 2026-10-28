@@ -69,9 +69,12 @@ export function useExpansion(options: UseExpansionOptions) {
         try {
             const res = await fetch(url.toString());
             if (!res.ok) return null;
-            return res.json();
+            const data = await res.json();
+            if (data._sec) {
+                console.log(`[API] expansion ${data._sec}s (${data._source || data.hit})`);
+            }
+            return data;
         } catch (e) {
-            // console.warn("Cache fetch failed", e);
             return null;
         }
     }, [cacheEnabled, cacheBaseUrl]);
@@ -131,6 +134,9 @@ export function useExpansion(options: UseExpansionOptions) {
         setError(null);
 
         try {
+            const t0 = performance.now();
+            const elapsed = () => `${((performance.now() - t0) / 1000).toFixed(1)}s`;
+            console.log(`[Expand] START "${node.title}"`);
             const nodeUpdates = new Map<string | number, Partial<GraphNode>>();
             const maybeAutoExpandMore = (neighborCount: number) => {
                 if (forceMore) return;
@@ -145,7 +151,9 @@ export function useExpansion(options: UseExpansionOptions) {
             };
 
             if (cacheEnabled && !forceMore) {
+                console.log(`[Expand] ${elapsed()} checking cache for id=${node.id}...`);
                 const cacheHit = await fetchCacheExpansion(node.id);
+                console.log(`[Expand] ${elapsed()} cache response: hit=${cacheHit?.hit}, nodes=${cacheHit?.nodes?.length ?? 0}`);
                 if (cacheHit && cacheHit.hit === "exact" && cacheHit.nodes) {
                     let validCached: any[] = cacheHit.nodes.filter((cn: any) => String(cn.id) !== String(node.id));
                     // Concurrent upgrade of Wikipedia summaries if needed
@@ -190,6 +198,7 @@ export function useExpansion(options: UseExpansionOptions) {
                     const atomicLookingCount = upgraded.filter((cn: any) => ATOMIC_TYPE_WORDS.has((cn.type || '').toLowerCase())).length;
                     const mostlyCachedAreAtomic = upgraded.length > 0 && atomicLookingCount > upgraded.length / 2;
                     const cacheSemanticValid = mostlyCachedAreAtomic === expectedChildIsAtomic;
+                    console.log(`[Expand] ${elapsed()} cache validation: validCached=${validCached.length}, atomicLooking=${atomicLookingCount}/${upgraded.length}, expectedChildAtomic=${expectedChildIsAtomic}, semanticValid=${cacheSemanticValid}`);
                     if (!cacheSemanticValid) {
                         console.warn(`[useExpansion] Cache bypassed: cached nodes are mostly ${mostlyCachedAreAtomic ? 'atomic' : 'composite'} but expected ${expectedChildIsAtomic ? 'atomic' : 'composite'} for "${node.title}"`);
                     }
@@ -197,6 +206,7 @@ export function useExpansion(options: UseExpansionOptions) {
                     validCached = upgraded.map((cn: any) => ({ ...cn, is_atomic: expectedChildIsAtomic }));
 
                     if (cacheSemanticValid && validCached.length >= 5) {
+                        console.log(`[Expand] ${elapsed()} USING CACHE (${validCached.length} nodes)`);
                         const existingNodeIdsBefore = new Set(graphDataRef.current.nodes.map(n => String(n.id)));
                         const newChildIds: (string | number)[] = validCached.filter(cn => !existingNodeIdsBefore.has(String(cn.id))).map(cn => cn.id);
                         // Include ALL connected nodes for highlighting, not just new ones
@@ -234,6 +244,8 @@ export function useExpansion(options: UseExpansionOptions) {
                             nodes: prev.nodes.map(n => n.id === node.id ? { ...n, expanded: true, isLoading: false } : n)
                         }));
                         return;
+                    } else {
+                        console.log(`[Expand] ${elapsed()} cache NOT used: semanticValid=${cacheSemanticValid}, count=${validCached.length} (need >=5)`);
                     }
                 }
             }
@@ -257,6 +269,7 @@ export function useExpansion(options: UseExpansionOptions) {
             }).filter(Boolean);
 
 
+            console.log(`[Expand] ${elapsed()} cache miss, fetching wiki summary...`);
             let wiki: any = {
                 extract: node.wikiSummary || null,
                 pageid: node.wikipedia_id ? Number(node.wikipedia_id) : null,
@@ -265,6 +278,7 @@ export function useExpansion(options: UseExpansionOptions) {
             if ((!wiki.extract && !wiki.pageid) || (wiki.extract && !wiki.pageid && !wiki.mentioningPageTitles)) {
                 wiki = await fetchWikipediaSummary(node.title, neighborNames.join(' '));
             }
+            console.log(`[Expand] ${elapsed()} wiki summary done`);
 
             if (wiki.extract) {
                 const isPerson = node.is_atomic === true || node.is_person === true || node.type?.toLowerCase() === 'person';
@@ -314,8 +328,10 @@ export function useExpansion(options: UseExpansionOptions) {
             }
 
 
+            console.log(`[Expand] ${elapsed()} fetching wiki extract (12k chars)...`);
             const extractResult = await fetchWikipediaExtract(node.title, 12000);
             const sourceLong = extractResult.extract || wiki.extract || '';
+            console.log(`[Expand] ${elapsed()} wiki extract done (${sourceLong.length} chars)`);
 
             const hasReliableWikipediaForThisTitle = !!(sourceLong && String(sourceLong).trim().length > 0);
 
@@ -324,7 +340,7 @@ export function useExpansion(options: UseExpansionOptions) {
                 const expandingComposite = !(currentIsAtomic ?? currentType.toLowerCase() === 'person');
 
                 if (!isAcademicPair && pair.atomicType.toLowerCase() === 'person' && expandingComposite) {
-
+                    console.log(`[Expand] ${elapsed()} fetching wikidata key people...`);
                     const wd = await fetchWikidataKeyPeopleForTitle(node.title);
 
 
@@ -408,6 +424,7 @@ export function useExpansion(options: UseExpansionOptions) {
             // Fallback: If academic results were empty, proceed to standard expansion
             if (results.length === 0) {
                 if (isPerson) {
+                    console.log(`[Expand] ${elapsed()} calling LLM fetchPersonWorks...`);
                     let data = await fetchPersonWorks(node.title, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
                     if ((!data.works || data.works.length === 0) && neighborNames.length > 0) {
                         data = await fetchPersonWorks(node.title, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
@@ -432,6 +449,7 @@ export function useExpansion(options: UseExpansionOptions) {
                         edge_label: w.role || null
                     }));
                 } else {
+                    console.log(`[Expand] ${elapsed()} calling LLM fetchConnections...`);
                     let data = await fetchConnections(node.title, undefined, neighborNames, verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
                     if ((!data.people || data.people.length === 0) && neighborNames.length > 0) {
                         data = await fetchConnections(node.title, undefined, [], verifiedContext || undefined, node.wikipedia_id, currentAtomicType, currentCompositeType, wiki.mentioningPageTitles || undefined);
@@ -460,6 +478,7 @@ export function useExpansion(options: UseExpansionOptions) {
 
 
 
+                console.log(`[Expand] ${elapsed()} LLM done, ${results.length} results`);
                 if (results.length === 0 && sourceLong) {
                     const sentences = splitIntoSentences(sourceLong);
                     const patterns = [
@@ -486,6 +505,7 @@ export function useExpansion(options: UseExpansionOptions) {
 
                 if (looksLikeScreenWork(node.title, node.description || sourceLong)) {
                     try {
+                        console.log(`[Expand] ${elapsed()} fetching wikidata cast...`);
                         const castLabels = await fetchWikidataCastForTitle(node.title);
                         if (castLabels.length) {
                             const existingNames = new Set(results.map(r => normalizeForDedup(r.title)));
@@ -518,6 +538,7 @@ export function useExpansion(options: UseExpansionOptions) {
                     setNewChildNodeIds(new Set());
                 }
             } else {
+                console.log(`[Expand] ${elapsed()} fetching wiki summaries for ${results.length} results...`);
                 const resultsWithWiki = await Promise.all(results.map(async r => {
                     const contextHint = [node.title, r.type, r.edge_label || r.role, r.description, r.edge_meta?.evidence?.snippet].filter(Boolean).join(' · ').slice(0, 280);
                     const skipWiki = isAcademicPair || String(r.edge_meta?.evidence?.kind || '') === 'openalex';
@@ -547,6 +568,7 @@ export function useExpansion(options: UseExpansionOptions) {
                     };
                 }));
 
+                console.log(`[Expand] ${elapsed()} wiki summaries done`);
                 let nodesToUse = resultsWithWiki;
                 if (!exploreTerm.toLowerCase().startsWith('list of ')) nodesToUse = nodesToUse.filter((n: any) => !isBadListPage(n.title));
 
@@ -559,6 +581,7 @@ export function useExpansion(options: UseExpansionOptions) {
 
                 let finalIDMap: Record<string, number> | undefined;
                 if (cacheEnabled) {
+                    console.log(`[Expand] ${elapsed()} saving to cache...`);
                     let combinedNodes = [...resultsWithWiki];
                     const existingCache = await fetchCacheExpansion(node.id);
                     if (existingCache && existingCache.nodes) {
@@ -576,6 +599,7 @@ export function useExpansion(options: UseExpansionOptions) {
                     finalIDMap = (await saveCacheExpansion(node.id, combinedNodes)) ?? undefined;
                     const cacheHit = await fetchCacheExpansion(node.id);
                     if (cacheHit && cacheHit.nodes) nodesToUse = cacheHit.nodes;
+                    console.log(`[Expand] ${elapsed()} cache save done`);
                 }
 
                 const currentNodesForDedupe = graphDataRef.current.nodes;
@@ -719,7 +743,7 @@ export function useExpansion(options: UseExpansionOptions) {
                     const updates = nodeUpdates.get(node.id);
                     if (updates) saveCacheNodeMeta(node.id, updates, node);
                     setTimeout(() => {
-                        graphRef.current?.fitGraphInView();
+                        graphRef.current?.centerOnNode(node.id);
                         if (!skipExpandingHighlight) {
                             setExpandingNodeId(null);
                             // Keep newChildNodeIds so they remain highlighted
@@ -727,6 +751,7 @@ export function useExpansion(options: UseExpansionOptions) {
                     }, 200);
                 }, 500);
             }
+            console.log(`[Expand] ${elapsed()} DONE "${node.title}"`);
         } catch (error) {
             console.error("Failed to expand node", error);
             if (!isStale()) {

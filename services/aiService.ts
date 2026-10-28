@@ -12,7 +12,7 @@ export type { LockedPair } from "./geminiService";
 
 function getSvc(fn: string) {
   const p = getLlmProvider();
-  console.info(`[LLM] ${p} · ${fn}`);
+  console.info(`[LLM] provider=${p} · ${fn} (routed to proxy)`);
   return p === "gemini" ? geminiSvc : altSvc;
 }
 

@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
+.vercel
 dist-ssr
 *.local
 wikipedia/
@@ -25,3 +26,4 @@ wikipedia/
 *.sw?
 dist-extension
 .chrome-pdf-profile/
+.env*

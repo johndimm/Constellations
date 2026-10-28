@@ -11,7 +11,7 @@ import AppNotifications from './components/AppNotifications';
 import AppConfirmDialog from './components/AppConfirmDialog';
 import HelpOverlay from './components/HelpOverlay';
 import { GraphNode, GraphLink } from './types';
-import { getApiKey, readBundledEnv } from './services/aiUtils';
+import { getApiKey, readBundledEnv, getLlmProvider, getBrowserLlmModel } from './services/aiUtils';
 import { getEffectiveCacheBaseUrl } from './services/cacheService';
 import { useNodeClickHandler } from './hooks/useNodeClickHandler';
 
@@ -835,6 +835,17 @@ const App: React.FC<AppProps> = ({
 
             {!embedded && nodes.length === 0 && !isProcessing && !welcomeDismissed && !hasUrlQuery && (
                 <WelcomeOverlay hideHeader={hideHeader} onSearch={handleStartSearch} onDismiss={() => setWelcomeDismissed(true)} />
+            )}
+
+            {isProcessing && nodes.length === 0 && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+                    <div className="flex flex-col items-center gap-4">
+                        <div className="w-10 h-10 border-3 border-slate-700 border-t-indigo-400 rounded-full animate-spin" />
+                        <p className="text-slate-400 text-sm">
+                            Loading…
+                        </p>
+                    </div>
+                </div>
             )}
 
             <AppHeader

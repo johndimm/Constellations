@@ -234,4 +234,9 @@ create table if not exists saved_graphs (
   data jsonb not null,
   updated_at timestamptz default now()
 );
+create table if not exists classify_cache (
+  term text primary key,
+  result jsonb not null,
+  updated_at timestamptz default now()
+);
 `;

@@ -104,6 +104,8 @@ export function useSearchHandlers(options: UseSearchHandlersOptions) {
     const handleStartSearch = useCallback(async (term: string, recursiveDepth = 0, typeHint?: string) => {
         setIsProcessing(true);
         setError(null);
+        setGraphData({ nodes: [], links: [] });
+        setSelectedNode(null);
         const nextSearchId = searchIdRef.current + 1;
         searchIdRef.current = nextSearchId;
         setSearchId(nextSearchId);

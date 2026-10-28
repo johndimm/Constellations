@@ -10,6 +10,7 @@
     { "source": "/api/crossref/work", "destination": "/api/crossref-work" },
     { "source": "/expansion", "destination": "/api/expansion" },
     { "source": "/node", "destination": "/api/node" },
+    { "source": "/node-lookup", "destination": "/api/node-lookup" },
     { "source": "/path", "destination": "/api/db-path" },
     { "source": "/graphs/:name", "destination": "/api/graphs?name=:name" },
     { "source": "/graphs", "destination": "/api/graphs" },

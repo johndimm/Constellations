@@ -22,22 +22,11 @@ export default defineConfig(({ mode }) => {
     e('NEXT_PUBLIC_GEMINI_API_KEY') ||
     e('NEXT_PUBLIC_API_KEY') ||
     '';
-  const cacheUrl = e('VITE_CACHE_URL') ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
-    e('VITE_CACHE_API_URL');
-  const cacheTarget = (cacheUrl || 'http://127.0.0.1:4000').replace(/\/$/, '');
+  const cacheUrl = e('VITE_CACHE_URL') || e('VITE_CACHE_API_URL');
   return {
     server: {
       port: 3000,
       host: '0.0.0.0',
-      /** Dev: `getImageApiBaseUrl` uses same origin; forward to graph server if it implements GET /api/image. */
-      proxy: {
-        '/api/image': {
-          target: cacheTarget,
-          changeOrigin: true,
-        },
-      },
     },
     plugins: [tailwindcss(), react()],
     build: {

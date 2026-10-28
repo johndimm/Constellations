@@ -110,6 +110,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 }) => {
   const [hasStarted, setHasStarted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showEditDomains, setShowEditDomains] = useState(false);
   const [editDomainId, setEditDomainId] = useState<string | null>(null);
   const [newDomainLabel, setNewDomainLabel] = useState('');
@@ -123,7 +124,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const [llmSelectValue, setLlmSelectValue] = useState<'env' | LlmProviderId>(() => getBrowserLlmOverride() ?? 'env');
 
   // Collapsible sections state - combined toggle for examples section
-  const [showExamples, setShowExamples] = useState(false);
+  const [showExamples, setShowExamples] = useState(true);
 
   const domainsImportRef = React.useRef<HTMLInputElement>(null);
 
@@ -230,301 +231,315 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               <div className="[writing-mode:vertical-lr] text-[9px] uppercase tracking-tighter mt-1 font-bold">Controls</div>
             </button>
 
-            {/* Settings link */}
-            {settingsHref && (
-              <div className="mb-3">
-                <a href={settingsHref} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors">
-                  <Settings size={12} />
-                  Settings
-                </a>
-              </div>
-            )}
+            {/* Advanced toggle */}
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-slate-300 uppercase tracking-widest mb-3 transition-colors"
+            >
+              <Settings size={10} />
+              {showAdvanced ? 'Hide' : 'Show'} advanced
+              {showAdvanced ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+            </button>
 
-            {/* Dev docs links */}
-            <div className="mb-3 flex gap-3">
-              <a href="/doc/help.html" target="_blank" rel="noreferrer"
-                 className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
-                Help
-              </a>
-              <a href="/doc/prompt.html" target="_blank" rel="noreferrer"
-                 className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
-                Prompt
-              </a>
-              <a href="/doc/journal.html" target="_blank" rel="noreferrer"
-                 className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
-                Dev Journal
-              </a>
-            </div>
-
-            {/* Button Groups */}
-            <div className="space-y-4 mb-4">
-              {/* Group: File */}
-              {onSave && (
-                <div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                    <Download size={10} /> File
+            {showAdvanced && (
+              <>
+                {/* Settings link */}
+                {settingsHref && (
+                  <div className="mb-3">
+                    <a href={settingsHref} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors">
+                      <Settings size={12} />
+                      Settings
+                    </a>
                   </div>
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <button
-                      onClick={() => {
-                        let defaultName = searchMode === 'explore' && exploreTerm ? exploreTerm
-                          : searchMode === 'connect' && pathStart && pathEnd ? `${pathStart} to ${pathEnd}`
-                          : `Graph ${new Date().toLocaleTimeString()}`;
-                        setSaveName(defaultName);
-                        setShowSave(!showSave);
-                        setShowLoad(false);
-                        setShowShare(false);
-                        onHelpHoverChange?.(null);
-                      }}
-                      className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-                      title="Save Graph"
-                    >
-                      SAVE
-                    </button>
-                    <button
-                      onClick={() => { setShowLoad(!showLoad); setShowSave(false); setShowShare(false); }}
-                      className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-                      title="Load Graph"
-                    >
-                      LOAD
-                    </button>
-                    <button
-                      onClick={() => { setShowShare(!showShare); setShowSave(false); setShowLoad(false); onHelpHoverChange?.(null); }}
-                      className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-                      title="Share Graph"
-                    >
-                      SHARE
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Group: View */}
-              <div>
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                  <Network size={10} /> View
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs">
-                  <button
-                    onClick={onToggleTimeline}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md uppercase tracking-wider transition-all border shrink-0 ${isTimelineMode
-                      ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
-                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-amber-400 hover:text-amber-400'
-                      }`}
-                    title="Toggle Timeline/Network View"
-                  >
-                    {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
-                    {isTimelineMode ? 'NETWORK' : 'TIMELINE'}
-                  </button>
-                  <button
-                    onClick={onToggleCompact}
-                    className="flex items-center gap-1.5 text-slate-300 hover:text-white px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 transition-colors"
-                    title="Toggle Compact Mode"
-                  >
-                    {isCompact ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
-                    {isCompact ? 'FULL' : 'COMPACT'}
-                  </button>
-                  <button
-                    onClick={onToggleTextOnly}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 transition-colors ${isTextOnly ? 'text-indigo-400 border-indigo-500/50' : 'text-slate-300 hover:text-white'}`}
-                    title="Toggle Text-Only Mode"
-                  >
-                    <Type size={14} />
-                    TEXT ONLY
-                  </button>
-                </div>
-              </div>
-
-              {/* Group: LLM */}
-              <div>
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                  <Cpu size={10} /> LLM
-                </div>
-                <select
-                  value={llmSelectValue}
-                  onChange={(e) => {
-                    const v = e.target.value as 'env' | LlmProviderId;
-                    setBrowserLlmOverride(v === 'env' ? null : v);
-                    setLlmSelectValue(v);
-                  }}
-                  className="w-full bg-slate-900 border border-slate-600 text-slate-100 text-xs rounded-md px-2 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  title="Model provider for AI calls from this tab"
-                >
-                  <option value="env">Default (from .env)</option>
-                  <option value="gemini">Google Gemini</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="anthropic">Anthropic</option>
-                </select>
-                {getEffectiveCacheBaseUrl() && (
-                  <p className="text-[9px] text-slate-500 mt-1 leading-snug">
-                    Proxied — keys live on the server. Default uses{' '}
-                    <span className="text-slate-400">LLM_PROVIDER</span> env var.
-                  </p>
                 )}
-              </div>
 
-              {/* Group: Actions */}
-              {(onClear || onClearCache || onExpandAllLeafNodes || onToggleHelp) && (
-                <div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                    <Plus size={10} /> Actions
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    {onClear && (
-                      <button
-                        onClick={onClear}
-                        className="text-slate-300 hover:text-red-300 p-1.5 rounded-md border border-slate-700 bg-slate-800/80 transition-colors"
-                        title="Clear graph"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                    {onClearCache && (
-                      <button
-                        onClick={onClearCache}
-                        className="px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-orange-300 transition-colors"
-                        title="Clear API cache (forces fresh data from LLM)"
-                      >
-                        CLEAR CACHE
-                      </button>
-                    )}
-                    {onExpandAllLeafNodes && (
-                      <button
-                        onClick={onExpandAllLeafNodes}
-                        disabled={isProcessing}
-                        className="px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-emerald-300 inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title="Expand all leaf nodes"
-                      >
-                        <Maximize size={14} className="text-emerald-400" />
-                        EXPAND ALL
-                      </button>
-                    )}
-                    {onToggleHelp && (
-                      <button
-                        onClick={onToggleHelp}
-                        className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-white flex items-center gap-1 transition-colors ${helpHover === 'help' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-                        title="Help & Info"
-                      >
-                        <HelpCircle size={14} /> HELP
-                      </button>
-                    )}
-                  </div>
+                {/* Dev docs links */}
+                <div className="mb-3 flex gap-3">
+                  <a href="/doc/help.html" target="_blank" rel="noreferrer"
+                     className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
+                    Help
+                  </a>
+                  <a href="/doc/prompt.html" target="_blank" rel="noreferrer"
+                     className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
+                    Prompt
+                  </a>
+                  <a href="/doc/journal.html" target="_blank" rel="noreferrer"
+                     className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
+                    Dev Journal
+                  </a>
                 </div>
-              )}
-            </div>
 
-            {/* Share Dialog */}
-            {showShare && onSave && (
-              <div className="mb-4 bg-slate-800 p-3 rounded-lg border border-slate-600 animate-in fade-in slide-in-from-top-2 duration-200">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Share2 size={14} /> Share Graph
-                  </h3>
-                  <button onClick={() => setShowShare(false)}><X size={14} className="text-slate-400" /></button>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => onSave('__COPY_LINK__')}
-                    className="flex flex-col items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg transition-colors border border-slate-600"
-                  >
-                    <LinkIcon size={20} className="text-orange-400" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-center">Copy Link</span>
-                  </button>
-                  <button
-                    onClick={() => onSave('__COPY__')}
-                    className="flex flex-col items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg transition-colors border border-slate-600"
-                  >
-                    <Copy size={20} className="text-purple-400" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-center">Copy JSON</span>
-                  </button>
-                  <button
-                    onClick={() => onSave('__EXPORT__')}
-                    className="flex flex-col items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg transition-colors border border-slate-600"
-                  >
-                    <Download size={20} className="text-indigo-400" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-center">Download File</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Save Dialog */}
-            {showSave && onSave && (
-              <div className="mb-4 bg-slate-800 p-3 rounded-lg border border-slate-600">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-bold text-white">Save Graph</h3>
-                  <button onClick={() => setShowSave(false)}><X size={14} className="text-slate-400" /></button>
-                </div>
-                <form onSubmit={handleSaveSubmit} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={saveName}
-                    onChange={(e) => setSaveName(e.target.value)}
-                    placeholder="Graph Name..."
-                    className="flex-1 bg-slate-900 border border-slate-700 text-white px-2 py-1 rounded text-sm focus:outline-none focus:border-indigo-500"
-                    autoFocus
-                  />
-                  <button type="submit" className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-sm font-medium">
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onSave('__EXPORT__')}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded text-sm font-medium flex items-center"
-                    title="Export as JSON"
-                  >
-                    <Download size={14} />
-                  </button>
-                </form>
-              </div>
-            )}
-
-            {/* Load Dialog */}
-            {showLoad && onLoad && (
-              <div className="mb-4 bg-slate-800 p-3 rounded-lg border border-slate-600 max-h-60 overflow-y-auto">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-bold text-white">Load Graph</h3>
-                  <div className="flex items-center gap-2">
-                    {onImport && (
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="text-slate-400 hover:text-blue-400 flex items-center gap-1 text-xs"
-                        title="Import JSON"
-                      >
-                        <Upload size={14} /> Import
-                      </button>
-                    )}
-                    <button onClick={() => setShowLoad(false)}><X size={14} className="text-slate-400" /></button>
-                  </div>
-                </div>
-                <input type="file" ref={fileInputRef} onChange={handleImportFile} accept=".json" className="hidden" />
-                {savedGraphs.length === 0 ? (
-                  <p className="text-slate-400 text-xs italic">No saved graphs.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {savedGraphs.map(name => (
-                      <div key={name} className="flex justify-between items-center bg-slate-900 p-2 rounded hover:bg-slate-700 group transition-colors">
+                {/* Button Groups */}
+                <div className="space-y-4 mb-4">
+                  {/* Group: File */}
+                  {onSave && (
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                        <Download size={10} /> File
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs">
                         <button
-                          onClick={() => { onLoad(name); setShowLoad(false); }}
-                          className="text-white text-sm text-left flex-1"
+                          onClick={() => {
+                            let defaultName = searchMode === 'explore' && exploreTerm ? exploreTerm
+                              : searchMode === 'connect' && pathStart && pathEnd ? `${pathStart} to ${pathEnd}`
+                              : `Graph ${new Date().toLocaleTimeString()}`;
+                            setSaveName(defaultName);
+                            setShowSave(!showSave);
+                            setShowLoad(false);
+                            setShowShare(false);
+                            onHelpHoverChange?.(null);
+                          }}
+                          className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'save' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+                          title="Save Graph"
                         >
-                          {name}
+                          SAVE
                         </button>
-                        {onDeleteGraph && (
+                        <button
+                          onClick={() => { setShowLoad(!showLoad); setShowSave(false); setShowShare(false); }}
+                          className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'load' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+                          title="Load Graph"
+                        >
+                          LOAD
+                        </button>
+                        <button
+                          onClick={() => { setShowShare(!showShare); setShowSave(false); setShowLoad(false); onHelpHoverChange?.(null); }}
+                          className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-amber-300 transition-colors ${helpHover === 'share' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+                          title="Share Graph"
+                        >
+                          SHARE
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Group: View */}
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                      <Network size={10} /> View
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <button
+                        onClick={onToggleTimeline}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md uppercase tracking-wider transition-all border shrink-0 ${isTimelineMode
+                          ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-lg shadow-amber-500/20 hover:bg-amber-400'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-amber-400 hover:text-amber-400'
+                          }`}
+                        title="Toggle Timeline/Network View"
+                      >
+                        {isTimelineMode ? <Network size={14} /> : <Calendar size={14} />}
+                        {isTimelineMode ? 'NETWORK' : 'TIMELINE'}
+                      </button>
+                      <button
+                        onClick={onToggleCompact}
+                        className="flex items-center gap-1.5 text-slate-300 hover:text-white px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 transition-colors"
+                        title="Toggle Compact Mode"
+                      >
+                        {isCompact ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+                        {isCompact ? 'FULL' : 'COMPACT'}
+                      </button>
+                      <button
+                        onClick={onToggleTextOnly}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 transition-colors ${isTextOnly ? 'text-indigo-400 border-indigo-500/50' : 'text-slate-300 hover:text-white'}`}
+                        title="Toggle Text-Only Mode"
+                      >
+                        <Type size={14} />
+                        TEXT ONLY
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Group: LLM */}
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                      <Cpu size={10} /> LLM
+                    </div>
+                    <select
+                      value={llmSelectValue}
+                      onChange={(e) => {
+                        const v = e.target.value as 'env' | LlmProviderId;
+                        setBrowserLlmOverride(v === 'env' ? null : v);
+                        setLlmSelectValue(v);
+                      }}
+                      className="w-full bg-slate-900 border border-slate-600 text-slate-100 text-xs rounded-md px-2 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      title="Model provider for AI calls from this tab"
+                    >
+                      <option value="env">Default (from .env)</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
+                    {getEffectiveCacheBaseUrl() && (
+                      <p className="text-[9px] text-slate-500 mt-1 leading-snug">
+                        Proxied — keys live on the server. Default uses{' '}
+                        <span className="text-slate-400">LLM_PROVIDER</span> env var.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Group: Actions */}
+                  {(onClear || onClearCache || onExpandAllLeafNodes || onToggleHelp) && (
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                        <Plus size={10} /> Actions
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {onClear && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); onDeleteGraph(name); setShowLoad(false); }}
-                            className="text-slate-400 hover:text-red-400 transition-colors p-1.5 rounded-md hover:bg-slate-800"
-                            title="Delete Graph"
+                            onClick={onClear}
+                            className="text-slate-300 hover:text-red-300 p-1.5 rounded-md border border-slate-700 bg-slate-800/80 transition-colors"
+                            title="Clear graph"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                        {onClearCache && (
+                          <button
+                            onClick={onClearCache}
+                            className="px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-orange-300 transition-colors"
+                            title="Clear API cache (forces fresh data from LLM)"
+                          >
+                            CLEAR CACHE
+                          </button>
+                        )}
+                        {onExpandAllLeafNodes && (
+                          <button
+                            onClick={onExpandAllLeafNodes}
+                            disabled={isProcessing}
+                            className="px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-emerald-300 inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            title="Expand all leaf nodes"
+                          >
+                            <Maximize size={14} className="text-emerald-400" />
+                            EXPAND ALL
+                          </button>
+                        )}
+                        {onToggleHelp && (
+                          <button
+                            onClick={onToggleHelp}
+                            className={`px-3 py-1.5 rounded-md border border-slate-700 bg-slate-800/80 text-slate-200 hover:text-white flex items-center gap-1 transition-colors ${helpHover === 'help' ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+                            title="Help & Info"
+                          >
+                            <HelpCircle size={14} /> HELP
                           </button>
                         )}
                       </div>
-                    ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Share Dialog */}
+                {showShare && onSave && (
+                  <div className="mb-4 bg-slate-800 p-3 rounded-lg border border-slate-600 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Share2 size={14} /> Share Graph
+                      </h3>
+                      <button onClick={() => setShowShare(false)}><X size={14} className="text-slate-400" /></button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => onSave('__COPY_LINK__')}
+                        className="flex flex-col items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg transition-colors border border-slate-600"
+                      >
+                        <LinkIcon size={20} className="text-orange-400" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-center">Copy Link</span>
+                      </button>
+                      <button
+                        onClick={() => onSave('__COPY__')}
+                        className="flex flex-col items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg transition-colors border border-slate-600"
+                      >
+                        <Copy size={20} className="text-purple-400" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-center">Copy JSON</span>
+                      </button>
+                      <button
+                        onClick={() => onSave('__EXPORT__')}
+                        className="flex flex-col items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg transition-colors border border-slate-600"
+                      >
+                        <Download size={20} className="text-indigo-400" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-center">Download File</span>
+                      </button>
+                    </div>
                   </div>
                 )}
-              </div>
+
+                {/* Save Dialog */}
+                {showSave && onSave && (
+                  <div className="mb-4 bg-slate-800 p-3 rounded-lg border border-slate-600">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="text-sm font-bold text-white">Save Graph</h3>
+                      <button onClick={() => setShowSave(false)}><X size={14} className="text-slate-400" /></button>
+                    </div>
+                    <form onSubmit={handleSaveSubmit} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={saveName}
+                        onChange={(e) => setSaveName(e.target.value)}
+                        placeholder="Graph Name..."
+                        className="flex-1 bg-slate-900 border border-slate-700 text-white px-2 py-1 rounded text-sm focus:outline-none focus:border-indigo-500"
+                        autoFocus
+                      />
+                      <button type="submit" className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-sm font-medium">
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSave('__EXPORT__')}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded text-sm font-medium flex items-center"
+                        title="Export as JSON"
+                      >
+                        <Download size={14} />
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {/* Load Dialog */}
+                {showLoad && onLoad && (
+                  <div className="mb-4 bg-slate-800 p-3 rounded-lg border border-slate-600 max-h-60 overflow-y-auto">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="text-sm font-bold text-white">Load Graph</h3>
+                      <div className="flex items-center gap-2">
+                        {onImport && (
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="text-slate-400 hover:text-blue-400 flex items-center gap-1 text-xs"
+                            title="Import JSON"
+                          >
+                            <Upload size={14} /> Import
+                          </button>
+                        )}
+                        <button onClick={() => setShowLoad(false)}><X size={14} className="text-slate-400" /></button>
+                      </div>
+                    </div>
+                    <input type="file" ref={fileInputRef} onChange={handleImportFile} accept=".json" className="hidden" />
+                    {savedGraphs.length === 0 ? (
+                      <p className="text-slate-400 text-xs italic">No saved graphs.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {savedGraphs.map(name => (
+                          <div key={name} className="flex justify-between items-center bg-slate-900 p-2 rounded hover:bg-slate-700 group transition-colors">
+                            <button
+                              onClick={() => { onLoad(name); setShowLoad(false); }}
+                              className="text-white text-sm text-left flex-1"
+                            >
+                              {name}
+                            </button>
+                            {onDeleteGraph && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onDeleteGraph(name); setShowLoad(false); }}
+                                className="text-slate-400 hover:text-red-400 transition-colors p-1.5 rounded-md hover:bg-slate-800"
+                                title="Delete Graph"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
           </div>

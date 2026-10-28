@@ -320,10 +320,10 @@ const Graph = forwardRef<GraphHandle, GraphProps>((props, ref) => {
         [centerOnNode, fitGraphInView]
     );
 
-    // After selection, fit the whole graph in the viewport (200ms: allow layout to place x/y).
+    // After selection, center on the selected node without changing zoom level.
     useEffect(() => {
         if (!selectedNode) return;
-        const t = setTimeout(() => fitGraphInViewRef.current(), 200);
+        const t = setTimeout(() => centerOnNodeRef.current(selectedNode.id), 200);
         return () => clearTimeout(t);
     }, [selectedNode?.id]);
 

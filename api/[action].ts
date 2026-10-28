@@ -4,7 +4,7 @@ import { getPool, upsertNodes, upsertEdge, initSql } from "./_db";
 import { fetchConnections, fetchPersonWorks, classifyEntity } from "../services/aiService";
 import { fetchWikipediaSummary } from "../services/wikipediaService";
 import { fetchAllModels, fetchModelsForProvider } from "../services/modelsService";
-import { fetchDuckDuckGoImages } from "../services/resolveImageForTitle";
+import { fetchDuckDuckGoImages, resolveImageForTitle } from "../services/resolveImageForTitle";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;
@@ -37,6 +37,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return crossrefWorkHandler(req, res);
     case "expand":
       return expandHandler(req, res);
+    case "node-lookup":
+      return nodeLookupHandler(req, res);
     default:
       return res.status(404).json({ error: `Unknown action: ${action}` });
   }
@@ -51,6 +53,7 @@ async function expansionHandler(req: VercelRequest, res: VercelResponse) {
 }
 
 async function expansionGet(req: VercelRequest, res: VercelResponse) {
+  const t0 = Date.now();
   const sourceId = String(req.query.sourceId || "");
   if (!sourceId) return res.status(400).json({ error: "sourceId required" });
   const id = parseInt(sourceId);
@@ -71,8 +74,11 @@ async function expansionGet(req: VercelRequest, res: VercelResponse) {
     );
 
     if (result.rowCount && result.rowCount > 0) {
+      const sec = ((Date.now() - t0) / 1000).toFixed(1);
       return res.json({
         hit: "exact",
+        _source: "db",
+        _sec: sec,
         targets: result.rows.map((r: any) => r.id),
         nodes: result.rows.map((r: any) => {
           const m = r.meta || {};
@@ -168,6 +174,47 @@ async function nodeHandler(req: VercelRequest, res: VercelResponse) {
     return res.json({ ok: true, id: dbNode?.id, ...dbNode });
   } catch (e: any) {
     await client.query("ROLLBACK").catch(() => {});
+    return res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+}
+
+// --- node-lookup ---
+
+async function nodeLookupHandler(req: VercelRequest, res: VercelResponse) {
+  const title = (typeof req.query.title === "string" ? req.query.title : "").trim();
+  if (!title) return res.status(400).json({ error: "title required" });
+
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const nodeRes = await client.query(
+      `select id, title, type, is_atomic, description, meta from nodes where lower(title) = lower($1) limit 1`,
+      [title]
+    );
+    if (nodeRes.rowCount === 0) return res.json({ found: false });
+
+    const node = nodeRes.rows[0];
+    const expansionRes = await client.query(
+      `select count(*) as cnt from edges where atomic_id = $1 or composite_id = $1`,
+      [node.id]
+    );
+    const has_expansions = parseInt(expansionRes.rows[0].cnt) > 0;
+    const meta = node.meta || {};
+
+    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate");
+    return res.json({
+      found: true,
+      id: node.id,
+      type: node.type,
+      is_atomic: node.is_atomic,
+      description: node.description,
+      has_expansions,
+      atomic_type: meta.atomic_type || null,
+      composite_type: meta.composite_type || null,
+    });
+  } catch (e: any) {
     return res.status(500).json({ error: e.message });
   } finally {
     client.release();
@@ -383,106 +430,6 @@ async function modelsHandler(req: VercelRequest, res: VercelResponse) {
 
 // --- image / poster ---
 
-const WIKI_UA = "Constellations/1.0 (knowledge graph; +https://www.mediawiki.org/wiki/API:Etiquette)";
-
-async function wikiGet(url: string): Promise<any> {
-  const r = await fetch(url, { headers: { "User-Agent": WIKI_UA } });
-  if (!r.ok) return null;
-  try { return await r.json(); } catch { return null; }
-}
-
-function isScreenWork(context: string, title: string): boolean {
-  return /\b(film|movie|television series|tv series|miniseries|sitcom|drama|comedy series|series|show)\b/i.test(
-    `${context} ${title}`
-  );
-}
-
-function isPersonContext(context: string): boolean {
-  return /\b(person|actor|actress|director|musician|singer|artist|rapper|songwriter|composer|author|writer|poet|politician|athlete|model|dancer|band|group)\b/i.test(context);
-}
-
-async function fetchPageImage(title: string): Promise<{ url: string | null; pageTitle?: string; pageId?: number }> {
-  const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&titles=${encodeURIComponent(title)}&pithumbsize=800&redirects=1&origin=*`;
-  const data = await wikiGet(url);
-  const pages = data?.query?.pages ?? {};
-  for (const page of Object.values(pages) as any[]) {
-    if (page.thumbnail?.source) {
-      return { url: page.thumbnail.source, pageTitle: page.title, pageId: page.pageid };
-    }
-  }
-  return { url: null };
-}
-
-async function fetchWikidataImage(title: string): Promise<string | null> {
-  try {
-    const ppUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
-    const ppData = await wikiGet(ppUrl);
-    const pages = ppData?.query?.pages ?? {};
-    let qid: string | null = null;
-    for (const page of Object.values(pages) as any[]) {
-      const q = page?.pageprops?.wikibase_item;
-      if (q && /^Q\d+$/.test(q)) { qid = q; break; }
-    }
-    if (!qid) return null;
-
-    const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims&ids=${qid}&origin=*`;
-    const wdData = await wikiGet(wdUrl);
-    const p18 = wdData?.entities?.[qid]?.claims?.P18?.[0]?.mainsnak?.datavalue?.value as string | undefined;
-    if (!p18) return null;
-
-    const fileTitle = p18.startsWith("File:") ? p18 : `File:${p18}`;
-    const infoUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=imageinfo&titles=${encodeURIComponent(fileTitle)}&iiprop=url&iiurlwidth=800&origin=*`;
-    const infoData = await wikiGet(infoUrl);
-    const infoPages = infoData?.query?.pages ?? {};
-    for (const p of Object.values(infoPages) as any[]) {
-      const info = p?.imageinfo?.[0];
-      if (info?.thumburl || info?.url) return info.thumburl || info.url;
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-
-async function fetchPosterFromArticleImages(title: string): Promise<string | null> {
-  try {
-    const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=images&titles=${encodeURIComponent(title)}&imlimit=50&redirects=1&origin=*`;
-    const data = await wikiGet(url);
-    const pages = data?.query?.pages ?? {};
-    let images: string[] = [];
-    for (const page of Object.values(pages) as any[]) {
-      images = (page?.images ?? []).map((i: any) => String(i?.title || ""));
-    }
-    if (!images.length) return null;
-
-    const normalizedTitle = title.toLowerCase();
-    const scored = images
-      .filter(t => t.toLowerCase().startsWith("file:"))
-      .map(t => {
-        const lt = t.toLowerCase();
-        let score = 0;
-        if (lt.includes("poster")) score += 500;
-        if (lt.includes("cover")) score += 200;
-        if (lt.includes("film") || lt.includes("movie")) score += 150;
-        if (lt.includes(normalizedTitle)) score += 200;
-        if (lt.includes(".svg") || lt.includes(".webm") || lt.includes(".gif")) score -= 300;
-        if (t.length > 100) score -= 400;
-        return { title: t, score };
-      })
-      .sort((a, b) => b.score - a.score);
-
-    const best = scored[0];
-    if (!best || best.score <= 0) return null;
-
-    const infoUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=imageinfo&titles=${encodeURIComponent(best.title)}&iiprop=url&iiurlwidth=800&origin=*`;
-    const infoData = await wikiGet(infoUrl);
-    const infoPages = infoData?.query?.pages ?? {};
-    for (const p of Object.values(infoPages) as any[]) {
-      const info = p?.imageinfo?.[0];
-      if (info?.thumburl || info?.url) return info.thumburl || info.url;
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-
 async function imageHandler(req: VercelRequest, res: VercelResponse) {
   const title = (typeof req.query.title === "string" ? req.query.title : "").trim();
   const context = (typeof req.query.context === "string" ? req.query.context : "").trim();
@@ -492,32 +439,8 @@ async function imageHandler(req: VercelRequest, res: VercelResponse) {
   if (!title) return res.json({ url: null });
 
   try {
-    const screen = isScreenWork(context, title);
-    const person = isPersonContext(context);
-
-    if (person) {
-      const r = await fetchPageImage(title);
-      if (r.url) return res.json(r);
-      const wdUrl = await fetchWikidataImage(title);
-      if (wdUrl) return res.json({ url: wdUrl, source: "wikidata" });
-      return res.json({ url: null });
-    }
-
-    if (screen) {
-      const posterUrl = await fetchPosterFromArticleImages(title);
-      if (posterUrl) return res.json({ url: posterUrl, source: "enwiki-images" });
-      const wdUrl = await fetchWikidataImage(title);
-      if (wdUrl) return res.json({ url: wdUrl, source: "wikidata" });
-      const r = await fetchPageImage(title);
-      if (r.url) return res.json(r);
-      return res.json({ url: null });
-    }
-
-    const r = await fetchPageImage(title);
-    if (r.url) return res.json(r);
-    const wdUrl = await fetchWikidataImage(title);
-    if (wdUrl) return res.json({ url: wdUrl, source: "wikidata" });
-    return res.json({ url: null });
+    const result = await resolveImageForTitle(title, context);
+    return res.json(result);
   } catch {
     return res.json({ url: null });
   }

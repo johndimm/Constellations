@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { cors, applyProviderFromRequest } from "../_helpers";
+import { getPool } from "../_db";
 import {
   classifyStartPair,
   classifyEntity,
@@ -42,13 +43,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 async function classifyStartHandler(req: VercelRequest, res: VercelResponse) {
   applyProviderFromRequest(req.body);
+  const t0 = Date.now();
   const raw = req.body?.term;
   if (!raw) return res.status(400).json({ error: "term is required" });
   const sanitized = sanitizeSearchTerm(raw);
   const term = await resolveStartSearchTerm(sanitized);
+  const cacheKey = term.trim().toLowerCase();
+
+  // Check DB cache
+  try {
+    const pool = getPool();
+    const cached = await pool.query(
+      `select result from classify_cache where term = $1`,
+      [cacheKey]
+    );
+    if (cached.rows.length > 0) {
+      const sec = ((Date.now() - t0) / 1000).toFixed(1);
+      return res.status(200).json({ ...cached.rows[0].result, _source: "db", _sec: sec });
+    }
+  } catch { /* table may not exist yet, fall through */ }
+
   try {
     const result = await classifyStartPair(term, req.body.wikiContext);
-    return res.status(200).json(result);
+
+    // Save to DB cache
+    try {
+      const pool = getPool();
+      await pool.query(
+        `insert into classify_cache (term, result) values ($1, $2)
+         on conflict (term) do update set result = excluded.result, updated_at = now()`,
+        [cacheKey, JSON.stringify(result)]
+      );
+    } catch { /* cache write failure is non-fatal */ }
+
+    const sec = ((Date.now() - t0) / 1000).toFixed(1);
+    return res.status(200).json({ ...result, _source: "llm", _sec: sec });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }
@@ -72,8 +101,10 @@ async function connectionsHandler(req: VercelRequest, res: VercelResponse) {
   const { nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body || {};
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
   try {
+    const t0 = Date.now();
     const result = await fetchConnections(nodeName, context, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
-    return res.status(200).json(result);
+    const sec = ((Date.now() - t0) / 1000).toFixed(1);
+    return res.status(200).json({ ...result, _source: "llm", _sec: sec });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }
@@ -84,8 +115,10 @@ async function worksHandler(req: VercelRequest, res: VercelResponse) {
   const { nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles } = req.body || {};
   if (!nodeName) return res.status(400).json({ error: "nodeName is required" });
   try {
+    const t0 = Date.now();
     const result = await fetchPersonWorks(nodeName, excludeNodes, wikiContext, wikipediaId, atomicType, compositeType, mentioningPageTitles);
-    return res.status(200).json(result);
+    const sec = ((Date.now() - t0) / 1000).toFixed(1);
+    return res.status(200).json({ ...result, _source: "llm", _sec: sec });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }
