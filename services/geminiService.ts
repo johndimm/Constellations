@@ -153,7 +153,9 @@ function shouldProxy(): boolean {
   if ((window as any).__PRERENDER_INJECTED) return false;
 
   const baseUrl = getEnvCacheUrl();
-  return !!baseUrl;
+  if (baseUrl) return true;
+  // On deployed sites (non-localhost), API routes are co-located on same origin
+  return window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 }
 
 export function defaultStartPairResult(reason: string, term?: string): {

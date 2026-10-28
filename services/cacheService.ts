@@ -5,7 +5,12 @@ import { getEnvCacheUrl } from "./aiUtils";
 // If running in extension, we might need a fixed URL or env var.
 // For now, defaulting to localhost:4000 if not set, similar to App.tsx logic.
 export const getEffectiveCacheBaseUrl = () => {
-    return getEnvCacheUrl();
+    const url = getEnvCacheUrl();
+    if (url) return url;
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return window.location.origin;
+    }
+    return '';
 };
 
 export const fetchCacheExpansion = async (sourceId: number, baseUrl: string) => {

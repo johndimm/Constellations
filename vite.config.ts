@@ -22,7 +22,10 @@ export default defineConfig(({ mode }) => {
     e('NEXT_PUBLIC_GEMINI_API_KEY') ||
     e('NEXT_PUBLIC_API_KEY') ||
     '';
-  const cacheUrl = e('VITE_CACHE_URL') || e('VITE_CACHE_API_URL');
+  const cacheUrl = e('VITE_CACHE_URL') ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
+    e('VITE_CACHE_API_URL');
   const cacheTarget = (cacheUrl || 'http://127.0.0.1:4000').replace(/\/$/, '');
   return {
     server: {

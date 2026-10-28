@@ -127,7 +127,7 @@ export const fetchWikipediaImage = async (query: string, context?: string): Prom
   const fetchPageImage = async (title: string, signal: AbortSignal): Promise<{ url: string | null; pageId?: number; pageTitle?: string }> => {
     try {
       // 1. Get page info, thumbnail, and all images in one go
-      const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages|pageprops|images&titles=${encodeURIComponent(title)}&pithumbsize=500&imlimit=50&redirects=1&origin=*`;
+      const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages%7Cpageprops%7Cimages&titles=${encodeURIComponent(title)}&pithumbsize=500&imlimit=50&redirects=1&origin=*`;
       const res = await fetch(url, { signal });
       const data = (await jsonFromResponse(res)) as { query?: { pages?: Record<string, unknown> } } | null;
       if (!data) return { url: null };
@@ -518,7 +518,7 @@ export const fetchWikipediaSummary = async (
 
     const tryDirectLookup = async (titleToFetch: string) => {
       try {
-        const directUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToFetch)}&redirects=1&origin=*`;
+        const directUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts%7Cpageprops&exintro&explaintext&titles=${encodeURIComponent(titleToFetch)}&redirects=1&origin=*`;
         const directRes = await wikiFetch(directUrl);
         if (!directRes) return null;
         const directData = (await jsonFromResponse(directRes)) as { query?: { pages?: unknown; redirects?: unknown } } | null;
@@ -824,7 +824,7 @@ export const fetchWikipediaSummary = async (
             continue;
           }
         }
-        const summaryUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&exintro&explaintext&titles=${encodeURIComponent(titleToTry)}&redirects=1&origin=*`;
+        const summaryUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts%7Cpageprops&exintro&explaintext&titles=${encodeURIComponent(titleToTry)}&redirects=1&origin=*`;
         const summaryRes = await wikiFetch(summaryUrl);
         if (!summaryRes) break;
         const summaryData = (await jsonFromResponse(summaryRes)) as { query?: { pages?: unknown } } | null;
@@ -974,7 +974,7 @@ export const fetchWikipediaExtract = async (
     // Note: exchars is intentionally omitted — the Wikipedia API mis-truncates short articles
     // when exchars is set (returns fewer chars than the article actually contains). We fetch
     // the full extract and truncate client-side instead.
-    const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts|pageprops&explaintext&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+    const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts%7Cpageprops&explaintext&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
     const res = await fetch(url);
     const data = (await jsonFromResponse(res)) as { query?: { pages?: unknown } } | null;
     if (!data) return { extract: null, pageid: null, title: null };

@@ -11,7 +11,8 @@ import AppNotifications from './components/AppNotifications';
 import AppConfirmDialog from './components/AppConfirmDialog';
 import HelpOverlay from './components/HelpOverlay';
 import { GraphNode, GraphLink } from './types';
-import { getApiKey, getEnvCacheUrl, readBundledEnv } from './services/aiUtils';
+import { getApiKey, readBundledEnv } from './services/aiUtils';
+import { getEffectiveCacheBaseUrl } from './services/cacheService';
 import { useNodeClickHandler } from './hooks/useNodeClickHandler';
 
 import { useGraphState } from './hooks/useGraphState';
@@ -243,8 +244,13 @@ const App: React.FC<AppProps> = ({
     const acadRaw = readBundledEnv('VITE_ENABLE_ACADEMIC_CORPORA');
     const ENABLE_ACADEMIC_CORPORA = acadRaw !== 'false' && acadRaw !== '0';
 
-    const cacheBaseUrl = getEnvCacheUrl();
+    const cacheBaseUrl = getEffectiveCacheBaseUrl();
     const cacheEnabled = !!cacheBaseUrl;
+
+    const [hasUrlQuery] = useState(() => {
+        const p = new URLSearchParams(window.location.search);
+        return p.has('q') || p.has('start') || p.has('graph');
+    });
 
     const [graphHostEl, setGraphHostEl] = useState<HTMLDivElement | null>(null);
 
@@ -579,6 +585,18 @@ const App: React.FC<AppProps> = ({
         }
     }, [setNotification, setSearchMode, setExploreTerm, setPathStart, setPathEnd, setIsCompact, setIsTimelineMode, setIsTextOnly, setGraphData, setSearchId, setError]);
 
+    const urlGraphProcessedRef = useRef(false);
+    useEffect(() => {
+        if (urlGraphProcessedRef.current || urlQueryProcessedRef.current) return;
+        if (!isKeyReady || nodes.length > 0 || !cacheBaseUrl) return;
+        const graphParam = new URLSearchParams(window.location.search).get('graph');
+        if (graphParam) {
+            urlGraphProcessedRef.current = true;
+            urlQueryProcessedRef.current = true;
+            handleLoadGraph(graphParam, applyGraphData);
+        }
+    }, [isKeyReady, nodes.length, cacheBaseUrl, handleLoadGraph, applyGraphData]);
+
     const handleOpenPeopleBrowser = useCallback(() => {
         const newParams = new URLSearchParams(window.location.search);
         newParams.set('browse', 'people');
@@ -815,7 +833,7 @@ const App: React.FC<AppProps> = ({
                 />
             </div>
 
-            {!embedded && nodes.length === 0 && !isProcessing && !welcomeDismissed && (
+            {!embedded && nodes.length === 0 && !isProcessing && !welcomeDismissed && !hasUrlQuery && (
                 <WelcomeOverlay hideHeader={hideHeader} onSearch={handleStartSearch} onDismiss={() => setWelcomeDismissed(true)} />
             )}
 

@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Minimize2, Maximize2, Maximize, Calendar, Network, X, Link as LinkIcon, ArrowRight, Type, ChevronLeft, ChevronRight, ChevronDown, Settings, Download, Trash2, Share2, Copy, Upload, Plus, HelpCircle, Cpu } from 'lucide-react';
 import type { LlmProviderId } from '../services/aiUtils';
-import { getBrowserLlmOverride, setBrowserLlmOverride, getEnvCacheUrl } from '../services/aiUtils';
+import { getBrowserLlmOverride, setBrowserLlmOverride } from '../services/aiUtils';
+import { getEffectiveCacheBaseUrl } from '../services/cacheService';
 import { DEFAULT_KIOSK_DOMAINS, saveKioskDomains, saveSelectedKioskDomainId } from '../kioskDomains';
 import type { KioskDomain } from '../kioskDomains';
 
@@ -209,15 +210,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         }
       >
         <div
-          className={`bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative overflow-hidden flex flex-col ${constrainToParentHeight
+          className={`bg-slate-900/95 backdrop-blur-xl p-4 rounded-xl border border-slate-700 shadow-2xl pointer-events-auto relative overflow-y-auto overflow-x-hidden flex flex-col ${constrainToParentHeight
             ? "h-full min-h-0 max-h-full"
             : "max-h-[calc(100vh-64px)]"}`}
         >
           {/* Scrollable area for everything above the Start Here list if it gets too tall (e.g. Help open) */}
           <div
-            className={`overflow-y-auto overflow-x-hidden custom-scrollbar ${constrainToParentHeight
-              ? "min-h-0 max-h-[min(14rem,45%)] flex-shrink-0"
-              : "flex-shrink-0 max-h-[60vh]"}`}
+            className={`overflow-x-hidden custom-scrollbar ${constrainToParentHeight
+              ? "min-h-0 flex-shrink-0"
+              : "flex-shrink-0"}`}
           >
             {/* Persistent Toggle Handle */}
             <button
@@ -355,7 +356,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   <option value="deepseek">DeepSeek</option>
                   <option value="anthropic">Anthropic</option>
                 </select>
-                {getEnvCacheUrl() && (
+                {getEffectiveCacheBaseUrl() && (
                   <p className="text-[9px] text-slate-500 mt-1 leading-snug">
                     Proxied — keys live on the server. Default uses{' '}
                     <span className="text-slate-400">LLM_PROVIDER</span> env var.
@@ -528,7 +529,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
           </div>
 
-          <div onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)} className="flex flex-col">
             <div className="flex border-b border-slate-700 mb-4 flex-shrink-0">
               <button onClick={() => setSearchMode('explore')} className={`flex-1 pb-2 text-sm font-medium transition-colors ${searchMode === 'explore' ? 'text-indigo-400 border-b-2 border-indigo-500' : 'text-slate-400 hover:text-slate-200'}`}>
                 <Search size={14} className="inline mr-1.5 mb-0.5" /> Explore
