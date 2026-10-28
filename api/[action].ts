@@ -1,10 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { cors, applyProviderFromRequest } from "./_helpers";
-import { getPool, upsertNodes, upsertEdge, initSql } from "./_db";
-import { fetchConnections, fetchPersonWorks, classifyEntity } from "../services/aiService";
-import { fetchWikipediaSummary } from "../services/wikipediaService";
-import { fetchAllModels, fetchModelsForProvider } from "../services/modelsService";
-import { fetchDuckDuckGoImages, resolveImageForTitle } from "../services/resolveImageForTitle";
+import { cors, applyProviderFromRequest } from "./_helpers.js";
+import { getPool, upsertNodes, upsertEdge, initSql } from "./_db.js";
+import { fetchConnections, fetchPersonWorks, classifyEntity } from "../services/aiService.js";
+import { fetchWikipediaSummary } from "../services/wikipediaService.js";
+import { fetchAllModels, fetchModelsForProvider } from "../services/modelsService.js";
+import { fetchDuckDuckGoImages, resolveImageForTitle } from "../services/resolveImageForTitle.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;

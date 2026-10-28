@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { cors, applyProviderFromRequest } from "../_helpers";
-import { getPool } from "../_db";
+import { cors, applyProviderFromRequest } from "../_helpers.js";
+import { getPool } from "../_db.js";
 import {
   classifyStartPair,
   classifyEntity,
@@ -10,9 +10,9 @@ import {
   findWikipediaTitle,
   fetchOrgKeyPeopleBlockViaSearch,
   sanitizeSearchTerm,
-} from "../../services/aiService";
-import { resolveStartSearchTerm } from "../../services/geminiService";
-import { getOpenAiCompatConfig } from "../../services/aiUtils";
+} from "../../services/aiService.js";
+import { resolveStartSearchTerm } from "../../services/geminiService.js";
+import { getOpenAiCompatConfig } from "../../services/aiUtils.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (cors(req, res)) return;

@@ -2,9 +2,9 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { setServerLlmOverride } from "../services/aiService";
-import type { LlmProviderId } from "../services/aiUtils";
-import { setServerLlmModelOverride } from "../services/aiUtils";
+import { setServerLlmOverride } from "../services/aiService.js";
+import type { LlmProviderId } from "../services/aiUtils.js";
+import { setServerLlmModelOverride } from "../services/aiUtils.js";
 
 export type { VercelRequest, VercelResponse };
 
