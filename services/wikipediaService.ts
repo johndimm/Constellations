@@ -1,6 +1,6 @@
 "use client";
 
-import { jsonFromResponse } from "./aiUtils";
+import { jsonFromResponse } from "./aiUtils.js";
 
 type WikiImageCacheEntry = { url: string | null; pageId?: number; pageTitle?: string; misses?: number };
 

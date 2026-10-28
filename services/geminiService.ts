@@ -1,11 +1,11 @@
 "use client";
 import { GoogleGenAI, Type } from "@google/genai";
-import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, sanitizeSearchTerm, looksLikePersonName, getLlmProvider, getBrowserLlmModel, getServerLlmModelOverride } from "./aiUtils";
+import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types.js";
+import { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify, sanitizeSearchTerm, looksLikePersonName, getLlmProvider, getBrowserLlmModel, getServerLlmModelOverride } from "./aiUtils.js";
 // Runtime import is safe: deepseekService only imports a *type* from this module (erased at runtime), so no cycle.
-import { callAltLlm } from "./deepseekService";
+import { callAltLlm } from "./deepseekService.js";
 
-export { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify } from "./aiUtils";
+export { getApiKey, getResponseText, cleanJson, parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, getEnvGeminiModel, getEnvGeminiModelClassify } from "./aiUtils.js";
 
 const SYSTEM_INSTRUCTION = `
 You are a Bipartite Graph Generator.

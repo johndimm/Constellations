@@ -3,12 +3,12 @@
  * deepseekService (which re-reads getLlmProvider() inside callAltLlm
  * to pick the right API: deepseek / openai / anthropic).
  */
-import { getLlmProvider } from "./aiUtils";
-import * as geminiSvc from "./geminiService";
-import * as altSvc from "./deepseekService"; // non-Gemini providers (deepseek / openai / anthropic)
+import { getLlmProvider } from "./aiUtils.js";
+import * as geminiSvc from "./geminiService.js";
+import * as altSvc from "./deepseekService.js"; // non-Gemini providers (deepseek / openai / anthropic)
 
-export * from "./aiUtils";
-export type { LockedPair } from "./geminiService";
+export * from "./aiUtils.js";
+export type { LockedPair } from "./geminiService.js";
 
 function getSvc(fn: string) {
   const p = getLlmProvider();

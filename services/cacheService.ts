@@ -1,5 +1,5 @@
 "use client";
-import { getEnvCacheUrl } from "./aiUtils";
+import { getEnvCacheUrl } from "./aiUtils.js";
 
 // Logic to determine effective cache base URL
 // If running in extension, we might need a fixed URL or env var.

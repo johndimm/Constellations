@@ -1,4 +1,4 @@
-import { jsonFromResponse } from "./aiUtils";
+import { jsonFromResponse } from "./aiUtils.js";
 
 type ImageResolveResult = { url: string | null; source?: string };
 

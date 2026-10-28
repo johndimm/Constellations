@@ -8,7 +8,7 @@ import {
   withRetry,
   withTimeout,
   type LlmProviderId,
-} from "./aiUtils";
+} from "./aiUtils.js";
 
 type RunJsonOptions = {
   system?: string;

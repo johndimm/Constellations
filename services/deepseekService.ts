@@ -1,7 +1,7 @@
 "use client";
-import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types";
-import { parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, readBundledEnv, readServerEnv, getLlmProvider, looksLikePersonName, getServerLlmModelOverride, getBrowserLlmModel, resolveAnthropicModel, getOpenAiCompatConfig, getDeepSeekApiKey, getAnthropicApiKey } from "./aiUtils";
-import type { LockedPair } from "./geminiService";
+import { GeminiResponse, PersonWorksResponse, PathResponse } from "../types.js";
+import { parseJsonFromModelText, withTimeout, withRetry, getEnvCacheUrl, readBundledEnv, readServerEnv, getLlmProvider, looksLikePersonName, getServerLlmModelOverride, getBrowserLlmModel, resolveAnthropicModel, getOpenAiCompatConfig, getDeepSeekApiKey, getAnthropicApiKey } from "./aiUtils.js";
+import type { LockedPair } from "./geminiService.js";
 
 export type { LockedPair };
 
