@@ -24,11 +24,11 @@ function serverHasCredentials(provider: string): boolean {
     case "gemini":
       return !!(process.env.GEMINI_API_KEY || process.env.VITE_API_KEY || process.env.VITE_GEMINI_API_KEY);
     case "deepseek":
-      return !!process.env.VITE_DEEPSEEK_API_KEY;
+      return !!(process.env.VITE_DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY);
     case "openai":
       return !!(process.env.VITE_OPENAI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim());
     case "anthropic":
-      return !!process.env.VITE_ANTHROPIC_API_KEY;
+      return !!(process.env.VITE_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY);
     default:
       return false;
   }
