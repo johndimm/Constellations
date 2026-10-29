@@ -9,7 +9,7 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
-const hubUrl: string = import.meta.env.VITE_HUB_URL || "https://johndimm.org";
+const hubUrl: string = import.meta.env.VITE_HUB_URL || "https://www.johndimm.org";
 
 root.render(
   <React.StrictMode>
